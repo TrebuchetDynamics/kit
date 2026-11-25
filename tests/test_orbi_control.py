@@ -3463,6 +3463,20 @@ class InstallerFleetTests(unittest.TestCase):
                     self.assertEqual(run.call_args.args[0], ['systemctl', '--system', '--no-ask-password', verb])
                     self.assertEqual(run.call_args.kwargs.get('timeout', helper.PROBE_TIMEOUT), budget)
 
+    def test_system_preflight_uses_pkcheck_detail_and_a_process_bound_subject(self):
+        ctx = helper.Context(env=self.h.env, platform='linux')
+        manager = helper.FleetManager('system', ('--system',), 0, Path('/root'))
+        unit = helper.FleetUnit(manager, 'worker.service', self.h.root / 'orbi.toml', (), 'active', 'static')
+        with mock.patch.object(helper.os, 'geteuid', return_value=1001), mock.patch.object(
+                ctx, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
+            helper.fleet_check_permissions(ctx, (unit,), {manager: {'42': ('unrelated.service', 'start')}})
+        self.assertEqual(len(run.call_args_list), 2)
+        for call, verb in zip(run.call_args_list, ('start', 'stop')):
+            argv = call.args[0]
+            self.assertEqual(argv[:4], ['pkcheck', '--action-id', 'org.freedesktop.systemd1.manage-units', '--process'])
+            self.assertRegex(argv[4], rf'^{os.getpid()},[0-9]+,{os.getuid()}$')
+            self.assertEqual(argv[5:], ['--detail', 'unit', unit.name, '--detail', 'verb', verb])
+
     def test_inventory_loads_configured_disabled_orbi_template_instances(self):
         ctx = helper.Context(env=self.h.env, platform='linux')
         manager = helper.FleetManager('user', ('--user',), os.getuid(), self.h.home)
@@ -3472,8 +3486,9 @@ class InstallerFleetTests(unittest.TestCase):
         config.write_text('source_repos = ["example/repo"]\nmax_concurrency = 2\n')
         bootstrap = self.h.home / '.local/bin/orbi'
         service = self.h.unit_dir / 'project-delivery@.service'
-        timer = self.h.unit_dir / 'project-delivery@.timer'
-        service.write_text(f'[Service]\nWorkingDirectory={target}\nExecStart={bootstrap} --config {config}\n')
+        timer = self.h.unit_dir / 'project-schedule@.timer'
+        service.write_text(f'[Service]\nWorkingDirectory={target}\n'
+                           f'Environment="ORBI_CONFIG={config}"\nExecStart={bootstrap}\n')
         timer.write_text('[Timer]\nUnit=project-delivery@%i.service\n[Install]\nWantedBy=timers.target\n')
         for path in (service, timer):
             path.chmod(0o644)
@@ -3482,21 +3497,22 @@ class InstallerFleetTests(unittest.TestCase):
                           DynamicUser='no', WorkingDirectory=target)
 
         def rule(name, **extra):
-            values = {'Id': name, **properties, **extra}
+            values = {'Id': name, 'Names': name, **properties, **extra}
             return {'tool': 'systemctl', 'argv_contains': ['--user', 'show', name],
                     'stdout': '\n'.join(f'{k}={v}' for k, v in values.items())}
 
         rules = [
-            {'tool': 'systemctl', 'argv_contains': ['--user', 'list-units'], 'stdout': '[]'},
+            {'tool': 'systemctl', 'argv_contains': ['--user', 'list-units'], 'stdout': ''},
             {'tool': 'systemctl', 'argv_contains': ['--user', 'list-unit-files'],
-             'stdout': json.dumps([{'unit_file': path.name} for path in (service, timer)])},
+             'stdout': f'{service.name} static -\n{timer.name} disabled enabled\n'},
             {'tool': 'systemctl', 'argv_contains': ['--user', 'show', 'UnitPath'], 'stdout': str(self.h.unit_dir)},
         ]
         for index in (1, 2):
             name = f'project-delivery@{index}.service'
             rules.extend([rule(name, FragmentPath=service, Type='oneshot', UnitFileState='static',
-                               ExecStart=f'{{ path={bootstrap} ; argv[]={bootstrap} --config {config} ; }}'),
-                          rule(f'project-delivery@{index}.timer', FragmentPath=timer,
+                               Environment=f'ORBI_CONFIG={config}',
+                               ExecStart=f'{{ path={bootstrap} ; argv[]={bootstrap} ; }}'),
+                          rule(f'project-schedule@{index}.timer', FragmentPath=timer,
                                Unit=name, Triggers=name, UnitFileState='disabled')])
         self.h.rules(*rules)
         units, targets, jobs = helper.fleet_inventory(ctx, [manager])
@@ -3504,11 +3520,18 @@ class InstallerFleetTests(unittest.TestCase):
         self.assertEqual(jobs, {manager: {}})
         self.assertEqual({unit.name: unit.triggers for unit in units}, {
             'project-delivery@1.service': '', 'project-delivery@2.service': '',
-            'project-delivery@1.timer': 'project-delivery@1.service',
-            'project-delivery@2.timer': 'project-delivery@2.service',
+            'project-schedule@1.timer': 'project-delivery@1.service',
+            'project-schedule@2.timer': 'project-delivery@2.service',
         })
         self.assertTrue(all(call['argv'][2] in {'list-unit-files', 'list-units', 'list-jobs', 'show'}
                             for call in self.h.calls()))
+
+    def test_unsupported_manager_platform_is_held_without_mutation(self):
+        ctx = helper.Context(env=self.h.env, platform='freebsd')
+        receipt = helper.installer_fleet(ctx)
+        self.assertEqual(receipt['status'], 'held')
+        self.assertIn('freebsd: no supported Orbi deployment manager', receipt['error']['message'])
+        self.assertEqual(self.h.calls(), [])
 
     def test_macos_deployment_is_held_without_mutation(self):
         ctx = helper.Context(env=self.h.env, platform='darwin')

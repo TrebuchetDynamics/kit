@@ -1118,7 +1118,7 @@ def install_orbi(output=None):
     return f'{binary}: {orbi_version(binary)}; CLI only, no deployment configured or started'
 
 
-def refresh_orbi_fleet():
+def refresh_orbi_fleet(*, report_progress=None):
     path = ROOT / 'skills/orbi/scripts/orbi_control.py'
     spec = importlib.util.spec_from_file_location('kit_installer_orbi_control', path)
     module = importlib.util.module_from_spec(spec)
@@ -1131,7 +1131,7 @@ def refresh_orbi_fleet():
     finally:
         sys.dont_write_bytecode = previous
         del sys.modules[spec.name]
-    return module.installer_fleet(module.Context(noninteractive=True))
+    return module.installer_fleet(module.Context(noninteractive=True), report_progress=report_progress)
 
 
 def orbi_fleet_summary(receipt):
@@ -1140,7 +1140,7 @@ def orbi_fleet_summary(receipt):
     lines = [f"Orbi fleet {receipt['status']}"]
     if 'error' in receipt:
         error = receipt['error']
-        where = ' '.join(error.get(key, '') for key in ('config', 'unit', 'step')).strip()
+        where = ' '.join(error[key] for key in ('config', 'unit', 'step') if error.get(key))
         lines[0] += f": {where + ': ' if where else ''}{error['message']}"
         if error.get('fix'):
             lines.append(error['fix'])
@@ -1156,10 +1156,9 @@ def orbi_fleet_summary(receipt):
 
 
 def orbi_item(output=None):
-    system = platform.system()
     return Item('orbi', 'Orbi host deployment refresh / CLI bootstrap',
                 note='stop, update and restart verified local Linux deployments, including paused ones; --skip orbi opts out',
-                missing='' if system in ('Linux', 'Darwin') else f'unsupported Orbi platform: {system}',
+                missing='unsupported Orbi platform: Windows' if platform.system() == 'Windows' else '',
                 steps=[Step('verify local managers and ownership; stop deployments without natural drain, '
                             'pin and validate the newest official stable release, then restart scheduling '
                             'and authorized services (even if paused or already current); '
@@ -1665,6 +1664,17 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
             with Path(report).open('a') as stream:
                 stream.write(json.dumps({'item': key, 'status': status, 'exit': code, **fields}) + '\n')
 
+    def report_orbi_progress(fleet):
+        # The native delegate can enforce a suite-wide timeout. Persist the last
+        # known fleet stages without adding a result to the live installer summary.
+        try:
+            with Path(report).open('a') as stream:
+                stream.write(json.dumps({'item': 'orbi', 'status': 'failed', 'exit': 1, 'orbi_fleet': fleet}) + '\n')
+        except OSError as exc:
+            output.line(f'  Could not save intermediate Orbi receipt: {exc}')
+
+    orbi_progress = report_orbi_progress if report and os.environ.get('KIT_INSTALL_ORBI_PROGRESS') == '1' else None
+
     def observe(key, status, before, after):
         before = baseline.get(key, before)
         if key in observations:
@@ -1731,7 +1741,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                 attempt += 1
                 try:
                     if step.run:
-                        message = step.run()
+                        message = step.run(report_progress=orbi_progress) if item.key == 'orbi' else step.run()
                         if isinstance(message, Refresh):
                             refresh, message = message, message.message
                         if item.key == 'orbi':

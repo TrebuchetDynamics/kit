@@ -19,6 +19,9 @@ import time
 UPSTREAM = 'https://github.com/TrebuchetDynamics/kit.git'
 PLUGIN = 'kit'
 HOST_REFRESH_TIMEOUT_S = 300
+# Allow the selected fleet time for bounded manager stops, release sync and
+# validation. An outer suite install delegates Hermes with an 1800s limit.
+HOST_ORBI_REFRESH_TIMEOUT_S = 1500
 HOST_ITEMS = ('pi-bolt', 'tx', 'claude', 'codex', 'orbi')
 
 
@@ -35,15 +38,17 @@ def refresh_hosts(source):
             return [{'item': item, 'status': status, 'exit': code} for item in HOST_ITEMS]
         with tempfile.TemporaryDirectory(prefix='kit-host-update-') as directory:
             report = Path(directory) / 'items.jsonl'
-            env = dict(os.environ, KIT_INSTALL_REPORT=str(report), NO_COLOR='1')
-            skipped = 'hermes,pi,orbi' if env.get('KIT_INSTALL_SKIP_ORBI') == '1' else 'hermes,pi'
+            env = dict(os.environ, KIT_INSTALL_REPORT=str(report), KIT_INSTALL_ORBI_PROGRESS='1', NO_COLOR='1')
+            skip_orbi = env.get('KIT_INSTALL_SKIP_ORBI') == '1'
+            skipped = 'hermes,pi,orbi' if skip_orbi else 'hermes,pi'
+            budget = HOST_REFRESH_TIMEOUT_S if skip_orbi else HOST_ORBI_REFRESH_TIMEOUT_S
             with subprocess.Popen(['bash', str(source / 'install.sh'), '--full', '--skip', skipped, '-q'],
                                   cwd=source, stdin=subprocess.DEVNULL, env=env,
                                   start_new_session=True,
                                   pass_fds=((int(env['KIT_INSTALL_LOCK_FD']),)
                                             if env.get('KIT_INSTALL_LOCK_FD') else ())) as child:
                 try:
-                    code = child.wait(timeout=HOST_REFRESH_TIMEOUT_S)
+                    code = child.wait(timeout=budget)
                     status = 'failed' if code else 'unreported'
                 except subprocess.TimeoutExpired:
                     os.killpg(child.pid, signal.SIGKILL)

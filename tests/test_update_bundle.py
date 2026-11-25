@@ -483,7 +483,7 @@ class UpdateTests(unittest.TestCase):
             '#!/bin/bash\n'
             'echo \'{"item":"tx","status":"installed","exit":0}\' > "$KIT_INSTALL_REPORT"\n'
             f'(sleep 0.5; touch "{child}") &\nwait\n')
-        with patch.object(self.mod, 'HOST_REFRESH_TIMEOUT_S', 0.1):
+        with patch.object(self.mod, 'HOST_ORBI_REFRESH_TIMEOUT_S', 0.1):
             rows = self.mod.refresh_hosts(self.repo)
         self.assertEqual(rows, [
             {'item': 'pi-bolt', 'status': 'timeout', 'exit': None},

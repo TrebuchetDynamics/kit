@@ -322,7 +322,7 @@ stashing or pulling. `--help`, `--list` and `--dry-run` never stash or pull.
 Pi are skipped, while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
 installs nothing. Both entrypoints check for updates on every run under existing source/pin policies.
 Only complete changes to installed payloads or effective settings can restart a proven active consumer, once.
-Healthy unchanged reruns request no service restarts. Paused, stopped and unrelated services stay untouched.
+Outside the explicit Orbi fleet refresh below, unchanged payloads request no service restarts and paused or stopped services stay untouched. Unrelated services are not restarted.
 Hermes owns its native gateway restart or deferral decision. Unknown input or ownership evidence holds with a manual next action.
 See [restart scope and failure handling](docs/installation.md#full-suite-from-a-checkout).
 Hermes still runs its complete fleet setup and its own dependency and

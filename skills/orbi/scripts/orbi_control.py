@@ -3009,17 +3009,19 @@ def observe_bounded_drain(ctx, target):
         ctx.observation_deadline = None
 
 
-def apply_release_locked(ctx, target, read_target, steps, current, progress, *, repo=None, verify_head=None):
+def apply_release_locked(ctx, target, read_target, steps, current, progress, *,
+                         repo=None, source_track=None, verify_head=None):
     """Shared release transaction; the caller owns the lock and idle checks."""
     def stage(name):
         current.update(step=name, mutation='possible')
 
+    source_track = source_track or UPDATE_TRACK
     stage('set_release_track')
-    track_state = rewrite_engine_track(target, UPDATE_TRACK)
+    track_state = rewrite_engine_track(target, source_track)
     steps.append({'step': 'set_release_track', 'status': track_state,
-                  'track': UPDATE_TRACK, 'mutation': 'completed'})
+                  'track': source_track, 'mutation': 'completed'})
     release_target = deployment_from(target.config_path)
-    if verify_head is not None and release_target.pin != UPDATE_TRACK:
+    if verify_head is not None and release_target.pin != source_track:
         fleet_refuse('release track was not applied to the top-level deployment config')
     release_identities = setup_file_identities(release_target)
     stage('sync_engine_source')
@@ -3949,31 +3951,35 @@ def fleet_jobs(ctx, manager):
     return jobs
 
 
-def fleet_listing(ctx, manager, verb, key):
-    text = manager.call(ctx, verb, '--type=service,timer', '--all', '--no-pager', '--output=json')
-    try:
-        rows = json.loads(text) if len(text) <= 4 * 1024 * 1024 else None
-        if not isinstance(rows, list) or len(rows) > HOST_LIST_LIMIT:
-            raise ValueError
-        names = set()
-        for row in rows:
-            name = Path(row[key]).name
-            if not FLEET_UNIT_NAME.fullmatch(name) or name in names:
-                raise ValueError
-            names.add(name)
-        return names
-    except (ValueError, KeyError, TypeError):
-        fleet_refuse(f'{manager.name}: {verb} returned invalid or oversized inventory')
+def fleet_listing(ctx, manager, verb):
+    text = manager.call(ctx, verb, '--type=service,timer', '--all', '--no-pager',
+                        '--no-legend', '--full', '--plain')
+    # Use the full-width UNIT column; the rest of list-units includes a free-text
+    # description. No legend or state glyphs are part of an inventory row.
+    names = set()
+    if len(text) > 4 * 1024 * 1024:
+        fleet_refuse(f'{manager.name}: {verb} inventory exceeds the limit')
+    for line in text.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        if (len(fields) < (4 if verb == 'list-units' else 2) or len(names) >= HOST_LIST_LIMIT
+                or not FLEET_UNIT_NAME.fullmatch(fields[0]) or fields[0] in names):
+            fleet_refuse(f'{manager.name}: {verb} returned invalid or oversized inventory')
+        names.add(fields[0])
+    return names
 
 
 FLEET_UNIT_NAME = re.compile(r'(?!-)[a-zA-Z0-9_.:@\\-]+\.(?:service|timer)')
-FLEET_UNIT_PROPS = ('Id', 'LoadState', 'ActiveState', 'FragmentPath', 'DropInPaths', 'NeedDaemonReload',
-                    'WorkingDirectory', 'User', 'DynamicUser', 'EnvironmentFiles', 'ExecStart',
+FLEET_START_JOBS = frozenset({'start', 'restart', 'reload-or-start'})
+FLEET_UNIT_PROPS = ('Id', 'Names', 'LoadState', 'ActiveState', 'FragmentPath', 'DropInPaths', 'NeedDaemonReload',
+                    'WorkingDirectory', 'User', 'DynamicUser', 'Environment', 'EnvironmentFiles',
+                    'UnsetEnvironment', 'PassEnvironment', 'ExecStart', 'ExecStop', 'ExecStopPost',
                     'UnitFileState', 'Unit', 'Triggers', 'TriggeredBy', 'Type', 'Result',
                     'ExecMainStartTimestampMonotonic', 'ExecMainStatus', 'ConditionResult',
-                    'CanStart', 'CanStop', 'KillMode', 'SendSIGKILL', 'PartOf', 'ConsistsOf', 'BoundBy',
+                    'CanStart', 'CanStop', 'KillMode', 'SendSIGKILL', 'PartOf', 'ConsistsOf', 'BoundBy', 'RequiredBy',
                     'PropagatesStopTo', 'OnFailure', 'OnSuccess', 'Upholds', 'UpheldBy',
-                    'Requires', 'Requisite', 'Wants', 'BindsTo', 'Conflicts')
+                    'Requires', 'Requisite', 'Wants', 'WantedBy', 'BindsTo', 'Conflicts', 'ConflictedBy')
 
 
 def fleet_unit(ctx, manager, name):
@@ -4025,6 +4031,10 @@ def fleet_service(ctx, manager, name, values, fragments):
     label = f'{manager.name}:{name}'
     refs = {config for _, item in fragments for config in item['configs']}
     commands = fleet_exec(values)
+    # systemctl prints service argv for humans, not as an escaped argv vector.
+    if not (any(Path(exe).name == 'orbi' or '/orbi-exporter.py' in argv or ' -m orbi' in argv
+                for exe, argv in commands) or any(item['orbi'] or item['referenced'] for _, item in fragments)):
+        return None
     argv = shlex.split(commands[0][1]) if len(commands) == 1 else []
     command = host_orbi_command(argv)
     cwd = Path(values.get('WorkingDirectory', ''))
@@ -4044,8 +4054,16 @@ def fleet_service(ctx, manager, name, values, fragments):
     config = Path(next(iter(refs)))
     # A config parsed from the fragment is not evidence that the manager's
     # loaded ExecStart points at the same deployment.
-    if any(host_resolve_configs([ref], cwd) != [str(config)] for ref in command['configs']):
-        fleet_refuse(f'{label}: effective worker config disagrees with its unit fragment')
+    effective_env = [token.partition('=')[2] for token in shlex.split(values.get('Environment', ''))
+                     if token.startswith('ORBI_CONFIG=')]
+    for ref in [*command['configs'], *effective_env]:
+        if ('%' in ref or '$' in ref or not ref or not cwd.is_absolute()
+                or checked_path(cwd / ref, 'effective config') != config):
+            fleet_refuse(f'{label}: effective worker config disagrees with its unit fragment')
+    if (any(token.partition('=')[0] == 'ORBI_CONFIG' for prop in ('PassEnvironment', 'UnsetEnvironment')
+            for token in shlex.split(values.get(prop, '')))
+            or any(values.get(prop) for prop in ('ExecStop', 'ExecStopPost'))):
+        fleet_refuse(f'{label}: unverified config environment or stop hooks')
     user = values.get('User', '')
     expected_uid = manager.uid
     if manager.name == 'system' and user:
@@ -4069,8 +4087,13 @@ def fleet_service(ctx, manager, name, values, fragments):
     env_files = values.get('EnvironmentFiles', '')
     if env_files and not re.fullmatch(re.escape(str(target.env_path)) + r' \(ignore_errors=(?:yes|no)\)', env_files):
         fleet_refuse(f'{label}: unverified service environment file')
-    if persisted_env(target).get('ORBI_CONFIG', str(config)) != str(config):
+    env_config = persisted_env(target).get('ORBI_CONFIG') if env_files else None
+    if env_config is not None and env_config != str(config):
         fleet_refuse(f'{label}: the deployment env overrides its config binding')
+    # Without an explicit config, an ambient service-manager environment could
+    # redirect a bare worker to a different checkout.
+    if command['runner'] and not (command['configs'] or effective_env or env_config):
+        fleet_refuse(f'{label}: no effective worker config binding')
     return target, command['runner']
 
 
@@ -4097,13 +4120,14 @@ def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', r
             or values.get('ActiveState') not in DRAIN_STATES | INACTIVE_STATES
             or values.get('CanStart') != 'yes' or values.get('CanStop') != 'yes'):
         fleet_refuse(f'{label}: loaded unit identity/state cannot be verified; inspect daemon reload and unit state')
-    if any(values.get(prop) for prop in ('PartOf', 'ConsistsOf', 'BoundBy', 'PropagatesStopTo',
+    if any(values.get(prop) for prop in ('PartOf', 'ConsistsOf', 'BoundBy', 'RequiredBy', 'PropagatesStopTo',
                                          'OnFailure', 'OnSuccess', 'Upholds', 'UpheldBy')):
         fleet_refuse(f'{label}: unit lifecycle could affect other units')
     dependencies = set(' '.join(values.get(prop, '') for prop in ('Requires', 'Requisite', 'Wants', 'BindsTo')).split())
     default_targets = {'basic.target', 'sysinit.target', 'network-online.target', 'timers.target'}
     if (any(dep not in default_targets and not dep.endswith('.slice') for dep in dependencies)
-            or set(values.get('Conflicts', '').split()) - {'shutdown.target'}):
+            or set((values.get('Conflicts', '') + ' ' + values.get('ConflictedBy', '')).split())
+            - {'shutdown.target'}):
         fleet_refuse(f'{label}: start could affect unrelated units through dependencies')
     if name.endswith('.service') and (values.get('KillMode') not in {'control-group', 'mixed'}
                                       or values.get('SendSIGKILL') != 'yes'):
@@ -4111,12 +4135,17 @@ def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', r
     if name.endswith('.timer'):
         if values.get('UnitFileState') not in {'enabled', 'enabled-runtime', 'disabled'} or len(fragments) != 1:
             fleet_refuse(f'{label}: timer enablement or fragment binding is unverified')
-        if re.search(r'^\s*(Also|Alias)\s*=', bounded_text(fragments[0][0]), re.M):
-            fleet_refuse(f'{label}: timer enable/disable also changes other units')
+        definition = bounded_text(fragments[0][0])
+        install_targets = {target for line in re.findall(r'^[ \t]*WantedBy[ \t]*=(.*)$', definition, re.M)
+                           for target in shlex.split(line)}
+        if (values.get('Names', '').split() != [name] or set(values.get('WantedBy', '').split()) - {'timers.target'}
+                or install_targets != {'timers.target'}
+                or re.search(r'^\s*(Also|Alias|RequiredBy|UpheldBy)\s*=', definition, re.M)):
+            fleet_refuse(f'{label}: timer enable/disable may change other unit bindings')
     binding = (tuple(fleet_owned_fragment(path, manager.uid) for path, _ in fragments),
                tuple(values.get(prop) for prop in FLEET_UNIT_PROPS if prop not in {
                    'ActiveState', 'UnitFileState', 'Result', 'ExecMainStartTimestampMonotonic',
-                   'ExecMainStatus', 'ConditionResult', 'TriggeredBy', 'ExecStart'}))
+                   'ExecMainStatus', 'ConditionResult', 'Names', 'TriggeredBy', 'WantedBy', 'ExecStart'}))
     # ExecStart's status fields change when a service stops. Keep just its executable/argv.
     binding += (fleet_exec(values),)
     return FleetUnit(manager, name, target, binding, values['ActiveState'], values.get('UnitFileState', ''),
@@ -4126,8 +4155,8 @@ def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', r
 def fleet_inventory(ctx, managers, *, known_units=()):
     units, targets, jobs = [], {}, {}
     for manager in managers:
-        loaded = fleet_listing(ctx, manager, 'list-units', 'unit')
-        installed = fleet_listing(ctx, manager, 'list-unit-files', 'unit_file')
+        loaded = fleet_listing(ctx, manager, 'list-units')
+        installed = fleet_listing(ctx, manager, 'list-unit-files')
         pending = fleet_jobs(ctx, manager)
         jobs[manager] = pending
         names = (installed | loaded | {name for name, _ in pending.values() if name.endswith(('.service', '.timer'))}
@@ -4142,6 +4171,8 @@ def fleet_inventory(ctx, managers, *, known_units=()):
             search = shlex.split(manager.call(ctx, 'show', '-p', 'UnitPath', '--value'))
             if not search or any(not Path(path).is_absolute() for path in search):
                 fleet_refuse(f'{manager.name}: installed template search path is unverified')
+            timer_templates = sorted(t for t in templates if t.endswith('.timer'))
+            slots = {name.split('@', 1)[1].rsplit('.', 1)[0] for name in names if '@' in name}
             for template in sorted(t for t in templates if t.endswith('.service')):
                 path = next((Path(folder) / template for folder in search if (Path(folder) / template).is_file()), None)
                 if path is None:
@@ -4156,8 +4187,15 @@ def fleet_inventory(ctx, managers, *, known_units=()):
                     fleet_refuse(f'{manager.name}:{template}: configured slots exceed inventory limit')
                 for index in range(1, target.max_concurrency + 1):
                     names.add(template.replace('@.', f'@{index}.'))
-                    if template[:-8] + '.timer' in templates:
-                        names.add(template[:-8].replace('@', f'@{index}') + '.timer')
+                    slots.add(str(index))
+            # Names do not establish ownership: a differently named timer
+            # template may target an owned worker. Let the manager resolve its
+            # effective Unit for each observed or configured instance.
+            for template in timer_templates:
+                for slot in slots or {'1'}:
+                    names.add(template.replace('@.', f'@{slot}.'))
+                    if len(names) > HOST_DETAIL_LIMIT:
+                        fleet_refuse(f'{manager.name}: configured unit detail exceeds {HOST_DETAIL_LIMIT}')
         if len(names) > HOST_DETAIL_LIMIT:
             fleet_refuse(f'{manager.name}: configured unit detail exceeds {HOST_DETAIL_LIMIT}')
         services, timers, triggered_by = {}, {}, {}
@@ -4198,23 +4236,34 @@ def fleet_check_permissions(ctx, units, jobs):
     actions = set()
     if any(unit.triggers for unit in systems):
         actions.update({('manage-unit-files',), ('reload-daemon',)})
-    if any(jobs[unit.manager] for unit in systems):
+    system_names = {unit.name for unit in systems}
+    if any(name in system_names and verb in FLEET_START_JOBS
+           for name, verb in jobs[systems[0].manager].values()):
         actions.add(('manage-units',))  # CancelJob uses generic manage-units authorization.
     for unit in systems:
-        actions.update(('manage-units', '--details', 'unit', unit.name, '--details', 'verb', verb)
+        actions.update(('manage-units', '--detail', 'unit', unit.name, '--detail', 'verb', verb)
                        for verb in ('start', 'stop'))
+    # /proc stat field 22 is the start time; field 2 (comm) is parenthesized
+    # and may contain spaces or parentheses. Bind the polkit subject to all
+    # three identifiers instead of a bare, reusable process ID.
+    start_time = Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()[19]
+    subject = f'{os.getpid()},{start_time},{os.getuid()}'
+    env = {key: value for key, value in ctx.env.items() if not key.startswith('DBUS_')}
     for action, *details in sorted(actions):
         proc = ctx.run(['pkcheck', '--action-id', 'org.freedesktop.systemd1.' + action,
-                        '--process', str(os.getpid()), *details], allow_failure=True)
+                        '--process', subject, *details], env=env, allow_failure=True)
         if proc.returncode:
             fleet_refuse('system: noninteractive write access denied for ' + ' '.join((action, *details)))
 
 
 def fleet_latest_release(ctx):
-    refs = ctx.run(['git', 'ls-remote', '--tags', OFFICIAL_ORIGIN, 'refs/tags/v*']).stdout
+    # Resolve official tags independently of checkout Git config and URL rewrites.
+    env = {key: value for key, value in ctx.env.items() if not key.startswith('GIT_')}
+    env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull)
+    refs = ctx.run(['git', 'ls-remote', '--tags', OFFICIAL_ORIGIN, 'refs/tags/v*'], cwd='/', env=env).stdout
     tags = {}
     for line in refs.splitlines():
-        match = re.fullmatch(r'([0-9a-f]{40})\trefs/tags/(v(\d+)\.(\d+)\.(\d+)(?:\+[\w.-]+)?)(\^\{\})?', line)
+        match = re.fullmatch(r'([0-9a-f]{40})\trefs/tags/(v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[a-zA-Z0-9.-]+)?)(\^\{\})?', line)
         if match:
             head, tag, major, minor, patch, peeled = match.groups()
             tags.setdefault((int(major), int(minor), int(patch)), {})[tag, bool(peeled)] = head
@@ -4225,6 +4274,8 @@ def fleet_latest_release(ctx):
     if len(names) != 1:
         fleet_refuse('latest official release tag is ambiguous')
     tag = next(iter(names))
+    if '+' in tag:
+        fleet_refuse(f'{tag}: newest official stable tag is not supported by the engine tag selector')
     return tag, latest.get((tag, True)) or latest[tag, False]
 
 
@@ -4239,6 +4290,12 @@ def fleet_checkout_root(ctx, target):
     root = ctx.run(['git', '-C', target.deploy_home, 'rev-parse', '--show-toplevel']).stdout.strip()
     if root != str(target.deploy_home):
         fleet_refuse(f'{target.deploy_home}: engine directory is not its own Git checkout root')
+    git_dir = Path(ctx.run(['git', '-C', target.deploy_home, 'rev-parse',
+                            '--path-format=absolute', '--git-common-dir']).stdout.strip())
+    if (not git_dir.is_absolute() or not checked_path(git_dir, 'engine Git directory').resolve().is_relative_to(target.deploy_home)
+            or not git_dir.is_dir()):
+        fleet_refuse(f'{target.deploy_home}: Git state is not contained in the engine checkout')
+    file_identity(git_dir)
 
 
 def fleet_preflight_target(ctx, target):
@@ -4261,16 +4318,25 @@ def fleet_preflight_target(ctx, target):
             len(re.findall(r'^[ \t]*engine_source_track[ \t]*=[ \t]*"[^"\n]*"',
                            target.config_path.read_text(), re.M)) != 1):
         fleet_refuse(f'{target.config_path}: expected exactly one writable engine_source_track')
-    require_source(ctx, target)
+    source = require_source(ctx, target)
+    if source['state'] != 'verified' or not re.fullmatch(r'[0-9a-f]{40}', source['head']):
+        fleet_refuse(f'{target.config_path}: current engine is not pinned to its exact checkout commit')
     require_clean_checkout(ctx, target)
     require_harness(ctx, target)
-    path = home_dir(ctx) / '.local/bin/orbi'
-    if path.is_file():
-        fleet_owned_fragment(path.resolve(), os.getuid())
+    bootstrap = fleet_bootstrap_identity(ctx)
     state, _ = bootstrap_evidence(ctx, target)
     if state != 'compatible':
         fleet_refuse(f'{target.config_path}: deployment bootstrap is {state}')
-    return identities, checkout_head(ctx, target)
+    file_identity(scheduling_intent_path(ctx, target))
+    run_orbi_check(ctx, target)
+    return identities, source['head'], bootstrap
+
+
+def fleet_bootstrap_identity(ctx):
+    path = home_dir(ctx) / '.local/bin/orbi'
+    if not path.is_file():
+        fleet_refuse(f'{path}: deployment bootstrap is missing or unverified')
+    return fleet_owned_fragment(path.resolve(strict=True), os.getuid())
 
 
 def fleet_verify_units(ctx, units, *, idle=False):
@@ -4294,10 +4360,16 @@ def fleet_no_jobs(ctx, units):
             fleet_refuse(f'{manager.name}: owned units still have pending jobs')
 
 
-def installer_fleet(ctx):
+def installer_fleet(ctx, *, report_progress=None):
     """Return a receipt even on partial failure; do not auto-retry or roll back."""
     receipt = {'status': 'no_deployments', 'deployments': []}
     rows, current = {}, {}
+
+    def report_stage():
+        if report_progress is not None:
+            report_progress({**receipt, 'error': {**current, 'message': 'fleet refresh did not return a terminal receipt'},
+                             'recovery': 'The last request may have taken effect. Inspect the named units and configs; no rollback was attempted.'})
+
     try:
         if ctx.platform != 'linux':
             coverage = {'state': 'ok', 'managers': {}, 'problems': []}
@@ -4338,8 +4410,14 @@ def installer_fleet(ctx):
             if fragments.setdefault((unit.manager, path), unit.config) != unit.config:
                 fleet_refuse(f'{unit.label}: a shared fragment binds different deployment configs')
         worker_timers = {(unit.manager, unit.triggers) for unit in units if unit.triggers}
+        scheduled = {unit.config for unit in units if unit.triggers}
+        standalone = {unit.label for unit in units if not unit.triggers and unit.config not in scheduled
+                      and '@' not in unit.name and unit.runner and unit.service_type != 'oneshot'}
+        for config in targets:
+            if config not in scheduled and not any(u.config == config and
+                    (u.label in standalone or u.active in ACTIVE_STATES) for u in units):
+                fleet_refuse(f'{config}: no verified scheduling or persistent worker to restore')
         fleet_check_permissions(ctx, units, jobs)
-        before = {config: fleet_preflight_target(ctx, target) for config, target in targets.items()}
         tag, expected = fleet_latest_release(ctx)
         receipt['release'] = {'tag': tag, 'head': expected}
 
@@ -4350,11 +4428,17 @@ def installer_fleet(ctx):
         with contextlib.ExitStack() as locks:
             for config in sorted(targets):
                 locks.enter_context(locked(ctx, config, nonblocking=True))
+            before = {}
+            for config, target in sorted(targets.items()):
+                current = {'step': 'preflight_deployment', 'config': str(config)}
+                before[config] = fleet_preflight_target(ctx, target)
+            current = {}
             if fleet_managers(ctx) != managers or fleet_inventory(ctx, managers) != (units, targets, jobs):
                 fleet_refuse('fleet inventory or jobs changed after preflight')
             for config, target in targets.items():
                 if (setup_file_identities(target) != before[config][0]
-                        or checkout_head(ctx, target) != before[config][1]):
+                        or checkout_head(ctx, target) != before[config][1]
+                        or fleet_bootstrap_identity(ctx) != before[config][2]):
                     fleet_refuse(f'{config}: deployment files changed after preflight')
                 fleet_checkout_root(ctx, target)
                 require_clean_checkout(ctx, target)
@@ -4365,19 +4449,22 @@ def installer_fleet(ctx):
                 row = rows[unit.config]
                 current = {'step': step, 'unit': unit.label}
                 row['status'] = 'in_progress'
+                report_stage()
                 unit.manager.call(ctx, verb, *args)
                 row['steps'].append({**current, 'status': 'ok'})
                 current = {}
+                report_stage()
 
             for unit in units:
                 if not unit.triggers:
                     continue
                 current = {'step': 'recheck_trigger', 'unit': unit.label}
-                active = fleet_verify_units(ctx, (unit,))[unit.label]
+                fleet_verify_units(ctx, (unit,))
                 if unit.enabled != 'disabled':
                     action(unit, 'disable_trigger', 'disable',
                            *(['--runtime'] if unit.enabled == 'enabled-runtime' else []), unit.name)
-                if active not in INACTIVE_STATES:
+                current = {'step': 'recheck_trigger_before_stop', 'unit': unit.label}
+                if fleet_verify_units(ctx, (unit,))[unit.label] not in INACTIVE_STATES:
                     action(unit, 'stop_trigger', 'stop', unit.name)
             current = {'step': 'verify_triggers_quiescent'}
             fleet_verify_units(ctx, (u for u in units if u.triggers), idle=True)
@@ -4388,7 +4475,7 @@ def installer_fleet(ctx):
             for manager in managers:
                 for job, (name, verb) in fleet_jobs(ctx, manager).items():
                     unit = next((u for u in units if u.manager == manager and u.name == name), None)
-                    if unit and verb in {'start', 'restart', 'reload-or-start'}:
+                    if unit and verb in FLEET_START_JOBS:
                         current = {'step': 'recheck_pending_start', 'unit': unit.label}
                         fleet_verify_units(ctx, (unit,))
                         if fleet_jobs(ctx, manager).get(job) != (name, verb):
@@ -4427,28 +4514,32 @@ def installer_fleet(ctx):
                 fleet_verify_units(ctx, owned, idle=True)
                 fleet_no_jobs(ctx, owned)
                 if (setup_file_identities(target) != before[config][0]
-                        or checkout_head(ctx, target) != before[config][1]):
+                        or checkout_head(ctx, target) != before[config][1]
+                        or fleet_bootstrap_identity(ctx) != before[config][2]):
                     fleet_refuse(f'{config}: deployment changed while stopping')
                 fleet_checkout_root(ctx, target)
                 require_clean_checkout(ctx, target)
                 progress = {}
+                current['step'] = 'apply_release'
+                report_stage()
                 try:
                     target, head, identities = apply_release_locked(
                         ctx, target, lambda: deployment_from(config), row['steps'], current, progress,
-                        verify_head=verify_head)
+                        source_track='tag:' + tag, verify_head=verify_head)
                 finally:
                     row['engine_update'] = progress.get('engine_update', 'not_applied')
                 row['engine_update'] = 'up_to_date' if head == before[config][1] else 'updated'
                 row['status'] = 'validated'
                 current = {'step': 'recheck_before_start', 'config': str(config)}
+                report_stage()
                 fleet_verify_units(ctx, owned, idle=True)
                 fleet_no_jobs(ctx, owned)
-                if setup_file_identities(target) != identities or checkout_head(ctx, target) != head:
+                if (setup_file_identities(target) != identities or checkout_head(ctx, target) != head
+                        or fleet_bootstrap_identity(ctx) != before[config][2]):
                     fleet_refuse(f'{config}: validated pin or file identity changed before activation')
                 worker_requested = False
-                for unit in sorted((u for u in owned if not u.triggers and (u.label in interrupted or
-                                    (u.manager, u.name) not in worker_timers and u.service_type != 'oneshot'
-                                    and u.enabled in {'enabled', 'enabled-runtime'})),
+                for unit in sorted((u for u in owned if not u.triggers and
+                                    (u.label in interrupted or u.label in standalone)),
                                    key=lambda u: (u.active not in ACTIVE_STATES, u.label)):
                     timer_worker = (unit.manager, unit.name) in worker_timers and unit.runner
                     if timer_worker and worker_requested:
@@ -4472,7 +4563,12 @@ def installer_fleet(ctx):
                     current = {'step': 'recheck_trigger_before_enable', 'unit': unit.label}
                     fleet_verify_units(ctx, (unit,))
                     action(unit, 'enable_trigger', 'enable',
-                           *(['--runtime'] if unit.enabled == 'enabled-runtime' else []), '--now', unit.name)
+                           *(['--runtime'] if unit.enabled == 'enabled-runtime' else []), unit.name)
+                    # Enable may reload the manager. Bind the loaded timer again
+                    # before issuing a start, rather than starting with enable --now.
+                    current = {'step': 'recheck_trigger_before_start', 'unit': unit.label}
+                    fleet_verify_units(ctx, (unit,))
+                    action(unit, 'start_trigger_requested', 'start', unit.name)
                     current = {'step': 'verify_scheduling', 'unit': unit.label}
                     values = fleet_unit(ctx, unit.manager, unit.name)
                     if values.get('ActiveState') != 'active' or values.get('UnitFileState') not in {'enabled', 'enabled-runtime'}:

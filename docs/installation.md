@@ -180,7 +180,7 @@ A healthy unchanged repeat requests no service restarts, including nested host r
 Only complete changed payloads are eligible. Restarts affect supported host integrations only.
 On Linux user systemd, active `kit-*` units
 must reference the affected executable or configuration input before one `try-restart` is requested.
-The prefix alone proves no ownership. Stopped, paused, unrelated and Orbi deployment units stay untouched.
+The prefix alone proves no ownership. This consumer restart pass leaves stopped, paused, unrelated and Orbi deployment units untouched; Orbi has its own [fleet refresh](#orbi-cli).
 A tx-only change without a proven active consumer restarts nothing. Unknown installed inputs or
 unit references are held with the named input/service and an inspection/retry action, not reported as unchanged.
 Hosts without Linux user systemd report restarts unavailable. Restart failures make installation fail.
@@ -300,7 +300,9 @@ unit evidence. Remote machines, containers and separate namespaces are outside
 that inventory. Inaccessible managers, ambiguous unit/config/owner bindings or
 missing noninteractive write access hold the entire Orbi fleet before any stop.
 The deployment file and engine execution owner must match the installing account;
-Kit does not switch users, invoke sudo or make access changes.
+Kit does not switch users, invoke sudo or make access changes. The installer
+checks the current exact engine pin and runs `orbi check` before any stop, then
+validates the new pin and runs the check again before activation.
 
 It disables/stops verified triggers and cancels owned queued starts before stopping
 owned services through systemd, without a natural-drain wait. After proving fleet

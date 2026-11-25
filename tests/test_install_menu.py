@@ -180,11 +180,7 @@ shutil.copyfile(pathlib.Path(os.environ['FAKE_HOME']) / 'upstream-pi-bolt-instal
 if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
     dest.write_bytes(b'')
 ''')
-        self.fake('systemctl', LOGGING + '''
-case " $* " in
-    *' list-unit-files '*|*' list-units '*) echo '[]' ;;
-esac
-''')
+        self.fake('systemctl', LOGGING)
         self.fake('getent', '#!/bin/sh\nexit 0\n')
         self.claude_host()
         self.codex_registry()
@@ -941,7 +937,7 @@ fi'''
     def recording_services(self):
         self.fake('systemctl', LOGGING + r'''
 case "$*" in
-  *--output=json*) echo '[]' ;;
+  *--no-ask-password*) exit 0 ;;
   *list-units*)
     printf '%s\n' 'kit-bolt.service loaded active running Bolt' 'kit-other.service loaded active running Other' 'kit-stopped.service loaded inactive dead Stopped' 'orbi-kit@1.service loaded active running Paused' 'hermes-gateway.service loaded active running Hermes' ;;
   *show*kit-bolt.service*)
@@ -1186,7 +1182,7 @@ if __name__ == '__main__':
             'installed': True, 'enabled': True, 'source': {'source': 'local', 'path': str(payload)},
             'marketplaceSource': registration['marketplaceSource']}]}})
         self.fake('systemctl', LOGGING + f'''
-if [[ "$*" == *--output=json* ]]; then echo '[]';
+if [[ "$*" == *--no-ask-password* ]]; then exit 0;
 elif [[ "$*" == *list-units* ]]; then echo 'kit-codex.service loaded active running Codex';
 elif [[ "$*" == *show* ]]; then echo 'ExecStart={{ path=/usr/bin/codex ; argv[]=/usr/bin/codex --plugin {payload}/SKILL.md ; }}'; fi
 ''')
@@ -1433,7 +1429,6 @@ exit 23
         self.fake('systemctl', LOGGING + '''
 case " $* " in
     *' --system '*' list-units '*) echo 'Access denied' >&2; exit 1 ;;
-    *' list-unit-files '*|*' list-units '*) echo '[]' ;;
 esac
 ''')
         receipt = self.home / 'install.jsonl'
@@ -1453,15 +1448,27 @@ esac
         head = 'a' * 40
         old = 'b' * 40
         bootstrap = self.home / '.local/bin/orbi'
-        bootstrap.write_text(LOGGING + 'case "$1" in --version) echo orbi 1.2.3;; sync-engine-source) echo ' +
-                             head + ' > "$(dirname "$3")/head"; test "$3" != "$FAIL_SYNC";; check) test "$3" != "$FAIL_CHECK";; *) exit 99;; esac\n')
+        bootstrap.write_text(LOGGING + f'''
+case "$1" in
+  --version) echo orbi 1.2.3 ;;
+  sync-engine-source) echo {head} > "$(dirname "$3")/head"
+    touch "$(dirname "$3")/sync-attempted"
+    if [[ "$3" == "$INTERRUPT_INSTALLER" ]]; then kill -TERM "$PPID"; fi
+    test "$3" != "$FAIL_SYNC" ;;
+  check) test "$3" != "$FAIL_PREFLIGHT" &&
+    {{ test "$3" != "$FAIL_CHECK" || test ! -e "$(dirname "$3")/sync-attempted"; }} ;;
+  *) exit 99 ;;
+esac
+''')
         bootstrap.chmod(0o755)
         for manager, slug, previous in (('--system', 'working', head), ('--user', 'paused', old)):
             deploy = self.home / slug
             deploy.mkdir(exist_ok=True)
+            (deploy / '.git').mkdir(exist_ok=True)
             config = deploy / 'orbi.toml'
             config.write_text(f'source_repos = ["example/{slug}"]\nengine_source_track = "sha:{previous}"\n')
             (deploy / 'head').write_text(previous)
+            (deploy / 'sync-attempted').unlink(missing_ok=True)
             (deploy / 'units').mkdir(exist_ok=True)
             for kind, slot, active in (('service', 'worker', slug == 'working'),
                                        ('service', 'extra', slug == 'working'),
@@ -1473,13 +1480,13 @@ esac
                 fragment.write_text((f'[Service]\nWorkingDirectory={deploy}\nExecStart={bootstrap} --config {config}\n'
                                      if kind == 'service' else f'[Timer]\nUnit={unit}\n[Install]\nWantedBy=timers.target\n'))
                 fragment.chmod(0o644)
-                states[manager][name] = dict(Id=name, LoadState='loaded', FragmentPath=str(fragment),
+                states[manager][name] = dict(Id=name, Names=name, LoadState='loaded', FragmentPath=str(fragment),
                     NeedDaemonReload='no', WorkingDirectory=str(deploy) if kind == 'service' else '',
                     ActiveState='active' if active else 'inactive', User=str(os.getuid()) if manager == '--system' else '',
                     DynamicUser='no', ExecStart=f'{{ path={bootstrap} ; argv[]={bootstrap} --config {config} ; }}' if not unit else '',
                     Unit=unit, Triggers=unit, TriggeredBy=f'{slug}-{slot}.timer' if slot in {'worker', 'queued'} and kind == 'service' else '',
                     UnitFileState=('enabled' if active else 'disabled') if unit else 'static',
-                    Type='oneshot' if slot == 'worker' else 'simple', Result='success',
+                    Type='' if kind == 'timer' else 'oneshot' if slot == 'worker' else 'simple', Result='success',
                     ExecMainStatus='0', ExecMainStartTimestampMonotonic='1', ConditionResult='yes',
                     CanStart='yes', CanStop='yes', KillMode='control-group', SendSIGKILL='yes')
         states['--system']['working-alias.service'] = states['--system']['working-worker.service']
@@ -1499,6 +1506,8 @@ case $3 in
     rev-parse)
         if [[ $4 == --show-toplevel ]]; then
             if [[ $2 == "$FAKE_PARENT_REPO" ]]; then dirname "$2"; else echo "$2"; fi
+        elif [[ $4 == --path-format=absolute && $5 == --git-common-dir ]]; then
+            if [[ $2 == "$FAKE_SHARED_REPO" ]]; then echo "$2/../working/.git"; else echo "$2/.git"; fi
         else
             cat "$2/head"
         fi ;;
@@ -1521,9 +1530,12 @@ state = json.loads(path.read_text())
 manager, _, verb, *args = args
 units = state[manager]
 if verb == 'list-units':
-    print(json.dumps([{'unit': n} for n in units]))
+    assert {'--plain', '--no-legend', '--full'} <= set(args)
+    for n, u in units.items():
+        print(n, 'loaded', u['ActiveState'], 'running', 'An example unit description')
 elif verb == 'list-unit-files':
-    print(json.dumps([{'unit_file': n} for n in units]))
+    for n, u in units.items():
+        print(n, u.get('UnitFileState', 'static'), '-')
 elif verb == 'list-jobs':
     if 'working-queued.service' in units and not (path.parent / 'cancelled').exists():
         print('42 working-queued.service start waiting')
@@ -1538,8 +1550,8 @@ elif verb in ('disable', 'stop', 'start', 'enable'):
     if ((verb == 'enable' and os.environ.get('FAIL_START') == args[-1]) or
             (verb == 'stop' and os.environ.get('FAIL_STOP') == args[-1])):
         sys.exit(1)
-    if verb in ('stop', 'start', 'enable'):
-        unit['ActiveState'] = 'inactive' if verb == 'stop' or (verb == 'start' and unit['Type'] == 'oneshot') else 'active'
+    if verb in ('stop', 'start'):
+        unit['ActiveState'] = 'inactive' if verb == 'stop' or unit.get('Type') == 'oneshot' else 'active'
     if verb == 'start':
         unit['ExecMainStartTimestampMonotonic'] = '2'
     if verb in ('enable', 'disable'):
@@ -1574,9 +1586,9 @@ else:
                      any(f' {verb} ' in line for verb in ('disable', 'stop', 'cancel', 'enable', 'start'))))]
         verbs = [line.split()[line.split().index('--no-ask-password') + 1] if line.startswith('systemctl')
                  else line.split()[1] for line in mutations]
-        self.assertEqual(verbs, ['disable', 'stop', 'cancel', 'stop', 'stop', 'stop',
-                                 'sync-engine-source', 'check', 'enable', 'enable',
-                                 'sync-engine-source', 'check', 'start', 'start', 'enable', 'enable'])
+        self.assertEqual(verbs, ['check', 'check', 'disable', 'stop', 'cancel', 'stop', 'stop', 'stop',
+                                 'sync-engine-source', 'check', 'enable', 'start', 'enable', 'start',
+                                 'sync-engine-source', 'check', 'start', 'start', 'enable', 'start', 'enable', 'start'])
         self.assertNotIn('orbi-lookalike', '\n'.join(mutations))
         self.assertNotIn('working-alias', '\n'.join(mutations))
         self.assertFalse(any(' start working-queued.service' in line for line in mutations))
@@ -1605,12 +1617,45 @@ else:
         self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
                              for verb in ('stop', 'disable', 'cancel', 'start', 'enable')))
 
+    def test_orbi_holds_before_downtime_if_the_current_deployment_fails_check(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        config = str(self.home / 'working/orbi.toml')
+        result = self.install('--only', 'orbi', env={'FAIL_PREFLIGHT': config})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(config + ' preflight_deployment: orbi check failed', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+        self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
+                             for verb in ('stop', 'disable', 'cancel', 'start', 'enable')))
+
+    def test_orbi_restores_a_paused_standalone_persistent_worker(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        states = json.loads(state.read_text())
+        worker = states['--user']['paused-extra.service']
+        worker['UnitFileState'] = 'disabled'
+        states['--user'] = {'paused-extra.service': worker}
+        state.write_text(json.dumps(states))
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('systemctl --user --no-ask-password start paused-extra.service', self.calls())
+        self.assertNotIn('systemctl --user --no-ask-password start paused-worker.service', self.calls())
+
     def test_orbi_holds_before_downtime_for_a_parent_git_checkout(self):
         _, state, _ = self.orbi_fleet_fixture()
         original = state.read_bytes()
         result = self.install('--only', 'orbi', env={'FAKE_PARENT_REPO': str(self.home / 'paused')})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn('engine directory is not its own Git checkout root', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_before_downtime_for_shared_git_storage(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi', env={'FAKE_SHARED_REPO': str(self.home / 'paused')})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('Git state is not contained in the engine checkout', result.stdout)
         self.assertEqual(state.read_bytes(), original)
         self.assertEqual(self.calls('orbi sync-engine-source'), [])
 
@@ -1642,6 +1687,22 @@ else:
         self.assertEqual(state.read_bytes(), original)
         self.assertEqual(self.calls('orbi sync-engine-source'), [])
 
+    def test_orbi_delegated_receipt_survives_installer_interruption(self):
+        receipt, _, _ = self.orbi_fleet_fixture()
+        config = str(self.home / 'working/orbi.toml')
+        result = self.install('--only', 'orbi', env={'KIT_INSTALL_REPORT': str(receipt),
+                              'KIT_INSTALL_ORBI_PROGRESS': '1', 'INTERRUPT_INSTALLER': config})
+        self.assertNotEqual(result.returncode, 0)
+        row = json.loads(receipt.read_text().splitlines()[-1])
+        self.assertEqual((row['item'], row['status']), ('orbi', 'failed'))
+        fleet = row['orbi_fleet']
+        self.assertEqual(fleet['status'], 'incomplete')
+        self.assertEqual(fleet['error']['config'], config)
+        self.assertEqual(fleet['error']['step'], 'apply_release')
+        paused, working = fleet['deployments']
+        self.assertEqual((paused['status'], working['status']), ('started', 'stopped'))
+        self.assertIn('last request may have taken effect', fleet['recovery'])
+
     def test_orbi_partial_failures_keep_bound_receipts(self):
         for phase, failed_step in (('stop', 'stop_service'), ('sync', 'sync_engine_source'),
                                    ('check', 'validate_non_activating'), ('enable', 'enable_trigger')):
@@ -1670,6 +1731,7 @@ else:
                     self.assertEqual(self.calls('orbi sync-engine-source'), [])
                 if phase == 'sync':
                     self.assertEqual(working['engine_update'], 'sync_unverified')
+                    self.assertEqual(working['steps'][-1]['track'], 'tag:v1.2.3')
 
     def test_orbi_preserves_existing_cli_even_on_update(self):
         self.fake('orbi', LOGGING + 'echo orbi 0.7.41\n')
