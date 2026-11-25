@@ -2196,6 +2196,13 @@ def main(argv=None):
             unchanged_recovery = (not recover and prior and len(recovered_homes) == len(prior['selected']) and all(
                 repo in plan['sources'] and plan['sources'][repo]['before'] == plan['sources'][repo]['after'] == prior['revision']
                 for repo in recovered_sources))
+            # Compare with the journaled merge, not the release: a preserved customization
+            # is not drift. The ordinary plan backs up later edits and reports them as local_edits.
+            if unchanged_recovery and any(
+                    file_state(path := Path(item['path'])) != item['new']
+                    or (path.exists() and stat.S_IMODE(path.stat().st_mode) != item['mode'])
+                    for row in prior['profiles'].values() for item in row['files']):
+                unchanged_recovery = False
             if unchanged_recovery and not args.check:
                 snapshot = ordinary_snapshot(plan, profiles, prior['selected'], prior['revision'])
                 if snapshot['writes'] or any(row['before'] != row['after'] for row in snapshot['sources'].values()):
@@ -2205,8 +2212,10 @@ def main(argv=None):
                                                                         if name not in prior['selected']]}}
                     save_transaction(recovery_receipt, prior)
             if recover or unchanged_recovery:
+                # Revalidation itself is read-only, even if a file changes after the drift check.
+                revalidate = unchanged_recovery and prior['status'] != 'incomplete'
                 recovery = automatic_recovery(root, profiles, plan=plan,
-                    prior=prior if unchanged_recovery else None, check=args.check)
+                    prior=prior if unchanged_recovery else None, check=args.check or revalidate)
                 if recovery['status'] != 'incomplete' and not args.check:
                     recovery = finish_ordinary_recovery(root, recovery)
                 result.update(status=recovery['status'], recovery=recovery, gateway_restart='not_requested',

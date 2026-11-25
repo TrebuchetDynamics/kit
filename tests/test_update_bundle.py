@@ -1484,6 +1484,44 @@ class ManagedRecoveryTests(unittest.TestCase):
         self.assertEqual((code, again['status']), (0, 'up_to_date'))
         self.assertEqual(again['recovery']['backup'], backup)
 
+        state = self.home / 'maintenance/toolset-update'
+        journal = state / 'recovery.json'
+        completed = journal.read_bytes()
+        self.assertNotEqual(json.loads(completed)['status'], 'incomplete')
+        path = self.home / 'skills/demo/SKILL.md'
+        upstream_skill = self.remote / 'skills/demo/SKILL.md'
+        edited = path.read_bytes() + b'background review lesson\n'
+        path.write_bytes(edited)
+        with patch.object(self.mod, 'finalize_profiles', return_value=[{'status': 'ready'}]), \
+             patch.object(self.mod, 'heal_chat_menus', return_value=[]), \
+             patch.object(self.mod, 'gateway_running', return_value=False):
+            code, preview = self.run_update('--check')
+            self.assertEqual((code, preview['status']), (0, 'update_available'), preview)
+            self.assertEqual([(row['path'], row['action']) for row in preview['local_edits']],
+                             [(str(path), 'reset')])
+            self.assertEqual(journal.read_bytes(), completed)
+            self.assertEqual(path.read_bytes(), edited)
+            code, repaired = self.run_update()
+            self.assertEqual((code, repaired['status']), (0, 'updated'), repaired)
+            self.assertEqual(journal.read_bytes(), completed)
+            self.assertEqual(path.read_bytes(), upstream_skill.read_bytes())
+            receipt = json.loads((state / 'latest.json').read_text())
+            self.assertEqual(receipt, repaired)
+            self.assertEqual([(row['path'], row['action']) for row in receipt['local_edits']],
+                             [(str(path), 'reset')])
+            update_backup = Path(receipt['backup'])
+            manifest = json.loads((update_backup / 'manifest.json').read_text())
+            (saved,) = [row['backup'] for row in manifest if row['path'] == str(path)]
+            self.assertEqual((update_backup / saved).read_bytes(), edited)
+
+            upstream_skill.write_bytes(b'later upstream release\n')
+            self.git(self.remote, 'commit', '-am', 'later release')
+            code, advanced = self.run_update()
+            self.assertEqual((code, advanced['status']), (0, 'updated'), advanced)
+            self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), self.git(self.remote, 'rev-parse', 'HEAD'))
+            self.assertEqual(path.read_bytes(), upstream_skill.read_bytes())
+            self.assertEqual(journal.read_bytes(), completed)
+
     def test_canonical_shared_and_live_consumers_hold_recovery(self):
         alias = self.home / 'profiles/not-live/plugins/kit'
         alias.parent.mkdir(parents=True)
@@ -1716,6 +1754,7 @@ class ManagedRecoveryTests(unittest.TestCase):
                     foreign.write_text('foreign ordinary edit\n')
                     code, held = fixture.run_update()
                     self.assertEqual(code, 1, held)
+                    self.assertEqual(held['error'], f'Ordinary destination changed since preflight: {foreign}')
                     self.assertEqual(foreign.read_text(), 'foreign ordinary edit\n')
                     foreign.write_text('new\none\ntwo\nthree\n')  # operator reconciles the disposable fixture
                 code, result = fixture.run_update()
