@@ -266,8 +266,10 @@ to install it alone or `--skip pi-bolt` to leave it untouched. Every install and
 installation. Kit uses HTTPS GitHub release metadata: stable `releases/latest`,
 `releases/tags/<PIBOLT_VERSION>` for an explicit tag, or the highest numeric
 `bolt-vX.Y.Z` tag among the first 30 releases for upstream's beta selection.
-The lookup has a 10-second connection timeout, 30-second transfer limit, five
-HTTPS-only redirects and a 1 MiB size limit. Preview performs no live lookup.
+The lookup has a 10-second connection timeout, a 30-second transfer limit, and
+at most five HTTPS-only redirects. It rejects responses larger than 1 MiB for a
+single release or 8 MiB for the beta list, which includes assets for each release.
+Preview performs no live lookup.
 
 A current result requires the **Pi-Bolt version inside the banner**, not the
 leading Pi version, plus a healthy build manifest/assets, the requested
@@ -279,9 +281,9 @@ upstream meanings; default x86-64 selection follows upstream's AVX2/libc rules.
 With no channel override, upstream selects the latest stable release for this
 install but preserves any stored beta channel for future `pi-bolt update` calls;
 an explicit channel override must match the stored channel to skip installation.
-Special modes (including Termux, mirrors and `PIBOLT_NO_PATH=1`) and layouts that
-cannot be safely matched retain the official install/repair path. Missing, stale,
-broken or wrong-build destinations also use that path. A failed or malformed
+Special modes (including Termux, mirrors, `PIBOLT_NO_PATH=1` and explicit Paseo
+registration) use the official installer directly. Missing, stale, broken, locally
+compiled or otherwise unproven builds use the official install/repair path. A failed or malformed
 release lookup for an existing installation reports `Pi-Bolt release check failed`,
 preserves it without reinstalling, and asks to retry `./install.sh --only pi-bolt`.
 This is a failed check, not an unchanged success. Pi package freshness/skill repairs
