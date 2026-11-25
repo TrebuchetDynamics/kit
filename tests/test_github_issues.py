@@ -372,8 +372,59 @@ class PublicationTests(unittest.TestCase):
         publisher.publish(api, batch)
         self.assertEqual(len(api.issues), 2)
 
+    def test_cli_retry_after_a_dispatched_issue_becomes_owned_or_closed(self):
+        for change in ('owned', 'closed', 'owned with edited body'):
+            with self.subTest(change=change):
+                api = FakeGitHub()
+                batch = {'issues': [task('a'), task('b', blocked_by=['a'])]}
+                api.ready_timeout = (2, False)
+                status, stdout, stderr = self.apply_cli(api, batch)
+                self.assertEqual((status, stdout), (1, ''))
+                self.assertIn('timed out', stderr.splitlines()[0])
+                rows = self.partial_receipt(stderr)
+                self.assertEqual(rows['b']['attempted_phase'], 'ready_post')
+                self.assertEqual(rows['b']['last_verified']['labels'], ['ai-planning'])
+                self.assertEqual(publisher.labels(api.issues[1]), {'ai-ready'})
+                self.assertEqual(api.dependencies[2], {1001})
+
+                a = api.issues[1]
+                if change == 'closed':
+                    a.update(state='closed', labels=[])
+                else:
+                    a['labels'] = [{'name': 'ai-in-progress'}]
+                if change == 'owned with edited body':
+                    a['body'] += '\nNew human decision'
+                before = copy.deepcopy(a)
+                api.ready_timeout = None
+                api.events.clear()
+
+                status, stdout, stderr = self.apply_cli(api, batch)
+                writes = [event for event in api.events if event[0] != 'GET']
+                self.assertEqual(api.issues[1], before)
+                self.assertEqual(api.dependencies[2], {1001})
+                if change == 'owned with edited body':
+                    self.assertEqual((status, stdout), (1, ''))
+                    self.assertEqual(stderr.splitlines()[0],
+                                     'Publication incomplete: #1: saved contract changed; reconcile manually')
+                    self.assertEqual(publisher.labels(api.issues[2]), {'ai-planning'})
+                    self.assertEqual(writes, [])
+                else:
+                    self.assertEqual((status, stderr), (0, ''))
+                    self.assertEqual(json.loads(stdout), [
+                        {'key': 'a', 'url': a['html_url'], 'state': before['state'],
+                         'labels': sorted(publisher.labels(before))},
+                        {'key': 'b', 'url': api.issues[2]['html_url'], 'state': 'open',
+                         'labels': ['ai-ready']},
+                    ])
+                    self.assertEqual(publisher.labels(api.issues[2]), {'ai-ready'})
+                    self.assertEqual(writes, [
+                        ('POST', 'issues/2/labels', {'labels': ['ai-ready']}),
+                        ('DELETE', 'issues/2/labels/ai-planning', None),
+                    ])
+
     def test_no_overwrite_reopen_or_redispatch_of_reconciled_work(self):
-        for change in ('closed', 'owned', 'paused', 'withdrawn', 'body', 'epic', 'duplicate', 'edge'):
+        for change in ('closed', 'owned', 'paused', 'withdrawn', 'body', 'epic', 'duplicate', 'edge',
+                       'pull request'):
             with self.subTest(change=change):
                 api = FakeGitHub()
                 batch = {'issues': [task('a')]}
@@ -393,10 +444,19 @@ class PublicationTests(unittest.TestCase):
                     api.issues[2] = copy.deepcopy(row)
                 elif change == 'edge':
                     api.dependencies[1] = {9876}
+                elif change == 'pull request':
+                    row.update(state='closed', pull_request={})
                 before = copy.deepcopy(api.issues)
-                with self.assertRaises(publisher.PublicationError):
-                    publisher.publish(api, batch)
+                api.events.clear()
+                if change in ('closed', 'owned', 'paused'):
+                    result, = publisher.publish(api, batch)
+                    self.assertEqual(result['state'], row['state'])
+                    self.assertEqual(result['labels'], sorted(publisher.labels(row)))
+                else:
+                    with self.assertRaises(publisher.PublicationError):
+                        publisher.publish(api, batch)
                 self.assertEqual(before, api.issues)
+                self.assertTrue(all(method == 'GET' for method, _, _ in api.events))
 
     def test_native_wait_on_pending_prerequisite_is_not_fake_readiness(self):
         api = FakeGitHub()
@@ -621,6 +681,28 @@ class PublicationTests(unittest.TestCase):
             with self.assertRaises(publisher.PublicationError):
                 publisher.publish(api, batch)
             self.assertEqual(api.children, before)
+
+    def test_retry_does_not_add_child_to_an_epic_seen_closed_during_reuse(self):
+        api = FakeGitHub()
+        epic = task('e', kind='epic')
+        publisher.publish(api, {'issues': [epic]})
+        api.issues[1]['state'] = 'closed'
+        original = api.api
+
+        def reopen_epic(path, method='GET', data=None, **kwargs):
+            result = original(path, method, data, **kwargs)
+            if (method, path) == ('POST', 'issues'):
+                api.issues[1]['state'] = 'open'
+            return result
+
+        api.api = reopen_epic
+        api.events.clear()
+        with self.assertRaisesRegex(publisher.PublicationError, '#1: closed'):
+            publisher.publish(api, {'issues': [epic, task('a', epic='e')]})
+        self.assertEqual(api.issues[1]['state'], 'open')  # foreign reopen after reuse
+        self.assertEqual(api.children, {})
+        self.assertFalse(any(method != 'GET' and path.startswith('issues/1/')
+                             for method, path, _ in api.events))
 
     def test_newly_owned_child_is_not_linked_into_epic(self):
         api = FakeGitHub()
