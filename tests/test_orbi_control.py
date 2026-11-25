@@ -5644,6 +5644,23 @@ class SchedulingUpdateTests(unittest.TestCase):
                                   or c['tool'] == 'systemctl' and c['argv'][1] in {
                                       'enable', 'disable', 'start', 'stop', 'cancel', 'restart', 'kill'}])
 
+    def test_start_does_not_report_current_with_redirected_engine_git_state(self):
+        self.active_rules(move=False, services={1: 'active'})
+        env_file = self.h.deploy / '.orbi/env'
+        with env_file.open('a') as stream:
+            stream.write(f'\nGIT_DIR={self.h.repo}/.git\n')
+        before = snapshot(self.h.home)
+        self.h.clear_calls()
+
+        code, doc, err = self.h.run('start')
+
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'source_unavailable')
+        self.assertIn('Git environment redirects checkout state', doc['error']['message'])
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assert_safe_trace()
+
     def test_start_newer_release_stops_workers_before_sync_and_restores_scheduling(self):
         self.active_rules(services={1: 'active'}, extra=[self.latest_release])
         code, doc, err = self.h.run('start')

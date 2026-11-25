@@ -2856,13 +2856,21 @@ def engine_track_replacement(path, track):
     text = path.read_bytes().decode('utf-8')
     pattern = re.compile(r'''^([ \t]*engine_source_track[ \t]*=[ \t]*)(["'])[^"'\r\n]*\2(?=[ \t]*(?:#|\r?$))''',
                          re.MULTILINE)
-    if len(pattern.findall(text)) != 1:
-        raise ControlError(
-            'config_invalid',
-            f'{path} must declare exactly one engine_source_track line',
-            fix='repair the native config deliberately; preserve recovery inputs', exit_code=2)
-    return text, pattern.sub(lambda match: match[1] + (
-        json.dumps(track) if match[2] == '"' else "'" + track + "'"), text, count=1)
+    if len(pattern.findall(text)) == 1:
+        replacement = pattern.sub(lambda match: match[1] + (
+            json.dumps(track) if match[2] == '"' else "'" + track + "'"), text, count=1)
+        try:
+            previous = tomllib.loads(text).get('engine_source_track')
+            # If the value is already right, do not change a lookalike elsewhere.
+            if previous == track:
+                return text, text
+            if tomllib.loads(replacement).get('engine_source_track') == track:
+                return text, replacement
+        except tomllib.TOMLDecodeError:
+            pass
+    raise ControlError('config_invalid', f'{path}: engine_source_track is not writable at the top level',
+                       fix='declare one unambiguous top-level engine_source_track line; preserve recovery inputs',
+                       exit_code=2)
 
 
 def rewrite_engine_track(deployment, track):
@@ -3175,6 +3183,10 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
         require_setup_transport(repo, target)
         require_harness(ctx, target)
         provider = require_provider(target)
+        if start:
+            current = {'step': 'verify_engine_checkout', 'mutation': 'none'}
+            require_engine_checkout(ctx, target, source_repo=repo.path)
+            current = {'step': 'preflight', 'mutation': 'none'}
         require_source(ctx, target)
         require_clean_checkout(ctx, target)
         previous = {'track': target.pin, 'head': checkout_head(ctx, target)}
@@ -3218,21 +3230,11 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                         'activated': False, 'scheduler': snapshot, 'engine_update': 'up_to_date',
                         'first_tick': 'already-active' if live else 'not-requested', **start_fields}
 
-            current = {'step': 'verify_engine_checkout', 'mutation': 'none'}
-            require_engine_checkout(ctx, target, source_repo=repo.path)
             # The release channel also considers local tags. Sync the exact
             # official tag we resolved, then verify its peeled commit.
             source_track = 'tag:' + tag
             current = {'step': 'preflight_release_track', 'mutation': 'none'}
-            _, rendered = engine_track_replacement(target.config_path, source_track)
-            try:
-                applied_track = tomllib.loads(rendered).get('engine_source_track')
-            except tomllib.TOMLDecodeError:
-                applied_track = None
-            if applied_track != source_track:
-                raise ControlError('config_invalid', 'engine_source_track is not writable at the top level',
-                                   fix='declare a top-level engine_source_track; preserve recovery inputs',
-                                   exit_code=2)
+            engine_track_replacement(target.config_path, source_track)
 
             def verify_head(head):
                 if head != expected:
@@ -4498,11 +4500,8 @@ def fleet_preflight_target(ctx, target):
         fleet_refuse(f'{target.deploy_home}: engine origin is not official')
     if not os.access(target.config_path.parent, os.W_OK) or not os.access(target.deploy_home, os.W_OK):
         fleet_refuse(f'{target.config_path}: deployment files are not writable')
-    # Test the exact rewrite without touching the config. A matching line
-    # under a TOML table is not proof that the top-level track can be changed.
-    _, rendered = engine_track_replacement(target.config_path, 'tag:installer-preflight')
-    if tomllib.loads(rendered).get('engine_source_track') != 'tag:installer-preflight':
-        fleet_refuse(f'{target.config_path}: engine_source_track is not writable at the top level')
+    # Test the exact rewrite without touching the config.
+    engine_track_replacement(target.config_path, 'tag:installer-preflight')
     source = require_source(ctx, target)
     if source['state'] != 'verified' or not re.fullmatch(r'[0-9a-f]{40}', source['head']):
         fleet_refuse(f'{target.config_path}: current engine is not pinned to its exact checkout commit')
