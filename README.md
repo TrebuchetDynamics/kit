@@ -204,7 +204,7 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `help` | Read-only action reference, without a repository or deployment. |
 | `setup` | Start by default: map to `start`, preparing and validating if absent. |
 | `setup --prepare-only` | Prepare source/configuration without scheduling or timer activation (direct helper `setup`). |
-| `start` | The command authorizes scheduling after technical checks. Prepare first if absent. |
+| `start` | The command authorizes scheduling after checks: prepare if absent; otherwise stop owned work as needed, sync, pin and validate the newest release, then repair units and start scheduling. No changes if already current with all configured timers enabled and active. |
 | `update` | Plain `update` authorizes maintenance and activation, even after an earlier `stop`. Disable owned timers, cancel queued starts and stop owned workers, then pin and validate the newest official release before starting scheduling. `update --stop` updates and leaves scheduling stopped. It is not `/update-kit`. |
 | `stop` | Disable owned timers, cancel queued starts and stop owned workers through systemd. Report `stopped` after verified inactivity. |
 
@@ -245,7 +245,7 @@ deployment; see [provider bootstrap](skills/orbi/references/lifecycle.md#first-d
 For stored-auth providers, Pi authentication must already work. Custom catalogs
 with declared key/header references require service-ready deployment env values,
 not shell-only keys; setup does not automate login or guarantee provisioning. New configs derive `git_transport` from the verified SSH/HTTPS origin
-without rewriting it; existing selections and pins are preserved.
+without rewriting it. With `setup --prepare-only`, existing selections and pins are preserved.
 
 New lifecycle setup defaults to **Pi-Bolt**, already installed on the caller's
 PATH; `--harness pi` explicitly selects stock Pi for new setup or absent-start preparation. There is no automatic

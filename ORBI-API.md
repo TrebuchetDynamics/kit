@@ -84,7 +84,7 @@ tick, activates/repairs anything or updates a stale installed helper.
 |---|---|
 | `help`, `status`, `version` | Read only. Help works on all platforms; status/version on Linux and macOS. Version reads only selected deployment engine evidence. |
 | `/orbi setup` | Starts by default. Use `/orbi setup --prepare-only` for non-activating preparation. The direct Python helper’s `setup` action is prepare-only; native `orbi setup` is different. |
-| `start` | Prepares if genuinely absent, then activates the owned timers and requests a first tick if idle. The command authorizes activation after technical checks. |
+| `start` | Prepares if genuinely absent. For an existing target, reports `already-running` without mutation when the newest official release is pinned and configured timers are enabled and active. Otherwise, quiesces as needed, syncs/pins/checks under the config lock, repairs units via shared setup/install steps and confirms enabled/active scheduling. Sync or check failure starts nothing and reports a bound `repair_command`. |
 | `stop` | Under the config lock, disable owned timers, cancel verified queued starts, stop owned non-idle workers with `systemctl --user stop` and verify inactivity. Report `stopped` with `disabled_timers` and `stopped_services`. No direct kill, restart, issue cancellation or recovery-input removal. |
 | `update` | Quiesce as for `stop`, then sync/pin/check the release and start configured scheduling through start's technical checks, even after a previous `stop`, and confirm enabled/active timers (`activation: started`). `update --stop` updates and leaves stopped (`activation: held`). Quiesce failure is nonzero, preserves partial scheduler evidence and blocks engine sync. Dry-run does not mutate or lock. |
 
