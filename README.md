@@ -205,13 +205,13 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `setup` | Start by default: map to `start`, preparing/validating if absent, then activate only with resolved gates. Explicit invocation expresses scheduling intent. |
 | `setup --prepare-only` | Prepare source/configuration without scheduling or timer activation (direct helper `setup`). |
 | `start` | Prepare if absent, then activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
-| `update` | Disable owned timers, cancel queued starts and stop owned workers, then update the engine and restore eligible scheduling. `update --stop` updates and leaves scheduling stopped. It is not `/update-kit`. |
+| `update` | Disable owned timers, cancel queued starts and stop owned workers, then update the engine and start scheduling, even after an earlier `stop`. `update --stop` updates and leaves scheduling stopped. It is not `/update-kit`. |
 | `stop` | Disable owned timers, cancel queued starts and stop owned workers through systemd. Report `stopped` after verified inactivity. |
 
 Linux supports lifecycle changes. macOS supports status, version and help only.
 Never run bare `orbi` to inspect: it runs a Runner tick, not status.
 
-Pause scheduling and update in one command (no extra stop command or prompt):
+Update the release and start scheduling in one command (no separate stop or start):
 
 ```text
 /orbi update --dry-run
@@ -219,8 +219,9 @@ Pause scheduling and update in one command (no extra stop command or prompt):
 ```
 
 Update interrupts owned workers without waiting for them to finish naturally.
-It syncs only after verifying inactivity and preserves recovery inputs and
-independent pauses. Use `--stop` to leave scheduling stopped after the update.
+It syncs only after verifying inactivity and preserves recovery inputs. Plain
+update enables configured timers only after validation and existing start checks.
+Use `--stop` to leave scheduling stopped and skip activating unit refresh.
 
 The upstream CLI remains available for diagnostics:
 

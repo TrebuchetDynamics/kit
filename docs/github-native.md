@@ -262,9 +262,10 @@ live-unverified; static routing does not qualify delivery or release pauses.
 
 `update` is the deliberate release channel: under lock it quiesces the deployment,
 then lets `sync-engine-source` resolve the newest official semver release and pins
-it as `sha:<commit>`. After non-activating validation, it restores eligible
-scheduling through the existing start gates. `update --stop` leaves scheduling
-stopped and defers unit refresh to the next authorized start. Tracked checkout
+it as `sha:<commit>`. After non-activating validation, plain update starts configured
+scheduling through the existing start gates, even after an earlier `/orbi stop`.
+`update --stop` leaves scheduling stopped and defers unit refresh to the next
+authorized start. Tracked checkout
 changes refuse as `source_dirty` before quiescing. Uncertain ownership or scheduler
 evidence blocks sync; partial failures retain completed operations and failed steps
 without claiming stopped. Update preserves origin, provider, harness
@@ -293,7 +294,7 @@ helper `start` (public default setup or start) says `started` or `already-runnin
 `updated` or `up_to_date`, and `stop` says `stopped` after verified inactivity;
 `--dry-run` says `planned` for all four. Stop and update name the disabled timers
 and stopped workers and preserve attempt files, worktrees and recovery inputs.
-Update syncs only after quiescing and restores eligible scheduling unless `--stop`
+Update syncs only after quiescing and starts scheduling unless `--stop`
 is used. The read-only `status` still describes current activity, not intent.
 Start also retains `preparation.state` (`skipped`, `planned`, `prepared`, `failed`).
 Preparation failure never activates; later failure preserves successful preparation,

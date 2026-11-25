@@ -87,13 +87,13 @@ concrete unmet need, not a fixed sequence of model turns.
    repository access. Do not require PR-only mode, special opt-in, a protection change,
    paid GitHub plan, engine release/proof or second approval on that basis.
    Authentication, repository access, ownership and all other applicable gates still apply.
-   Plain `update` requests maintenance and eligible scheduling after engine validation,
-   without another confirmation. Preserve independent pauses, cutover and human-only
-   gates before invoking it; when unresolved, name the exact missing evidence instead
-   of invoking an activating update. `update --stop` is the compatibility opt-out:
-   update and leave stopped. Stop and update disable owned timers, cancel verified
-   queued starts and stop owned workers through systemd. Confirm inactivity from
-   the receipt. Preserve attempts, worktrees and recovery inputs; no direct kill or restart.
+   Plain `update` requests scheduling after engine validation, even after an earlier
+   `stop`. Resolve separate authorization, cutover and human-only gates before
+   invoking it; when unresolved, name the exact missing evidence. Use `update --stop`
+   to update and leave scheduling stopped. Stop and update disable owned timers,
+   cancel verified queued starts and stop owned workers through systemd. Confirm
+   inactivity from the receipt. Preserve attempts, worktrees and recovery inputs;
+   no direct kill or restart.
    Other mutations likewise require accepted scope. Installation and offline checks grant none.
 3. **Invoke once.** Preserve literal argument values, quoting, paths, provider/model
    IDs, `--config`, `--repo-dir` and all restrictions. Build argv, never interpolate
@@ -116,7 +116,8 @@ concrete unmet need, not a fixed sequence of model turns.
    no new plan or paraphrase pass. Lead with target and outcome, then a next action
    only when needed. Relay `error.fix` and any exact `repair_command`; never guess
    selectors or shorten bound recovery commands. Failed quiesce blocks engine sync;
-   disabled timers alone do not prove workers stopped or the engine updated.
+   disabled timers alone do not prove workers stopped or the engine updated. A
+   `prepared` receipt with `activated: false` does not prove scheduler inactivity.
 
    Keep structured evidence available: errors, `error.fix`, `error.mutated`,
    completed/failed `steps`, disabled timers, stopped workers, `preparation`, `activation` and
@@ -215,7 +216,7 @@ For host/fixture measurement limits, use the reference's
 - A guessed alias, shell interpolation, changed literal selectors or removed dry-run.
 - Prepare-only/dry-run enables timers, status writes, or stop/update kills/restarts a service.
 - Update syncs before fresh idle/no-pending-start evidence, activates before engine
-  validation or despite an independent pause, or reports stopped from missing evidence.
+  validation or despite an unresolved start gate, or reports stopped from missing evidence.
 - Missing ownership/authorization, silently changed pin/provider/harness/origin,
   or an automatic install/login/repair/retry after a refusal.
 - An empty queue or stopped state inferred from unavailable evidence, or secrets
