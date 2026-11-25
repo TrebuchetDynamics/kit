@@ -67,6 +67,7 @@ not ask for.
 | Interface design, polish or frontend audit | `/impeccable` |
 | Turn generic UI patterns into specific GitHub issues for Orbi | `/unslop` |
 | Uizze's UI playbooks | `/ui-taste` |
+| Sakurai's game-design guidance and Japanese references online (pointer-only) | `/sakurai` |
 | README visuals and SVG assets | `/beautify-github-readme` |
 | Responsive captures at chosen breakpoints | `/responsive-screenshots` |
 | Revamp root instructions, audit their evidence, or reconcile scoped rules | `/agents-md-generator` |
