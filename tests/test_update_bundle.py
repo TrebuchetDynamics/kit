@@ -4,6 +4,7 @@ import contextlib
 import io
 import fcntl
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -2089,15 +2090,24 @@ class PinProfileTests(unittest.TestCase):
     def test_unpin_ignores_invalid_pin_records(self):
         backup = Path(self.pin()['backup'])
         record = backup/'record.json'
-        for contents in (b'{', b'\xff', b'[]', b'{}'):
-            with self.subTest(contents=contents):
+        for kind, contents in (
+            ('syntax', b'{'), ('encoding', b'\xff'), ('array', b'[]'), ('no profile', b'{}'),
+            ('integer limit', b'{"revision":' + b'1' * 5000 + b'}'),
+            ('nesting limit', b'[' * 10_000 + b'0' + b']' * 10_000),
+        ):
+            with self.subTest(kind=kind):
                 record.write_bytes(contents)
                 with self.assertRaisesRegex(ValueError, 'No saved link for work'):
                     self.unpin(dry_run=True)
         record.unlink()
-        record.mkdir()  # A matching path that cannot be read as a file.
-        with self.assertRaisesRegex(ValueError, 'No saved link for work'):
-            self.unpin()
+        os.mkfifo(record)  # Unlike a regular record, opening this could block.
+        (self.home/'profiles/work/config.yaml').write_text('{}\n')
+        result = subprocess.run([sys.executable, str(ROOT/'scripts/update_bundle.py'),
+                                 '--hermes-home', str(self.home), '--unpin-profile', 'work'],
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {'profile': 'work', 'status': 'refused',
+                                                    'error': 'No saved link for work; nothing to restore'})
         self.assertTrue((self.plugin()/'.git').is_dir())
         self.assertEqual((backup/'link').readlink(), self.repo)
 

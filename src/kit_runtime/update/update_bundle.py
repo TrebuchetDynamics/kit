@@ -1210,8 +1210,10 @@ def _pin_records(state, name):
     records = []
     for path in (state / 'pinned').glob(f'{name}-*/record.json'):
         try:
+            if not path.is_file():
+                continue
             record = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        except (OSError, ValueError, RecursionError):
             continue
         if isinstance(record, dict) and record.get('profile') == name:
             records.append(path)
