@@ -21,9 +21,9 @@ KIT_INSTALL_NO_PULL bypasses stashing and pulling; --help, --list and --dry-run 
 
 Each host item runs its own supported install command; a host whose CLI is not
 installed is skipped and says so, and fails when named with --only. Pi-Bolt is
-the only Pi harness Kit installs; its destination executable manages the Kit package. Every selected component is
-refreshed on both `install` and `update`: the Pi package and Pi-Bolt are updated
-even when a previous copy looks current, because a kept copy silently goes stale.
+the only Pi harness Kit installs; its destination executable manages the Kit package.
+The Pi package is refreshed on both `install` and `update` even when its files look
+complete; Pi-Bolt checks release metadata and skips a proven current native build.
 Orbi installs the CLI only via uv; existing CLIs and deployments are kept so a
 pinned deployment is never replaced. Pi-Bolt bootstraps or refreshes the upstream
 native Pi build and never installs its optional extensions. Hermes options
@@ -1142,13 +1142,204 @@ def pi_bolt_version(destination):
     return version.stdout.strip()
 
 
+PI_BOLT_RELEASES = 'https://api.github.com/repos/opensec-git/Pi-Bolt/releases'
+PI_BOLT_TAG = r'bolt-v([0-9]+\.[0-9]+\.[0-9]+)'
+
+
+def pi_bolt_release(output):
+    """Upstream stable latest / explicit tag / highest numeric tag in 30 beta releases."""
+    requested = os.environ.get('PIBOLT_VERSION') or 'latest'
+    channel = os.environ.get('PIBOLT_CHANNEL') or 'stable'
+    source = os.environ.get('PIBOLT_SOURCE') or 'auto'
+    prefix = os.environ.get('PREFIX', '')
+    termux = platform.system() == 'Linux' and prefix and (
+        os.environ.get('TERMUX_VERSION') or prefix.endswith('/com.termux/files/usr'))
+    # Leave alternate payload sources, install actions and invalid overrides to upstream.
+    if (termux or os.environ.get('PIBOLT_DOWNLOAD_BASE')
+            or os.environ.get('PIBOLT_NO_PATH') == '1' or os.environ.get('PIBOLT_LAUNCHER') == '1'
+            or os.environ.get('PIBOLT_PASEO') not in (None, '', 'no')
+            or source not in ('auto', 'npm', 'github') or channel not in ('stable', 'beta')
+            or (requested != 'latest' and not re.fullmatch(PI_BOLT_TAG, requested))):
+        return None
+    beta_list = requested == 'latest' and channel == 'beta'
+    if requested != 'latest':
+        url = f'{PI_BOLT_RELEASES}/tags/{requested}'
+    elif beta_list:
+        url = f'{PI_BOLT_RELEASES}?per_page=30'
+    else:
+        url = f'{PI_BOLT_RELEASES}/latest'
+    # GitHub includes asset metadata for every row; the 30-release listing can exceed 1 MiB.
+    max_bytes = (8 if beta_list else 1) * 1024 * 1024
+    # Curl before 8.4 cannot enforce --max-filesize during an unknown-length transfer.
+    # Rate and time bound that transfer too; the size check rejects any oversized result.
+    rate = '512K' if beta_list else '64K'
+    try:
+        with tempfile.TemporaryDirectory(prefix='kit-pi-bolt-check-') as directory:
+            metadata = Path(directory) / 'release.json'
+            metadata.touch(mode=0o600)
+            argv = ['curl', '--disable', '--proto', '=https', '--proto-redir', '=https',
+                    '--tlsv1.2', '--location', '--max-redirs', '5', '--connect-timeout', '10',
+                    '--max-time', '30', '--max-filesize', str(max_bytes), '--limit-rate', rate,
+                    '--fail', '--silent', '--show-error', '--header', 'Accept: application/vnd.github+json',
+                    '--output', str(metadata), url]
+            if output.verbosity > 1:
+                output.line('  $ ' + shlex.join(argv), 'command')
+            code, text = run_command(argv, output, timeout=40)
+            if code:
+                raise OSError(f'{failure_summary(text)} (exit {code})')
+            if not 0 < metadata.stat().st_size <= max_bytes:
+                raise ValueError('empty or oversized release metadata')
+            data = json.loads(metadata.read_text(encoding='utf-8'))
+        rows = data if beta_list else [data]
+        if not isinstance(rows, list) or not rows or any(not isinstance(row, dict) for row in rows):
+            raise ValueError('malformed release metadata')
+        tags = []
+        for row in rows:
+            tag = row.get('tag_name')
+            if not isinstance(tag, str) or not isinstance(row.get('draft'), bool) or not isinstance(row.get('prerelease'), bool):
+                raise ValueError('malformed release metadata')
+            match = re.fullmatch(PI_BOLT_TAG, tag)
+            if match and not row['draft']:
+                if requested != 'latest' and tag != requested:
+                    raise ValueError('release tag does not match request')
+                if requested == 'latest' and not beta_list and row['prerelease']:
+                    raise ValueError('stable metadata selects a prerelease')
+                tags.append(match.group(1))
+        if not tags:
+            raise ValueError('no Pi-Bolt release tag in metadata')
+        return max(tags, key=lambda version: tuple(map(int, version.split('.'))))
+    except (OSError, ValueError, RecursionError, subprocess.SubprocessError) as exc:
+        raise OSError(f'Pi-Bolt release check failed: {exc}; installation preserved; '
+                      'retry ./install.sh --only pi-bolt') from exc
+
+
+def pi_bolt_current(destination, release):
+    """Conservative proof of an upstream build/link; unknown layouts use official repair.
+
+    Selection and manifest/banner formats follow upstream install.sh, build-pi.sh
+    and version-fast-path.ts. Special launch/Termux modes are left to upstream.
+    """
+    if not release:
+        return None
+    try:
+        system = platform.system().lower()
+        arm = platform.machine().lower() in ('arm64', 'aarch64')
+        if system not in ('linux', 'darwin') or (system == 'darwin' and not arm):
+            return None
+        musl = ''
+        if system == 'linux' and not arm:
+            try:
+                libc = subprocess.run(['ldd', '--version'], capture_output=True, text=True,
+                                      errors='replace', timeout=5)
+            except FileNotFoundError:
+                pass  # upstream's is_musl finds no musl marker when ldd is absent
+            else:
+                musl = '-musl' if 'musl' in libc.stdout + libc.stderr else ''
+        variant = os.environ.get('PIBOLT_VARIANT') or ''
+        if variant == 'jit':
+            variant = 'arm64-jit' if arm else f'x64{musl}-jit'
+        elif not variant:
+            if arm:
+                variant = 'arm64'
+            else:
+                try:
+                    avx2 = re.search(r'\bavx2\b', Path('/proc/cpuinfo').read_text(errors='replace'))
+                except OSError:
+                    avx2 = None  # upstream's grep selects baseline if cpuinfo is unavailable
+                variant = f'x64{musl}' + ('' if avx2 else '-baseline')
+        allowed = ('arm64', 'arm64-jit') if arm else tuple(
+            f'x64{musl}{suffix}' for suffix in ('', '-baseline', '-jit'))
+        if variant not in allowed:
+            return None
+        install_root = os.environ.get('PIBOLT_INSTALL') or str(HOME / '.pi-bolt')
+        if not install_root.startswith('/'):
+            pwd = os.environ.get('PWD') or os.getcwd()
+            if not os.path.isabs(pwd) or not Path(pwd).is_dir() or not os.path.samefile(pwd, '.'):
+                pwd = os.getcwd()
+            install_root = f'{pwd}/{install_root}'
+        root = Path(install_root)
+        name = f'pi-bolt-{system}-{variant}'
+        build = root / name
+        if build.is_symlink() or (build / 'pi').is_symlink():
+            return None
+        jit = 'on' if variant.endswith('-jit') else 'off'
+        channel_file = root / 'channel'
+        if channel_file.is_symlink() or (channel_file.exists() and not channel_file.is_file()):
+            return None
+        channel = channel_file.read_text().strip() if channel_file.is_file() else 'stable'
+        # Upstream selects stable latest when the override is unset, but preserves
+        # the stored channel for future native updates. Only an explicit override
+        # requests a channel change during this install.
+        requested_channel = os.environ.get('PIBOLT_CHANNEL')
+        if channel not in ('stable', 'beta') or (requested_channel and channel != requested_channel):
+            return None
+        target = build / 'pi'
+        start = build / 'pi-start'
+        launcher = root / f'{name}.start'
+        if system == 'linux' and variant == 'x64' and (os.path.lexists(start) or launcher.is_file()):
+            if (not launcher.is_file() or launcher.is_symlink() or (os.path.lexists(start) and
+                    (not start.is_file() or start.is_symlink() or not os.access(start, os.X_OK)))):
+                return None
+            target = launcher
+            # The generated script embeds upstream's literal install path.
+            quoted = f'{install_root}/{name}'.replace("'", "'\\''")
+            expected = (f"#!/bin/sh\ndir='{quoted}'\n"
+                        'if [ -x "$dir/pi-start" ]; then exec "$dir/pi-start" "$@"; fi\n'
+                        'exec "$dir/pi" "$@"\n')
+            if target.read_text() != expected:
+                return None
+        binary = destination / 'pi-bolt'
+        if not binary.is_symlink() or binary.resolve(strict=True) != target.resolve(strict=True):
+            return None
+        # --version bypasses the normal CLI, including export's mandatory sibling assets.
+        required = ['pi', 'pi-bolt.txt', 'package.json', 'README.md', 'photon_rs_bg.wasm',
+                    'export-html/template.html', 'export-html/template.css', 'export-html/template.js',
+                    'export-html/vendor/highlight.min.js', 'export-html/vendor/marked.min.js',
+                    'export-html/vendor/marked-cjk-friendly.min.js']
+        native_platform = f'{system}-{"arm64" if arm else "x64"}'
+        helper = 'darwin-platform.node' if system == 'darwin' else 'linux-platform-x11.node'
+        required += [f'native/{system}/prebuilds/{native_platform}/{helper}']
+        if system == 'darwin':
+            required += ['pi-bin', 'pi-spawn']
+        if any(not (build / file).is_file() or not (build / file).stat().st_size for file in required):
+            return None
+        executables = [target, build / 'pi']
+        if system == 'darwin':
+            executables += [build / 'pi-bin', build / 'pi-spawn']
+        if any(not os.access(binary, os.X_OK) for binary in executables):
+            return None
+        if any(not (build / folder).is_dir() or not any((build / folder).iterdir())
+               for folder in ('docs', 'examples', 'theme', 'assets')):
+            return None
+        banner = pi_bolt_version(destination)
+        match = re.fullmatch(r'([0-9]+\.[0-9]+\.[0-9]+) \(Pi-Bolt '
+                             + re.escape(f'{release}, {system}-{variant}, JIT {jit}') + r'\)', banner)
+        if not match:
+            return None
+        manifest = (build / 'pi-bolt.txt').read_text().splitlines()
+        expected = f'Pi-Bolt {release} (Pi {match.group(1)}), {system}-{variant}, JIT {jit}, built '
+        if not (len(manifest) == 1 and re.fullmatch(re.escape(expected) + r'[0-9]{4}-[0-9]{2}-[0-9]{2}', manifest[0])):
+            return None
+        if json.loads((build / 'package.json').read_text()).get('version') != match.group(1):
+            return None
+        return banner
+    except (OSError, ValueError, IndexError, AttributeError, RuntimeError, subprocess.SubprocessError):
+        return None
+
+
 def install_pi_bolt(output=None):
-    """Always run the official installer; a kept executable silently goes stale."""
+    """Check freshness before downloading; only a proven current build skips upstream."""
     output = output or Output()
     destination = BIN.absolute()
     for command in ('curl', 'sh'):
         if not shutil.which(command):
             raise OSError(f'Pi-Bolt requires {command}; install it and retry --only pi-bolt')
+
+    if os.path.lexists(destination / 'pi-bolt'):
+        release = pi_bolt_release(output)
+        current = pi_bolt_current(destination, release)
+        if current:
+            return f'{destination / "pi-bolt"}: {current}; current (release checked; native install skipped)'
 
     def run(argv, stage, env=None):
         if output.verbosity > 1:
@@ -1187,8 +1378,8 @@ def pi_bolt_item(output=None):
     return Item('pi-bolt', 'Pi-Bolt native Pi executable',
                 note='native Pi build; reuses ~/.pi/agent; optional extensions stay off',
                 missing='' if supported else f'unsupported Pi-Bolt platform: {system} {machine} (needs GNU/Linux x86-64/ARM64 or macOS Apple silicon)',
-                steps=[Step('refresh Pi-Bolt or bootstrap it when absent; '
-                            f'download {PI_BOLT_INSTALLER} privately; run unmodified sh installer '
+                steps=[Step('check Pi-Bolt release selection for existing builds; skip a proven match; '
+                            f'otherwise bootstrap/repair: download {PI_BOLT_INSTALLER} privately and run the unmodified sh installer '
                             f'with PIBOLT_BIN_DIR={destination} PIBOLT_YES=1 PIBOLT_EXTENSIONS=no; '
                             f'verify {destination}/pi-bolt --version',
                             run=lambda: install_pi_bolt(output))])

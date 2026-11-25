@@ -161,6 +161,41 @@ class TxTests(unittest.TestCase):
             self.assertEqual(attached.returncode, 0, attached.stderr)
             self.assertIn('attach-session -t =a', log.read_text())
 
+    def open_existing_session(self, pane_path):
+        with tempfile.TemporaryDirectory(prefix='kit-tx-tmux-') as folder:
+            root = Path(folder)
+            fake = root / 'tmux'
+            shutil.copy(ROOT / 'tests/fixtures/fake_tmux.sh', fake)
+            fake.chmod(0o755)
+            log = root / 'tmux.log'
+            config = root / 'session.config'
+            config.write_text('a=/tmp\n')
+            env = {**os.environ, 'TX_CONFIG': str(config), 'TX_COLOR': 'never',
+                   'TX_TMUX': str(fake), 'FAKE_TMUX_LOG': str(log),
+                   'FAKE_RUNNING': 'a', 'FAKE_PANE_PATH': pane_path,
+                   'FAKE_PANE_COMMAND': 'bash'}
+            env.pop('TMUX', None)
+            result = subprocess.run([str(TX), 'a'], env=env, capture_output=True,
+                                    text=True, timeout=30)
+            return result, log.read_text().splitlines()
+
+    def test_existing_session_in_other_directory_attaches_without_sending_keys(self):
+        result, calls = self.open_existing_session('/elsewhere')
+        self.assertFalse(any(call.startswith('send-keys ') for call in calls), calls)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('display-message -p -t =a: #{pane_current_path}', calls)
+        self.assertIn('attach-session -t =a', calls)
+        lines = (result.stdout + result.stderr).splitlines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn('/tmp', lines[0])
+
+    def test_existing_session_in_target_directory_attaches_without_a_hint(self):
+        result, calls = self.open_existing_session('/tmp')
+        self.assertFalse(any(call.startswith('send-keys ') for call in calls), calls)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('attach-session -t =a', calls)
+        self.assertEqual(result.stdout + result.stderr, '')
+
     def test_the_package_installs_tx_without_the_removed_runner(self):
         package = json.loads((ROOT / 'package.json').read_text())
         self.assertEqual(package['bin'], {'tx': 'tmux/tx'})
