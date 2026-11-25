@@ -241,6 +241,7 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
     # Read all states rather than GitHub search (index lag can duplicate a retry).
     existing = api.pages('issues?state=all')
     saved = {}
+    already_published = set()
     for spec in specs:
         progress.attempt(spec, 'reuse')
         matches = [row for row in existing if marker(spec['key']) in (row.get('body') or '')]
@@ -249,14 +250,22 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
         if matches:
             row = matches[0]
             progress.observe(spec, row)
-            safe_existing(row)
+            row_labels = labels(row)
+            published = 'pull_request' not in row and (
+                row['state'] == 'closed' or not OWNED.isdisjoint(row_labels))
+            if not published:
+                safe_existing(row)
             if row['title'] != spec['title'] or row['body'] != body(spec):
                 raise PublicationError(f"#{row['number']}: saved contract changed; reconcile manually")
-            if (spec.get('kind') == 'epic') != ('ai-epic' in labels(row)):
-                raise PublicationError(f"#{row['number']}: changed epic classification")
-            if not spec.get('ready', True) and 'ai-ready' in labels(row):
-                raise PublicationError(f"#{row['number']}: already dispatched; cannot make pending")
             saved[spec['key']] = row
+            if published:
+                # Keep its identity for other rows, but do not replay its publication.
+                already_published.add(spec['key'])
+                continue
+            if (spec.get('kind') == 'epic') != ('ai-epic' in row_labels):
+                raise PublicationError(f"#{row['number']}: changed epic classification")
+            if not spec.get('ready', True) and 'ai-ready' in row_labels:
+                raise PublicationError(f"#{row['number']}: already dispatched; cannot make pending")
     external = {}
     for spec in specs:
         for dep in spec.get('blocked_by', []):
@@ -285,8 +294,10 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
         return {(external[d] if type(d) is int else saved[d])['id']
                 for d in spec.get('blocked_by', [])}
 
+    mutable_specs = [spec for spec in specs if spec['key'] not in already_published]
+
     # Never modify the graph of an already-dispatched retry; only exact reuse.
-    for spec in specs:
+    for spec in mutable_specs:
         progress.attempt(spec, 'dependencies')
         row = api.api(f"issues/{saved[spec['key']]['number']}")
         progress.observe(spec, row)
@@ -305,7 +316,7 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
         return api.api(f'issues/{number}/parent', missing_ok=True)
 
     # Native sub-issue links for epics; never reparent existing or owned work.
-    for spec in specs:
+    for spec in mutable_specs:
         progress.attempt(spec, 'epic')
         child = api.api(f"issues/{saved[spec['key']]['number']}")
         progress.observe(spec, child)
@@ -315,7 +326,9 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
         if current_parent and (not parent or current_parent['id'] != parent['id']):
             raise PublicationError(f"#{child['number']}: epic parent drift; reconcile manually")
         if parent and not current_parent:
-            safe_existing(api.api(f"issues/{parent['number']}"))
+            # A skipped epic cannot receive a write through another row either.
+            safe_existing(parent if spec['epic'] in already_published
+                          else api.api(f"issues/{parent['number']}"))
             if 'ai-ready' in labels(child):
                 raise PublicationError(f"#{child['number']}: dispatched issue missing epic link")
             progress.attempt(spec, 'epic_post', write=True)
@@ -350,27 +363,29 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
             raise PublicationError(f'#{number}: epic readback failed')
         return row
 
-    # Verify the entire batch before *any* readiness publication.
-    for spec in specs:
+    # Verify all remaining work before *any* readiness publication.
+    for spec in mutable_specs:
         progress.attempt(spec, 'verify_batch')
         verify(spec)
     results = []
     for spec in specs:
-        number = saved[spec['key']]['number']
-        # Earlier readiness writes may have interleaved with foreign edits.
-        # Refresh without repairing drift; reads and the label POST are not atomic.
-        progress.attempt(spec, 'verify_dispatch')
-        row = verify(spec)
-        if spec.get('kind') != 'epic' and spec.get('ready', True):
-            if 'ai-ready' not in labels(row):
-                progress.attempt(spec, 'ready_post', write=True)
-                api.api(f'issues/{number}/labels', 'POST', {'labels': ['ai-ready']})
-            if 'ai-planning' in labels(row):
-                progress.attempt(spec, 'remove_planning', write=True)
-                api.api(f'issues/{number}/labels/ai-planning', 'DELETE')
-        progress.attempt(spec, 'readback')
-        current = api.api(f'issues/{number}')
-        progress.observe(spec, current)
+        current = saved[spec['key']]
+        if spec['key'] not in already_published:
+            number = current['number']
+            # Earlier readiness writes may have interleaved with foreign edits.
+            # Refresh without repairing drift; reads and the label POST are not atomic.
+            progress.attempt(spec, 'verify_dispatch')
+            row = verify(spec)
+            if spec.get('kind') != 'epic' and spec.get('ready', True):
+                if 'ai-ready' not in labels(row):
+                    progress.attempt(spec, 'ready_post', write=True)
+                    api.api(f'issues/{number}/labels', 'POST', {'labels': ['ai-ready']})
+                if 'ai-planning' in labels(row):
+                    progress.attempt(spec, 'remove_planning', write=True)
+                    api.api(f'issues/{number}/labels/ai-planning', 'DELETE')
+            progress.attempt(spec, 'readback')
+            current = api.api(f'issues/{number}')
+            progress.observe(spec, current)
         progress.attempt(spec, 'complete')
         results.append({'key': spec['key'], 'url': current['html_url'],
                         'state': current['state'], 'labels': sorted(labels(current))})

@@ -195,11 +195,13 @@ Kit must keep incomplete batches out of dispatch:
    dependency lists or a second task-store graph. A prerequisite uses its numeric
    issue **ID**, not its issue number. Use `p0` for an evidenced urgent priority;
    do not invent dependencies to encode priority or shared files.
-4. Read back every issue, governing source, epic link and native dependency. Fix
-   incomplete contracts, cycles and unresolved references before publication.
-5. Add `ai-ready` as the **final publication phase**, only after the entire batch
-   and its edges are verified. Immediately before each actual readiness POST,
-   freshly verify the issue's title/body, open state, readiness/ownership and epic
+4. Read back every issue, governing source, epic link and native dependency for
+   work still being published. For already-published issues on retry, use the
+   stable-marker check below. Fix incomplete contracts, cycles and unresolved
+   references before publication.
+5. Add `ai-ready` as the **final publication phase**, only after checking the
+   entire batch as above. Immediately before each actual readiness POST, freshly
+   verify the issue's title/body, open state, readiness/ownership and epic
    classification, exact native `blockedBy` ID set and native parent against its
    saved complete spec. Refuse observed drift or failed reads with an issue-specific
    error; do not repair changed edges or parents during this final check. Then
@@ -214,10 +216,14 @@ from the Kit checkout to validate and preview a publication batch; `--apply`
 publishes it. The manifest is transient publication input, **not a local backlog**.
 Use stable keys from the existing plan or legacy IDs for idempotent retries.
 Serialize publishers of the same batch: GitHub issue creation has no atomic
-idempotency key. The helper refuses ambiguous matches, changed saved contracts,
-closed records and Orbi-owned issues rather than overwriting them. For refinement,
-read the issue fresh, reconcile only the intended delta, and preserve current
-ownership and dependencies; do not replay an old full snapshot.
+idempotency key. On retry, a stable-marker match that is closed or owned counts
+as already published if its title and body still match. The helper keeps its
+identity for dependencies, reports its observed state and labels, and makes no
+label, dependency or parent writes to it. The helper refuses ambiguous matches,
+changed saved contracts, pull requests and open unowned issues without either
+`ai-planning` or `ai-ready`. For refinement, read the issue fresh, reconcile only
+the intended delta, and preserve current ownership and dependencies; do not
+replay an old full snapshot.
 
 Failure may leave a partial batch: earlier issues stay ready, later issues may
 already be saved without dispatch, and a timed-out write may have been accepted.
@@ -350,7 +356,8 @@ Every input key appears, including later saved issues and never-attempted create
 - `readiness`: `ready`/`not_ready` describes the observed presence/absence of
   `ai-ready`, **not eligibility or pickup**. `unknown` means the interrupted row
   could not be freshly observed; its retained `last_verified` can be stale.
-  Owned, paused or changed work must still be reconciled, regardless of this field.
+  A matching closed or owned issue can be reused without dispatch, regardless of
+  this field. A changed saved contract still requires manual reconciliation.
 - `unverified_write`: a write has not been resolved by the relevant readback.
   An issue GET can resolve issue/label state, not an interrupted native graph write.
   `reconciliation_error`, when present, explains why recovery observation failed.
@@ -367,8 +374,9 @@ unknown writes by issue number or the same stable marker (open **and closed**
 issues, not lagging search); resolve ambiguous matches deliberately. Inspect fresh
 contracts, ownership, pauses and native graph state before reusing the same keys
 and `--apply` command. Do not create replacement keys, overwrite drift, remove
-labels or reopen owned/closed work to force a retry. The helper still applies the
-whole-batch and per-issue freshness gates; a receipt is not retry authorization.
+labels or reopen owned/closed work to force a retry. Matching closed or owned
+issues are reused without writes; the batch and per-issue freshness gates still
+apply to issues being published. A receipt is not retry authorization.
 
 Readiness is not pickup, PR delivery or merge. Distinguish a generic possible
 consumer from an observed deployment: pickup or timers require current evidence,

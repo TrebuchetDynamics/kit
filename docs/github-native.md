@@ -111,10 +111,11 @@ python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json
 python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json --apply
 ```
 
-Keep stable keys across retries. The helper inventories all issue states, reuses
-exact matches, refuses duplicates/changed contracts/closed or owned work, creates
-all issues and edges before readiness, and verifies the entire batch before any
-readiness publication. Immediately before each issue's `ai-ready` POST, it freshly
+Keep stable keys across retries. The helper inventories all issue states and
+refuses duplicates and changed contracts. A matching closed or owned issue is
+already published: the helper reports it without writes and keeps its identity
+for dependencies. It creates and verifies all remaining issues and edges before
+any readiness publication. Immediately before each issue's `ai-ready` POST, it freshly
 checks title/body, open state, readiness/ownership, epic classification, the exact
 native `blockedBy` ID set and native parent against the complete saved spec.
 Observed drift or a failed read stops publication with an issue-specific error;
