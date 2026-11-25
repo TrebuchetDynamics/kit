@@ -1590,6 +1590,37 @@ class ManagedRecoveryTests(unittest.TestCase):
         self.assertEqual(again['recovery']['backup'], str(backup))
         self.assertEqual(self.calls, calls)
         self.assertEqual(path.read_text(), 'new\none\ntwo\nthree\nlocal lesson\n')
+
+        # Ordinary work started after recovery must not reopen the native journal,
+        # even if a profile writer races the ordinary update.
+        journal = self.home / 'maintenance/toolset-update/recovery.json'
+        completed = journal.read_bytes()
+        independent_skill = independent / 'skills/demo/SKILL.md'
+        independent_skill.write_text('ordinary edit\n')
+        code, preview = self.run_update('--check')
+        self.assertEqual((code, preview['status']), (0, 'update_available'), preview)
+        self.assertEqual(journal.read_bytes(), completed)
+        self.assertEqual(independent_skill.read_text(), 'ordinary edit\n')
+        apply = self.mod.apply
+        def change_before_apply(plan, backup, **kwargs):
+            independent_skill.write_text('newer ordinary edit\n')
+            return apply(plan, backup, **kwargs)
+        with patch.object(self.mod, 'apply', change_before_apply):
+            code, held = self.run_update()
+        self.assertEqual(code, 1, held)
+        self.assertIn(f'Destination changed since preflight: {independent_skill}', held['error'])
+        self.assertEqual(journal.read_bytes(), completed)
+        self.assertEqual(independent_skill.read_text(), 'newer ordinary edit\n')
+        with patch.object(self.mod, 'finalize_profiles', return_value=[{'status': 'ready'}]), \
+             patch.object(self.mod, 'heal_chat_menus', return_value=[]), \
+             patch.object(self.mod, 'gateway_running', return_value=False):
+            code, repaired = self.run_update()
+        self.assertEqual((code, repaired['status']), (0, 'updated'), repaired)
+        self.assertEqual(journal.read_bytes(), completed)
+        self.assertEqual(independent_skill.read_text(), 'new\none\ntwo\nthree\n')
+        self.assertEqual([row['path'] for row in repaired['local_edits']], [str(independent_skill)])
+        self.assertEqual(path.read_text(), 'new\none\ntwo\nthree\nlocal lesson\n')
+
         # A later managed source still on the old release must not be masked by
         # the completed consumers' no-op, or replace their preservation bases.
         late = self.home / 'profiles/late'

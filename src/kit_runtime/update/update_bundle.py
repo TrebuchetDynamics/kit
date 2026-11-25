@@ -2203,27 +2203,31 @@ def main(argv=None):
                     or (path.exists() and stat.S_IMODE(path.stat().st_mode) != item['mode'])
                     for row in prior['profiles'].values() for item in row['files']):
                 unchanged_recovery = False
-            if unchanged_recovery and not args.check:
-                snapshot = ordinary_snapshot(plan, profiles, prior['selected'], prior['revision'])
-                if snapshot['writes'] or any(row['before'] != row['after'] for row in snapshot['sources'].values()):
-                    prior = {**prior, 'status': 'incomplete', 'ordinary_pending': True, 'ordinary_plan': snapshot,
-                             'ordinary_backup': str(Path(prior['backup']) / ('ordinary-' + str(time.time_ns()))),
-                             'managed': {**prior['managed'], 'ordinary': [name for name, _ in profiles
-                                                                        if name not in prior['selected']]}}
-                    save_transaction(recovery_receipt, prior)
             if recover or unchanged_recovery:
-                # Revalidation itself is read-only, even if a file changes after the drift check.
-                revalidate = unchanged_recovery and prior['status'] != 'incomplete'
+                # Revalidation is read-only, even if a file changes after the drift check.
                 recovery = automatic_recovery(root, profiles, plan=plan,
-                    prior=prior if unchanged_recovery else None, check=args.check or revalidate)
-                if recovery['status'] != 'incomplete' and not args.check:
+                    prior=prior if unchanged_recovery else None, check=args.check or unchanged_recovery)
+                if recover and recovery['status'] != 'incomplete' and not args.check:
                     recovery = finish_ordinary_recovery(root, recovery)
-                result.update(status=recovery['status'], recovery=recovery, gateway_restart='not_requested',
-                              action='Preserve the recovery backup; resolve per-profile errors and rerun ./install.sh --only hermes'
-                                     if recovery['status'] == 'incomplete' else 'Recovery verified offline; no runtime activation or restart requested')
-                save()
-                print(json.dumps(result, indent=2))
-                return int(result['status'] == 'incomplete')
+                if unchanged_recovery and recovery['status'] == 'up_to_date':
+                    # Independent updates use the ordinary path without reopening recovery
+                    # or resetting the recovered profiles' unchanged, merged customizations.
+                    writes = [row for row in plan['writes']
+                              if not any(row[0].is_relative_to(home / 'skills') for home in recovered_homes)]
+                    if not args.check and any(row['after'] != prior['revision'] for row in plan['sources'].values()):
+                        raise ValueError('Trusted main changed between source fetches; retry before publication')
+                    if writes or any(row['before'] != row['after'] for row in plan['sources'].values()):
+                        plan['writes'] = writes
+                        paths = {str(row[0]) for row in writes}
+                        plan['local_edits'] = [row for row in plan['local_edits'] if row['path'] in paths]
+                        recovery = None
+                if recovery is not None:
+                    result.update(status=recovery['status'], recovery=recovery, gateway_restart='not_requested',
+                                  action='Preserve the recovery backup; resolve per-profile errors and rerun ./install.sh --only hermes'
+                                         if recovery['status'] == 'incomplete' else 'Recovery verified offline; no runtime activation or restart requested')
+                    save()
+                    print(json.dumps(result, indent=2))
+                    return int(result['status'] == 'incomplete')
             result['profiles'] = plan['profiles']
             result['sources'] = {str(p): {k: s[k] for k in ('before', 'after')} for p, s in plan['sources'].items()}
             result['skill_files'] = len(plan['writes'])
