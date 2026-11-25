@@ -51,6 +51,8 @@ elif name == 'busctl':
         'wayland_display': 'wayland-kit' if session == 'managed' or mode == 'gui-display-conflict' else 'wayland-0',
         'pid': '123' if session != 'changed' else '456'}
     if mode == 'gui-missing-owner': data.pop('user_id', None)
+    if data and os.environ.get('SESSION_SECRET'):
+        data['opaque'] = os.environ['SESSION_SECRET']
     with (root / 'calls').open('a') as f:
         f.write('bus-reply ' + ('session' if data else 'empty') + '\n')
     print(json.dumps({'type': 'a{ss}', 'data': [data]}))
@@ -157,7 +159,7 @@ elif name == 'waydroid':
         count = root / 'ip-count'
         n = int(count.read_text()) if count.exists() else 0
         count.write_text(str(n+1))
-        ip = 'UNKNOWN' if mode == 'no-ip' or (mode == 'slow-ip' and n == 0) else '192.0.2.8'
+        ip = 'UNKNOWN' if mode == 'no-ip' or (mode in ['slow-ip', 'boot-progress'] and n == 0) else '192.0.2.8'
         if mode == 'gui-stopped-lie' and (root / 'stop-attempted').exists():
             print('Session:\tSTOPPED')
         elif session == 'stopped': print('Session:\tSTOPPED\nIP address:\t' + ip)
@@ -169,12 +171,16 @@ elif name == 'waydroid':
 elif name == 'adb':
     if args[0] == 'devices':
         state = 'unauthorized' if mode.endswith('unauthorized') else 'device'
+        if mode == 'boot-progress':
+            poll = int((root / 'ip-count').read_text())
+            state = '' if poll == 2 else 'unauthorized' if poll < 6 else 'device'
         print('List of devices attached\n192.0.2.8:5555\t' + state)
     elif 'getprop' in args:
         key = args[-1]
         if mode.endswith('properties-failed') and key != 'sys.boot_completed': sys.exit(1)
         if mode == 'gui-adb-owner-race' and key == 'ro.product.cpu.abi': session_file.write_text('foreign')
-        print({'sys.boot_completed': '0' if mode.endswith('boot-timeout') else '1', 'ro.build.version.release': '13', 'ro.product.cpu.abi': 'x86_64'}[key])
+        booting = mode.endswith('boot-timeout') or (mode == 'boot-progress' and int((root / 'ip-count').read_text()) < 11)
+        print({'sys.boot_completed': '0' if booting else '1', 'ro.build.version.release': '13', 'ro.product.cpu.abi': 'x86_64'}[key])
 elif name == 'weston':
     if '--help' in args:
         print('unsupported' if mode == 'gui-no-weston' else '--backend --use-pixman headless --socket --no-config')
@@ -423,7 +429,7 @@ print('fixture-shell-usable', flush=True)
         output = self.pty_setup('respond')
         self.assertIn('fixture-exit=0', output)
         self.assertIn('ADB serial:', output)
-        self.assertEqual(output.count('Prerequisite inspection'), 1)
+        self.assertEqual(output.count('[1/8] prerequisites:'), 1)
         self.assertEqual(self.calls().splitlines().count('uname -s'), 2)
         self.assertEqual(self.calls().splitlines().count('sudo -v'), 1)
         self.assertEqual(self.calls().splitlines().count('waydroid init -c https://ota.waydro.id/system -v https://ota.waydro.id/vendor'), 1)
@@ -707,6 +713,84 @@ print('fixture-shell-usable', flush=True)
         self.assertEqual(before, {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in artifacts})
         self.assertIn('ADB serial: 192.0.2.8:5555\nAndroid: 13\nABI: x86_64', result.stdout)
 
+    def test_ready_setup_reports_eight_stages_and_zero_changes(self):
+        self.assert_ok(self.invoke())
+        result = self.invoke()
+        self.assert_ok(result)
+        stages = ['prerequisites', 'sudo', 'packages', 'transfer', 'initialization',
+                  'container service', 'user service', 'Android verification']
+        lines = [line for line in result.stdout.splitlines() if line.startswith('[')]
+        self.assertEqual(len(lines), len(stages), result.stdout)
+        for index, (line, stage) in enumerate(zip(lines, stages), 1):
+            self.assertRegex(line, rf'^\[{index}/8\] {stage}: (unchanged|skipped) \(.+\) [0-9]+s$')
+        self.assertIn('Summary: 0 changed (none)', result.stdout)
+        self.assertIn('unchanged (packages, initialization, container drop-in', result.stdout)
+        self.assertEqual(result.stdout.splitlines()[-3:],
+                         ['ADB serial: 192.0.2.8:5555', 'Android: 13', 'ABI: x86_64'])
+
+    def test_first_setup_reports_changes_and_long_step_starts(self):
+        (self.bin / 'weston').unlink()
+        result = self.invoke(mode='slow-ip')
+        self.assert_ok(result)
+        for number, stage, detail in [(3, 'packages', 'installing weston'),
+                                      (5, 'initialization', 'running waydroid init'),
+                                      (8, 'Android verification', 'waiting for Android boot')]:
+            start = f'{stage}: starting ({detail})'
+            end = f'[{number}/8] {stage}: ' + ('unchanged' if number == 8 else 'changed')
+            self.assertLess(result.stdout.index(start), result.stdout.index(end))
+        self.assertIn('Android boot wait: ip', result.stdout)
+        self.assertIn('[6/8] container service: changed', result.stdout)
+        self.assertIn('[7/8] user service: changed', result.stdout)
+        self.assertIn('Summary: 8 changed (packages, initialization, container drop-in, '
+                      'container service, linger, service executable, user unit, user service); '
+                      '1 unchanged (graphical transfer)', result.stdout)
+
+    def test_boot_progress_throttles_changes_and_does_not_repeat_reasons(self):
+        self.assert_ok(self.invoke())
+        (self.base / 'ip-count').unlink()
+        # Virtual seconds in the foreground Bash loop, with no wall-clock sleep.
+        clock = self.base / 'clock.sh'
+        clock.write_text('unset SECONDS\nSECONDS=0\nsleep() { SECONDS=$((SECONDS + 5)); }\n')
+        self.env['BASH_ENV'] = str(clock)
+        result = self.invoke('--wait', '55', mode='boot-progress')
+        self.assert_ok(result)
+        reasons = [line for line in result.stdout.splitlines() if line.startswith('Android boot wait:')]
+        # connection at 5s is throttled; authorization at 15s and boot at 30s
+        # are reported, but the unchanged boot reason at 45s isn't repeated.
+        self.assertEqual(reasons, ['Android boot wait: ip', 'Android boot wait: authorization',
+                                   'Android boot wait: boot'])
+        self.assertIn('[8/8] Android verification: unchanged (Android ready) 50s', result.stdout)
+
+    def test_check_reports_numbered_read_only_results(self):
+        result = self.invoke('--check', mode='manager-absent')
+        self.assert_ok(result)
+        lines = result.stdout.splitlines()
+        self.assertEqual(len(lines), 8, result.stdout)
+        for number, line in enumerate(lines, 1):
+            self.assertRegex(line, rf'^\[{number}/8\] .+: (unchanged|skipped) \(.+\) [0-9]+s$')
+        self.assertIn('packages: unchanged (waydroid, weston, adb present)', lines[2])
+        self.assertNotIn('sudo ', self.calls())
+        self.assertFalse(self.payload.exists())
+
+    def test_verbose_reports_commands_without_logging_session_data(self):
+        normal = self.invoke()
+        self.assert_ok(normal)
+        self.assertNotIn('sudo -n --', normal.stdout + normal.stderr)
+        self.assertNotIn('systemctl --user show-environment', normal.stdout + normal.stderr)
+        (self.base / 'linger').unlink()
+        secret = 'fixture-session-secret-not-for-output'
+        self.env['SESSION_SECRET'] = secret
+        verbose = self.invoke('--verbose')
+        self.assert_ok(verbose)
+        self.assertIn('sudo -n -- loginctl enable-linger tester', verbose.stderr)
+        self.assertIn('systemctl --user show-environment', verbose.stderr)
+        self.assertIn('waydroid status', verbose.stderr)
+        trace = verbose.stderr.splitlines()
+        self.assertIn('+ timeout 10 adb devices', trace)
+        self.assertTrue(all(line.startswith('+ ') for line in trace), verbose.stderr)
+        self.assertIn('Summary: 1 changed (linger);', verbose.stdout)
+        self.assertNotIn(secret, verbose.stdout + verbose.stderr)
+
     def test_ready_setup_repairs_only_changed_dropin(self):
         self.assert_ok(self.invoke())
         expected = self.dropin.read_bytes()
@@ -852,6 +936,13 @@ print('fixture-shell-usable', flush=True)
                 self.assertIn('unattended first-time authorization', result.stderr)
                 self.assertIn('--status', result.stderr)
                 self.assertNotIn('ADB serial:', result.stdout)
+                changes = {'stopped': '1 changed (user service)',
+                           'gui': '2 changed (user service, graphical transfer)',
+                           'managed': '0 changed (none)'}
+                self.assertRegex(result.stdout.splitlines()[-2],
+                                 r'^\[8/8\] Android verification: failed \(see stderr\) [0-9]+s$')
+                self.assertTrue(result.stdout.splitlines()[-1].startswith(f'Summary: {changes[session]};'),
+                                result.stdout)
                 self.assertEqual((self.base / 'session').read_text(), 'managed')
                 setup_calls = self.calls()
                 self.assertEqual(setup_calls.splitlines().count('waydroid session stop'), int(session == 'gui'))
@@ -1001,6 +1092,13 @@ print('fixture-shell-usable', flush=True)
                 result = self.invoke(mode='gui')
                 self.assertEqual(result.returncode, 124 if failure == 'timeout' else 1, result.stderr)
                 self.assertIn(diagnostic, result.stderr)
+                self.assertIn('waydroid-setup: DNF resolution/install ', result.stderr)
+                lines = result.stdout.splitlines()
+                self.assertRegex(lines[0], r'^\[1/8\] prerequisites: unchanged \(.+\) [0-9]+s$')
+                self.assertRegex(lines[1], r'^\[2/8\] sudo: unchanged \(.+\) [0-9]+s$')
+                self.assertIn('packages: starting (installing weston)', lines)
+                self.assertRegex(lines[-1], r'^\[3/8\] packages: failed \(see stderr\) [0-9]+s$')
+                self.assertNotIn('[4/8]', result.stdout)
                 self.assertIn('weston', result.stderr)
                 self.assertIn('retry setup', result.stderr)
                 self.assertNotIn('Missing cached DNF package', result.stderr)

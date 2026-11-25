@@ -24,9 +24,52 @@ same-user graphical session is transferred, not a supported steady state.
 **Live qualification is still outstanding**; fixture tests are not installation or
 reboot evidence. Prior run `374a5fbe` remains prior environment evidence, not proof.
 
+## Read the setup progress
+
+Setup prints eight numbered results in order: prerequisites, sudo, packages,
+transfer, initialization, container service, user service, and Android
+verification. Each result includes elapsed seconds. Package installation, image
+initialization and the Android boot wait announce when they start. During the boot
+wait, a changed reason (`ip`, `connection`, `authorization` or `boot`) is reported
+at most once every 15 seconds.
+
+For example, on a first run that needs Weston and fresh images (excerpt):
+
+```text
+packages: starting (installing weston)
+[3/8] packages: changed (installed weston) 12s
+initialization: starting (running waydroid init)
+[5/8] initialization: changed (images and configuration ready) 212s
+[6/8] container service: changed (container drop-in, container service, linger) 2s
+[7/8] user service: changed (service executable, user unit, user service) 3s
+Android verification: starting (waiting for Android boot)
+Android boot wait: boot
+[8/8] Android verification: unchanged (Android ready) 25s
+Summary: 8 changed (packages, initialization, container drop-in, container service, linger, service executable, user unit, user service); 1 unchanged (graphical transfer)
+```
+
+Run the same command again on the ready host (excerpt):
+
+```text
+[2/8] sudo: skipped (no privileged changes needed) 0s
+[3/8] packages: unchanged (waydroid, weston, adb present) 0s
+[5/8] initialization: unchanged (already initialized) 0s
+Summary: 0 changed (none); 9 unchanged (packages, initialization, container drop-in, container service, linger, service executable, user unit, user service, graphical transfer)
+```
+
+The summary comes before the final `ADB serial:`, `Android:` and `ABI:` lines.
+If provisioning completed but Android verification fails (for example, ADB
+authorization is pending), setup still reports what changed, without the ready
+report. A failed stage points to the existing error on stderr.
+Add `--verbose` to see external commands (including `sudo -n -- ...`)
+on stderr before they run. It does not trace environment contents, captured
+session data or terminal input; password entry still belongs to sudo.
+
 ## Host capabilities, not a distro allowlist
 
-The read-only admission command makes no files, sudo calls or downloads:
+The read-only admission command prints the same numbered stages, skipping work
+that would change the host or connect to Android. It makes no files, sudo calls
+or downloads:
 
 ```sh
 /path/to/kit/waydroid-universal-setup.sh --check
@@ -93,7 +136,7 @@ requirements; supplying a distro name does not establish the capabilities.
 ## Sudo admission, cancellation and safe retry
 
 Setup inspects prerequisites before and after acquiring its per-user lock, but
-prints only the final inspection summary. `--check` remains read-only and sudo-free.
+prints just one prerequisites result. `--check` remains read-only and sudo-free.
 Setup calls sudo and keeps its authorization alive only if it needs to install
 packages, finish initialization, update the container drop-in, enable or start
 `waydroid-container.service`, or enable linger. A ready host skips sudo entirely,
