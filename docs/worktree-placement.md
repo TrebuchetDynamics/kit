@@ -25,11 +25,18 @@ Copy `scripts/worktree_paths.py` to
 }
 ```
 
-The native creation hook prints the created absolute path. The Bash guard redirects
-ordinary manual `git worktree add` calls to `EnterWorktree`; it is a workflow guard,
-not a shell sandbox. The removal hook keeps dirty, ignored-file-bearing and
-unmerged checkouts, and never deletes branches. Restart existing Claude sessions
-to ensure they load the new hooks and user instructions.
+The native creation hook prints the created absolute path. When you reuse a name,
+it checks out the kept `claude/NAME` branch at its existing tip if that tip is
+contained in the invoking checkout's `HEAD` and the branch is not checked out
+elsewhere. If the branch has commits missing from that baseline, the hook names
+the branch and refuses without changing it. Merge those commits into the baseline
+or choose another worktree name.
+
+The Bash guard redirects ordinary manual `git worktree add` calls to
+`EnterWorktree`; it is a workflow guard, not a shell sandbox. The removal hook
+keeps dirty, ignored-file-bearing and unmerged checkouts, and never deletes
+branches. Restart existing Claude sessions to ensure they load the new hooks and
+user instructions.
 
 The hook payloads and lifecycle are documented in the
 [Claude Code hooks reference](https://code.claude.com/docs/en/hooks).

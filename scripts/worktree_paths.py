@@ -76,7 +76,17 @@ def hook(payload):
         path = worktree_path(payload['cwd'], 'claude-' + name)
         root = canonical_root(payload['cwd'])
         baseline = git(payload['cwd'], 'rev-parse', 'HEAD')
-        git(root, 'worktree', 'add', '-b', 'claude/' + name, str(path), baseline)
+        branch = 'claude/' + name
+        ref = 'refs/heads/' + branch
+        if ref in git(root, 'for-each-ref', '--format=%(refname)', ref).splitlines():
+            merged = git(root, 'for-each-ref', '--format=%(refname)', '--merged', baseline, ref)
+            if ref not in merged.splitlines():
+                raise ValueError(f'Branch {branch} has commits not in the baseline; '
+                                 'merge them or choose another worktree name')
+            # Without force, Git refuses a branch already checked out elsewhere.
+            git(root, 'worktree', 'add', str(path), branch)
+        else:
+            git(root, 'worktree', 'add', '-b', branch, str(path), baseline)
         print(path)
     elif event == 'WorktreeRemove':
         path = Path(payload['worktree_path']).absolute()
