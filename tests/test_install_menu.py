@@ -1269,8 +1269,11 @@ if __name__ == '__main__':
     spec.loader.exec_module(updater)
     if os.environ.get('NATIVE_HOST_FAIL'): os.environ['PI_BOLT_FIXTURE_STAGE'] = 'install'
     if os.environ.get('NATIVE_PAYLOAD'): Path(os.environ['NATIVE_PAYLOAD']).write_text('native-current')
-    print(json.dumps({{'status': 'updated', 'gateway_restart': os.environ['NATIVE_DISPOSITION'],
-                       'hosts': updater.refresh_hosts(Path(__file__).resolve().parents[1])}}))
+    if os.environ.get('NATIVE_UP_TO_DATE'):
+        print(json.dumps({{'status': 'up_to_date', 'gateway_restart': 'not_needed'}}))
+    else:
+        print(json.dumps({{'status': 'updated', 'gateway_restart': os.environ['NATIVE_DISPOSITION'],
+                           'hosts': updater.refresh_hosts(Path(__file__).resolve().parents[1])}}))
 ''')
         report = self.home / 'report.jsonl'
         for command in ((), ('update',)):
@@ -1340,6 +1343,29 @@ elif [[ "$*" == *show* ]]; then echo 'ExecStart={{ path=/usr/bin/codex ; argv[]=
                 self.assertEqual(skill.read_text(), 'native-current')
                 self.assertEqual(self.calls('systemctl --user try-restart'),
                                  ['systemctl --user try-restart kit-codex.service'])
+
+        # On an up-to-date rerun Hermes does not refresh hosts or emit host rows.
+        # A service restart failed for a payload installed by the nested refresh.
+        self.log.write_text('')
+        self.bolt.write_text(PI + '# previous release\n')
+        self.recording_services()
+        systemctl = (self.bin / 'systemctl').read_text()
+        self.fake('systemctl', systemctl + '\nif [[ "$*" == *try-restart* ]]; then exit 17; fi\n')
+        argv = ['bash', str(source / 'install.sh'), '--no-pull', '--only', 'hermes', '--skip', 'orbi']
+        env.pop('NATIVE_PAYLOAD')
+        failed = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=30, cwd=self.project)
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertIn('kit-bolt.service: restart failed (exit 17)', failed.stdout)
+        self.fake('systemctl', systemctl)
+        env['NATIVE_UP_TO_DATE'] = '1'
+        restart = 'systemctl --user try-restart kit-bolt.service'
+        rerun = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=30, cwd=self.project)
+        self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart, restart])
+        third = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=30, cwd=self.project)
+        self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart, restart])
+        self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
 
     def test_nested_missing_evidence_holds_an_earlier_changed_consumer(self):
         self.recording_services()
@@ -3605,6 +3631,7 @@ class PullCheckoutTests(unittest.TestCase):
                 env = {k: v for k, v in os.environ.items()
                        if k not in ('KIT_INSTALL_NO_PULL', 'KIT_INSTALL_PULLED')}
                 with patch.dict(os.environ, env, clear=True), patch.object(install_menu, 'ROOT', repo), \
+                        patch.object(install_menu, 'BIN', Path(tmp) / 'bin'), \
                         patch.object(install_menu, 'pull_checkout',
                                      side_effect=lambda *a, **kw: original_pull_checkout(*a, run=run, **kw)), \
                         patch.object(install_menu, 'items') as components, \
@@ -3651,9 +3678,21 @@ def fixture_trace(event):
         stream.write(json.dumps([event, FIXTURE_VERSION, sys.argv[1:],
                                  os.environ.get('KIT_INSTALL_PULLED', '')]) + '\n')
 fixture_trace('load')
+if os.environ.get('KIT_INSTALL_PULLED'):
+    # Probe before main can reacquire a lock on the new revision.
+    lock_path = BIN.with_name(BIN.name + '.kit-install.lock')
+    with lock_path.open() as probe:
+        try:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            raise AssertionError('installer lock was not held across re-exec')
 def fixture_component():
     fixture_trace('component')
     return 'fixture installed'
+def installed_baseline(*args, **kwargs):
+    return {}  # never query real host CLIs from this fixture
 def items(*args, **kwargs):
     return [Item('tx', 'fixture', steps=[Step('fixture component', run=fixture_component)])]
 def restart_services(output, observations=None, settled=None):
@@ -3683,6 +3722,110 @@ def restart_services(output, observations=None, settled=None):
 
     def events(self):
         return [json.loads(line) for line in self.trace.read_text().splitlines()]
+
+    def test_held_installer_lock_refuses_before_stashing_or_pulling(self):
+        self.installer_fixture()
+        self.dirty()
+        (self.other / 'f').write_text('upstream advanced')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'advance')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
+        report = Path(self.tmp.name) / 'install.jsonl'
+        report.write_text('holder receipt\n')
+        lock_path = Path(self.entry_env['KIT_BIN_DIR']).with_name('bin.kit-install.lock').resolve()
+        with lock_path.open('a+') as lock:
+            inode = lock_path.stat().st_ino
+            lock.write(f'{os.getpid()}\n')
+            lock.flush()
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            result = self.entry(env={'KIT_INSTALL_REPORT': str(report)})
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f'installer lock {lock_path} held by PID {os.getpid()}', result.stdout)
+            self.assertEqual((self.head(self.clone), self.stashes(), self.git('status', '--porcelain')),
+                             before, result.stdout)
+            self.assertEqual(report.read_text(), 'holder receipt\n')
+            self.assertIn('let the holder finish, then retry; do not remove the lock file', result.stdout)
+            self.assertEqual([event[0] for event in self.events()], ['load'])
+        self.trace.write_text('')
+        result = self.entry()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.head(self.clone), self.head(self.other))
+        self.assertEqual(len(self.stashes()), 1)
+        self.assertEqual(lock_path.stat().st_ino, inode)
+        self.assertEqual([event[0] for event in self.events()], ['load', 'load', 'component', 'restart'])
+
+    def test_checkout_preparation_does_not_stash_its_own_lock(self):
+        self.installer_fixture()
+        self.dirty()
+        env = {'KIT_BIN_DIR': str(self.clone / 'bin')}
+        lock_path = self.clone.resolve() / 'bin.kit-install.lock'
+        before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
+
+        result = self.entry(env=env)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'installer lock {lock_path} is inside the Git checkout', result.stdout)
+        self.assertIn('--no-pull', result.stdout)
+        self.assertFalse(lock_path.exists())
+        self.assertEqual((self.head(self.clone), self.stashes(), self.git('status', '--porcelain')), before)
+
+        result = self.entry('--no-pull', env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.head(self.clone), self.stashes()), before[:2])
+        with lock_path.open('r+') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            inode, metadata = lock_path.stat().st_ino, f'{os.getpid()}\n'
+            lock.write(metadata)
+            lock.truncate()
+            lock.flush()
+            result = self.entry(env=env)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f'installer lock {lock_path} held by PID {os.getpid()}', result.stdout)
+        result = self.entry(env=env)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('--no-pull', result.stdout)
+        self.assertEqual((lock_path.stat().st_ino, lock_path.read_text()), (inode, metadata))
+        self.assertEqual((self.head(self.clone), self.stashes()), before[:2])
+
+    def test_checkout_preparation_refuses_a_bin_alias_that_stash_would_remove(self):
+        self.installer_fixture()
+        alias = self.clone / 'local-bin'
+        alias.symlink_to(self.entry_env['KIT_BIN_DIR'], target_is_directory=True)
+        before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
+        result = self.entry(env={'KIT_BIN_DIR': str(alias)})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'KIT_BIN_DIR alias {alias} is inside the Git checkout', result.stdout)
+        self.assertIn('--no-pull', result.stdout)
+        self.assertEqual((self.head(self.clone), self.stashes(), self.git('status', '--porcelain')), before)
+        self.assertTrue(alias.is_symlink())
+        self.assertFalse(Path(self.entry_env['KIT_BIN_DIR']).with_name('bin.kit-install.lock').exists())
+
+    def test_unknown_item_refuses_before_stashing_or_pulling(self):
+        self.installer_fixture()
+        self.dirty()
+        (self.other / 'f').write_text('upstream advanced')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'advance')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
+        for flag in ('--only', '--skip'):
+            with self.subTest(flag=flag):
+                result = self.entry(flag, 'nope')
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn('unknown item(s): nope', result.stderr)
+                self.assertEqual((self.head(self.clone), self.stashes(), self.git('status', '--porcelain')),
+                                 before, result.stdout)
+
+    def test_unpacked_menu_cancellation_does_not_create_a_lock(self):
+        self.installer_fixture()
+        release = Path(self.tmp.name) / 'release'
+        shutil.copytree(self.clone, release, ignore=shutil.ignore_patterns('.git'))
+        report = release / 'install.jsonl'
+        result = subprocess.run(['./install.sh', '--menu'], cwd=release, capture_output=True,
+                                text=True, input='q\n', timeout=20,
+                                env={**self.entry_env, 'KIT_INSTALL_UI': 'text', 'KIT_INSTALL_REPORT': str(report)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Nothing installed.', result.stdout)
+        self.assertFalse(report.exists())
+        self.assertFalse(Path(self.entry_env['KIT_BIN_DIR']).with_name('bin.kit-install.lock').exists())
 
     def test_entrypoint_runs_clean_disk_code_once_after_stashing(self):
         self.installer_fixture()

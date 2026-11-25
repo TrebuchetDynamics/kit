@@ -137,20 +137,25 @@ These rules do not change the separate [tmux installer](../tmux/README.md#instal
 `tmux/install.sh` and `tx install` still use their existing timestamp backups,
 including backups beside the command in the bin directory.
 
-Non-preview suite runs take a nonblocking advisory lock before writing the private
-installer receipt or running any component, and hold it through service restarts
-and the summary. The lock is beside the resolved binary directory:
-`~/.local/bin.kit-install.lock` by default, or `<KIT_BIN_DIR>.kit-install.lock`.
+The installer rejects unknown `--only` and `--skip` names before changing the
+checkout. Non-preview suite runs take a nonblocking advisory lock before any
+automatic stash or pull, and hold it across re-execution through component
+installs, service restarts and the summary. The lock is beside the resolved binary
+directory: `~/.local/bin.kit-install.lock` by default, or `<KIT_BIN_DIR>.kit-install.lock`.
 Overlapping runs targeting that directory fail immediately with the lock path and
-holder PID, without touching the receipt or installing anything. Let the holder
-finish, then retry the same command. Do not delete or replace the lock file to
-bypass a refusal: doing so permits separate writers. The kernel releases the lock
-when the installer exits, including after a crash; the persistent file and its old
-PID alone are not a live lock. Retry normally after confirming the old installer
-and any child host commands have ended; only a successful lock acquisition replaces
-old PID metadata. Dry-run, list and menu preview/cancellation take no lock and
-create no receipt or lock file. This serializes suite installers for the same
-binary directory, not unrelated manual host commands or native updater ownership.
+holder PID, without stashing, pulling, touching the receipt or installing anything.
+Let the holder finish, then retry the same command. Do not delete or replace the
+lock file: doing so permits separate writers. If the lock path or a `KIT_BIN_DIR`
+alias is inside the Git checkout, use a `KIT_BIN_DIR` outside the checkout or run
+with `--no-pull` so Git cannot stash or replace the lock or its alias. The kernel
+releases the lock when the installer and any child holding a copy of its lock
+descriptor have closed it, including after a crash. The persistent file and its
+old PID alone are not a live lock; only a successful acquisition replaces the
+old PID. Dry-run and list take no lock and write no receipt. For
+unpacked releases and runs with automatic checkout preparation disabled, menu
+cancellation also takes no lock and writes no receipt. This serializes suite
+installers for the same binary directory, not unrelated manual host commands or
+native updater ownership.
 
 Output streams during each install step, including native prompts. Verbose output
 is on by default (`--verbose`) and shows shell-quoted commands; `--quiet` shows summaries and failure diagnostics,
@@ -175,8 +180,8 @@ Timestamps, updater success messages and checkout HEAD alone are not change evid
 Installed evidence is captured before automatic stash/pull and carried across installer re-execution,
 so source-linked packages retain their original baseline. This may inspect candidate hosts before
 menu selection; only the final selection can update payloads or request restarts.
-Outside the [Orbi fleet refresh](#orbi-cli), a healthy unchanged repeat requests no service
-restarts, including nested host refreshes. Only complete changed payloads are eligible for this
+Outside the [Orbi fleet refresh](#orbi-cli), an unchanged repeat with no pending restart work
+requests no service restarts, including nested host refreshes. Only complete changed payloads are eligible for this
 consumer restart pass; it affects supported host integrations only.
 On Linux user systemd, active `kit-*` units
 must reference the affected executable or configuration input before one `try-restart` is requested.
@@ -186,8 +191,8 @@ unit references are held with the named input/service and an inspection/retry ac
 Hosts without Linux user systemd report restarts unavailable. Restart failures make installation fail.
 The installer saves observed changes beside its lock before moving on to the next component. If it is
 interrupted or a restart fails, fix the reported problem and rerun with the same selection. The installer
-rechecks the affected consumers even if the refreshed payload is now unchanged. Unverified unit
-references leave restart work pending. The installer records successful restarts even if a later
+rechecks the affected consumers even if the refreshed payload is now unchanged or Hermes does not
+repeat a completed nested host refresh. Unverified unit references leave restart work pending. The installer records successful restarts even if a later
 restart is interrupted, so retries can skip those units for the same payload. Once the restart work is
 complete, an unchanged repeat requests no restart. A failed payload holds its consumer while
 independent successful changes remain eligible.

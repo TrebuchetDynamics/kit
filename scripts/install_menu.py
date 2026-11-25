@@ -36,6 +36,7 @@ Standard library only.
 """
 import argparse
 import codecs
+from contextlib import contextmanager, nullcontext
 import fcntl
 import hashlib
 import importlib.util
@@ -62,6 +63,7 @@ ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
                '1a8b2f9603f6258cb105293f238a8d3f775f3393')
 HOME = Path(os.environ.get('HOME', str(Path.home())))
 BIN = Path(os.environ.get('KIT_BIN_DIR') or HOME / '.local' / 'bin')
+ITEM_KEYS = ('pi-bolt', 'pi', 'tx', 'hermes', 'claude', 'codex', 'orbi')
 
 def manifest_name(relative, key='name'):
     """A plugin or marketplace name declared by a manifest in this checkout."""
@@ -1694,7 +1696,7 @@ def read_pending_restarts(path):
     try:
         pending = json.loads(path.read_text(encoding='utf-8'))
         if not isinstance(pending, dict) or any(
-                not isinstance(row, dict) or any(
+                not isinstance(row, dict) or not isinstance(row.get('delegated', False), bool) or any(
                     not isinstance(row.get(field), list) or
                     any(not isinstance(value, str) for value in row[field])
                     for field in ('changed_inputs', 'directories', 'restarted_units'))
@@ -1862,26 +1864,62 @@ def restart_services(output, observations=None, settled=None):
     return '; '.join(reasons) or 'no active supported consumers; no service restart requests'
 
 
-def install(all_items, chosen, dry_run=False, output=None, mode='install', baseline=None, *, skip_orbi=False):
+def install(all_items, chosen, dry_run=False, output=None, mode='install', baseline=None, *,
+            skip_orbi=False, lock=None):
     output = output or Output()
     if dry_run or (not chosen and not os.environ.get('KIT_INSTALL_REPORT')):
         return _install(all_items, chosen, dry_run=dry_run, output=output, mode=mode)
+    with (installer_lock(output) if lock is None else nullcontext(lock)) as held:
+        if held is None:
+            return 1
+        binary_dir = BIN.resolve()
+        state_path = binary_dir.with_name(binary_dir.name + '.kit-install-restarts.json')
+        try:
+            return _install(all_items, chosen, output=output, mode=mode, lock_fd=held.fileno(),
+                            baseline=baseline, state_path=state_path, skip_orbi=skip_orbi)
+        except RestartStateError as exc:
+            output.line(f'  FAILED: pending service restarts: {exc}; repair the state file or its access and rerun ./install.sh with the same options', 'failed')
+            return 1
+
+
+@contextmanager
+def installer_lock(output, before_pull=False):
     # Resolve aliases so checkouts targeting the same binary directory share one
     # persistent inode. Never unlink it: that would allow two independent locks.
     binary_dir = BIN.resolve()
     lock_path = binary_dir.with_name(binary_dir.name + '.kit-install.lock')
+    lock = None
+    placement_error = None
     try:
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        if before_pull:
+            # Git must not replace the lock entry or change which inode BIN selects.
+            bin_alias = Path(os.path.abspath(BIN))
+            if lock_path.is_relative_to(ROOT) or lock_path.resolve().is_relative_to(ROOT):
+                placement_error = f'installer lock {lock_path} is inside the Git checkout'
+            elif bin_alias.is_relative_to(ROOT) and not binary_dir.is_relative_to(ROOT):
+                placement_error = f'KIT_BIN_DIR alias {bin_alias} is inside the Git checkout'
+            if placement_error:
+                placement_error += '; set KIT_BIN_DIR outside it or retry with --no-pull.'
         inherited = os.environ.get('KIT_INSTALL_LOCK_FD')
-        lock = (os.fdopen(os.dup(int(inherited)), 'a+', encoding='utf-8') if inherited
-                else lock_path.open('a+', encoding='utf-8'))
+        if not placement_error:
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+        if inherited:
+            lock = os.fdopen(os.dup(int(inherited)), 'a+', encoding='utf-8')
+        else:
+            # If a lock already exists, preserve the usual contention diagnostic.
+            lock = lock_path.open('r+' if placement_error else 'a+', encoding='utf-8')
         actual, expected = os.fstat(lock.fileno()), lock_path.stat()
         if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
-            lock.close()
             raise OSError('inherited installer lock does not match the binary directory')
-    except (OSError, ValueError) as exc:
-        output.line(f'  FAILED: cannot open installer lock {lock_path}: {exc}', 'failed')
-        return 1
+    except (OSError, RuntimeError, ValueError) as exc:
+        if lock is not None:
+            lock.close()
+        detail = f'cannot open installer lock {lock_path}: {exc}'
+        if placement_error and isinstance(exc, FileNotFoundError):
+            detail = placement_error
+        output.line(f'  FAILED: {detail}', 'failed')
+        yield None
+        return
     with lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1890,22 +1928,22 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install', basel
             holder = lock.read(128).strip() or 'unknown (holder metadata unavailable)'
             output.line(f'  FAILED: installer lock {lock_path} held by PID {holder}; '
                         'let the holder finish, then retry; do not remove the lock file.', 'failed')
-            return 1
+            yield None
+            return
         except OSError as exc:
             output.line(f'  FAILED: cannot acquire installer lock {lock_path}: {exc}', 'failed')
-            return 1
+            yield None
+            return
+        if placement_error:
+            output.line(f'  FAILED: {placement_error}', 'failed')
+            yield None
+            return
         if not inherited:
             lock.seek(0)
             lock.truncate()
             lock.write(f'{os.getpid()}\n')
             lock.flush()
-        state_path = binary_dir.with_name(binary_dir.name + '.kit-install-restarts.json')
-        try:
-            return _install(all_items, chosen, output=output, mode=mode, lock_fd=lock.fileno(),
-                            baseline=baseline, state_path=state_path, skip_orbi=skip_orbi)
-        except RestartStateError as exc:
-            output.line(f'  FAILED: pending service restarts: {exc}; repair the state file or its access and rerun ./install.sh with the same options', 'failed')
-            return 1
+        yield lock
 
 
 def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock_fd=None,
@@ -1913,6 +1951,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
     results = []
     baseline = dict(baseline or {})
     pending = read_pending_restarts(state_path) if state_path else {}
+    defer_services = bool(os.environ.get('KIT_INSTALL_DEFER_SERVICES'))
     observations = {}
     native_decisions = []
     delegated_orbi = None
@@ -1942,7 +1981,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
         # Only Pi infers a consumer from the settings profile as well as paths.
         return f'pi:{pi_settings_path().absolute()}' if key == 'pi' else key
 
-    def observe(key, status, before, after):
+    def observe(key, status, before, after, *, delegated=False):
         before = baseline.get(key, before)
         if key in observations:
             before = observations[key]['before']
@@ -1952,18 +1991,28 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
         observations[key] = dict(status=status, before=before, after=after,
                                  change=change, changed_inputs=paths)
         # Orbi's separate lifecycle never uses the consumer restart pass.
-        if state_path and key != 'orbi' and change == 'changed':
-            # Save before the next component can interrupt or abort the run.
-            key = pending_key(key)
-            owed = pending.get(key, {})
+        if not state_path or key == 'orbi':
+            return
+        state_key = pending_key(key)
+        owed = pending.get(state_key, {})
+        if change == 'changed':
             changed_inputs = set(paths) | set(owed.get('changed_inputs', []))
             directories = set(before.get('directories', [])) | set(after.get('directories', []))
             directories = (directories & set(paths)) | set(owed.get('directories', []))
             # New changes invalidate restart successes for the previous payload.
             row = dict(changed_inputs=sorted(changed_inputs), directories=sorted(directories), restarted_units=[])
-            if row != owed:
-                pending[key] = row
-                write_pending_restarts(state_path, pending)
+        elif owed:
+            row = dict(owed)
+        else:
+            return
+        # A healthy delegated refresh can be retried by --only hermes even if
+        # the next native update is up to date and does not refresh hosts again.
+        row['delegated'] = (status == 'installed' and change != 'unverified' and
+                            (delegated or defer_services or (change == 'unchanged' and owed.get('delegated', False))))
+        if row != owed:
+            # Save before the next component can interrupt or abort the run.
+            pending[state_key] = row
+            write_pending_restarts(state_path, pending)
 
     total = len(chosen)
     current = 0
@@ -2105,7 +2154,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                             continue
                         evidence = row.get('evidence', {})
                         if 'before' in evidence and 'after' in evidence:
-                            observe(key, row['status'], evidence['before'], evidence['after'])
+                            observe(key, row['status'], evidence['before'], evidence['after'], delegated=True)
                         else:
                             # An interrupted/older nested installer may report no
                             # evidence. It must not leave an earlier success eligible.
@@ -2115,6 +2164,14 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                             after = {**held, 'error': f'{key}: nested refresh {row["status"]}; '
                                                      'installed payload evidence unavailable'}
                             observe(key, 'failed', held, after)
+                    if outcome == 'installed' and native.get('status') == 'up_to_date' and 'hosts' not in native:
+                        # An equal native revision has no host receipt. Recheck
+                        # only previously completed delegated inputs, not other
+                        # components that the current invocation did not select.
+                        host_keys = {key for key in ('pi-bolt', 'tx', 'claude', 'codex')
+                                     if key not in chosen and pending.get(key, {}).get('delegated')}
+                        for key, current_inputs in installed_baseline(host_keys, output).items():
+                            observe(key, 'installed', current_inputs, current_inputs, delegated=True)
                 else:
                     for key, row in observations.items():
                         if key in ('pi-bolt', 'tx', 'claude', 'codex', 'orbi'):
@@ -2147,7 +2204,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
             record('services', 'planned', 'check effective installed changes; restart only proven affected active consumers; Hermes owns gateway disposition')
         else:
             service_observations = dict(observations)
-            if not os.environ.get('KIT_INSTALL_DEFER_SERVICES'):
+            if not defer_services:
                 for key, row in observations.items():
                     owed = pending.get(pending_key(key))
                     if not owed:
@@ -2194,6 +2251,11 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
     return int(bool(counts['failed']))
 
 
+def has_checkout(root):
+    marker = root / '.git'
+    return marker.exists() or marker.is_symlink()
+
+
 def pull_checkout(root, write=print, run=subprocess.run, before_change=None):
     """Keep local edits in a stash, then require an upstream fast-forward.
 
@@ -2201,7 +2263,7 @@ def pull_checkout(root, write=print, run=subprocess.run, before_change=None):
     Fail closed before component actions; never restore or remove a stash.
     """
     root = Path(root).resolve()
-    if not (root / '.git').exists() and not (root / '.git').is_symlink():
+    if not has_checkout(root):
         return False  # unpacked release; do not discover a parent repository
     # -C alone does not override these (for example when called from a Git hook).
     # Refuse before even reading status rather than stash into a foreign repository
@@ -2295,7 +2357,7 @@ def main(argv=None):
                'Dry-run performs no registry probes or mutations. See docs/cross-host.md.')
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--all', '--full', action='store_true', help='install the full suite for every available host (default)')
-    selection.add_argument('--only', help='comma-separated items to install (pi-bolt,pi,tx,hermes,claude,codex,orbi)')
+    selection.add_argument('--only', help=f'comma-separated items to install ({",".join(ITEM_KEYS)})')
     parser.add_argument('--skip', help='comma-separated items to leave out')
     parser.add_argument('--list', action='store_true', help='show the items and whether each is available')
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
@@ -2313,7 +2375,22 @@ def main(argv=None):
     parser.add_argument('command', nargs='?', choices=('install', 'update'), default='install',
                         help='install (default) or update the installed suite in place; both run the same items')
     args = parser.parse_args(argv)
+    for given in (args.only, args.skip):
+        unknown = [k for k in (given or '').split(',') if k and k not in ITEM_KEYS]
+        if unknown:
+            parser.error(f'unknown item(s): {", ".join(unknown)}; choose from {", ".join(ITEM_KEYS)}')
+
     output = Output(args.color, 0 if args.quiet else 2)
+    if (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
+            or os.environ.get('KIT_INSTALL_NO_PULL') or not has_checkout(ROOT)):
+        return run_suite(args, parser, output)
+    with installer_lock(output, before_pull=True) as lock:
+        if lock is None:
+            return 1
+        return run_suite(args, parser, output, lock=lock, argv=argv)
+
+
+def run_suite(args, parser, output, lock=None, argv=None):
     baseline = {}
     inherited = os.environ.pop('KIT_INSTALL_BASELINE_FD', None)
     if inherited:
@@ -2323,12 +2400,10 @@ def main(argv=None):
         except (OSError, ValueError) as exc:
             output.line(f'FAILED: installed baseline unavailable: {exc}; rerun ./install.sh with the same options', 'failed')
             return 1
-    if not (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
-            or os.environ.get('KIT_INSTALL_NO_PULL')):
+    if lock is not None:  # checkout preparation is enabled and already owns the lock
         try:
             def snapshot():
-                keys = set((args.only if args.only and not args.menu else
-                            'pi-bolt,pi,tx,hermes,claude,codex,orbi').split(','))
+                keys = set(args.only.split(',') if args.only and not args.menu else ITEM_KEYS)
                 if not args.menu:  # menu selection may include initially skipped candidates
                     keys -= set((args.skip or '').split(','))
                 baseline.update(installed_baseline(keys, output))
@@ -2340,24 +2415,21 @@ def main(argv=None):
             return 1
         if changed:
             # Pull or stash may have replaced the running installer: run disk code once.
-            # An anonymous descriptor survives exec, but is consumed before any
-            # child/native refresh, so nested installers take their own baseline.
+            # Preserve the flock across exec and carry the baseline separately, so
+            # nested installers share the lock but capture their own baseline.
             with tempfile.TemporaryFile(mode='w+', encoding='utf-8') as stream:
                 json.dump(baseline, stream)
                 stream.seek(0)
                 os.set_inheritable(stream.fileno(), True)
+                os.set_inheritable(lock.fileno(), True)
                 os.execvpe('bash', ['bash', str(ROOT / 'install.sh'), *(sys.argv[1:] if argv is None else argv)],
-                           dict(os.environ, KIT_INSTALL_PULLED='1', KIT_INSTALL_BASELINE_FD=str(stream.fileno())))
+                           dict(os.environ, KIT_INSTALL_PULLED='1', KIT_INSTALL_BASELINE_FD=str(stream.fileno()),
+                                KIT_INSTALL_LOCK_FD=str(lock.fileno())))
     hermes = [f for f, on in (('--bundle-only', args.bundle_only), ('--no-reload', args.no_reload),
                               ('--yes-deps', args.yes_deps), ('--dry-run', args.dry_run)) if on]
     if args.hermes_home:
         hermes += ['--hermes-home', args.hermes_home]
     all_items = items(hermes, output, mode=args.command)
-    keys = [i.key for i in all_items]
-    for given in (args.only, args.skip):
-        unknown = [k for k in (given or '').split(',') if k and k not in keys]
-        if unknown:
-            parser.error(f'unknown item(s): {", ".join(unknown)}; choose from {", ".join(keys)}')
     if args.list:
         for item in all_items:
             output.line(f"  {item.key:<9} {'available' if item.available else 'unavailable':<12} {item.label}"
@@ -2384,7 +2456,7 @@ def main(argv=None):
     if 'orbi' in skipped:
         chosen.discard('orbi')
     return install(all_items, chosen, dry_run=args.dry_run, output=output, mode=args.command, baseline=baseline,
-                   skip_orbi='orbi' in skipped or (menu and 'orbi' not in chosen))
+                   skip_orbi='orbi' in skipped or (menu and 'orbi' not in chosen), lock=lock)
 
 
 if __name__ == '__main__':
