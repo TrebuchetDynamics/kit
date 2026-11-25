@@ -20,6 +20,9 @@ import time
 UPSTREAM = 'https://github.com/TrebuchetDynamics/kit.git'
 PLUGIN = 'kit'
 HOST_REFRESH_TIMEOUT_S = 300
+# Allow the selected fleet time for bounded manager stops, release sync and
+# validation. An outer suite install delegates Hermes with an 1800s limit.
+HOST_ORBI_REFRESH_TIMEOUT_S = 1500
 HOST_ITEMS = ('pi-bolt', 'tx', 'claude', 'codex', 'orbi')
 
 
@@ -36,14 +39,17 @@ def refresh_hosts(source):
             return [{'item': item, 'status': status, 'exit': code} for item in HOST_ITEMS]
         with tempfile.TemporaryDirectory(prefix='kit-host-update-') as directory:
             report = Path(directory) / 'items.jsonl'
-            env = dict(os.environ, KIT_INSTALL_REPORT=str(report), NO_COLOR='1')
-            with subprocess.Popen(['bash', str(source / 'install.sh'), '--full', '--skip', 'hermes,pi', '-q'],
+            env = dict(os.environ, KIT_INSTALL_REPORT=str(report), KIT_INSTALL_ORBI_PROGRESS='1', NO_COLOR='1')
+            skip_orbi = env.get('KIT_INSTALL_SKIP_ORBI') == '1'
+            skipped = 'hermes,pi,orbi' if skip_orbi else 'hermes,pi'
+            budget = HOST_REFRESH_TIMEOUT_S if skip_orbi else HOST_ORBI_REFRESH_TIMEOUT_S
+            with subprocess.Popen(['bash', str(source / 'install.sh'), '--full', '--skip', skipped, '-q'],
                                   cwd=source, stdin=subprocess.DEVNULL, env=env,
                                   start_new_session=True,
                                   pass_fds=((int(env['KIT_INSTALL_LOCK_FD']),)
                                             if env.get('KIT_INSTALL_LOCK_FD') else ())) as child:
                 try:
-                    code = child.wait(timeout=HOST_REFRESH_TIMEOUT_S)
+                    code = child.wait(timeout=budget)
                     status = 'failed' if code else 'unreported'
                 except subprocess.TimeoutExpired:
                     os.killpg(child.pid, signal.SIGKILL)
@@ -59,7 +65,7 @@ def refresh_hosts(source):
                             and row.get('status') in ('installed', 'failed', 'skipped')
                             and (row.get('exit') is None or type(row['exit']) is int)):
                         rows[row['item']] = {k: row[k] for k in ('item', 'status', 'exit', 'change',
-                            'changed_inputs', 'evidence', 'decision', 'reason') if k in row}
+                            'changed_inputs', 'evidence', 'decision', 'reason', 'orbi_fleet') if k in row}
     except (OSError, subprocess.SubprocessError):
         status, code = 'unavailable', None
     return ([rows.get(item, {'item': item, 'status': status, 'exit': code}) for item in HOST_ITEMS]
@@ -2275,25 +2281,38 @@ def main(argv=None):
             unchanged_recovery = (not recover and prior and len(recovered_homes) == len(prior['selected']) and all(
                 repo in plan['sources'] and plan['sources'][repo]['before'] == plan['sources'][repo]['after'] == prior['revision']
                 for repo in recovered_sources))
-            if unchanged_recovery and not args.check:
-                snapshot = ordinary_snapshot(plan, profiles, prior['selected'], prior['revision'])
-                if snapshot['writes'] or any(row['before'] != row['after'] for row in snapshot['sources'].values()):
-                    prior = {**prior, 'status': 'incomplete', 'ordinary_pending': True, 'ordinary_plan': snapshot,
-                             'ordinary_backup': str(Path(prior['backup']) / ('ordinary-' + str(time.time_ns()))),
-                             'managed': {**prior['managed'], 'ordinary': [name for name, _ in profiles
-                                                                        if name not in prior['selected']]}}
-                    save_transaction(recovery_receipt, prior)
+            # Compare with the journaled merge, not the release: a preserved customization
+            # is not drift. The ordinary plan backs up later edits and reports them as local_edits.
+            if unchanged_recovery and any(
+                    file_state(path := Path(item['path'])) != item['new']
+                    or (path.exists() and stat.S_IMODE(path.stat().st_mode) != item['mode'])
+                    for row in prior['profiles'].values() for item in row['files']):
+                unchanged_recovery = False
             if recover or unchanged_recovery:
+                # Revalidation is read-only, even if a file changes after the drift check.
                 recovery = automatic_recovery(root, profiles, plan=plan,
-                    prior=prior if unchanged_recovery else None, check=args.check)
-                if recovery['status'] != 'incomplete' and not args.check:
+                    prior=prior if unchanged_recovery else None, check=args.check or unchanged_recovery)
+                if recover and recovery['status'] != 'incomplete' and not args.check:
                     recovery = finish_ordinary_recovery(root, recovery)
-                result.update(status=recovery['status'], recovery=recovery, gateway_restart='not_requested',
-                              action='Preserve the recovery backup; resolve per-profile errors and rerun ./install.sh --only hermes'
-                                     if recovery['status'] == 'incomplete' else 'Recovery verified offline; no runtime activation or restart requested')
-                save()
-                print(json.dumps(result, indent=2))
-                return int(result['status'] == 'incomplete')
+                if unchanged_recovery and recovery['status'] == 'up_to_date':
+                    # Independent updates use the ordinary path without reopening recovery
+                    # or resetting the recovered profiles' unchanged, merged customizations.
+                    writes = [row for row in plan['writes']
+                              if not any(row[0].is_relative_to(home / 'skills') for home in recovered_homes)]
+                    if not args.check and any(row['after'] != prior['revision'] for row in plan['sources'].values()):
+                        raise ValueError('Trusted main changed between source fetches; retry before publication')
+                    if writes or any(row['before'] != row['after'] for row in plan['sources'].values()):
+                        plan['writes'] = writes
+                        paths = {str(row[0]) for row in writes}
+                        plan['local_edits'] = [row for row in plan['local_edits'] if row['path'] in paths]
+                        recovery = None
+                if recovery is not None:
+                    result.update(status=recovery['status'], recovery=recovery, gateway_restart='not_requested',
+                                  action='Preserve the recovery backup; resolve per-profile errors and rerun ./install.sh --only hermes'
+                                         if recovery['status'] == 'incomplete' else 'Recovery verified offline; no runtime activation or restart requested')
+                    save()
+                    print(json.dumps(result, indent=2))
+                    return int(result['status'] == 'incomplete')
             result['profiles'] = plan['profiles']
             result['sources'] = {str(p): {k: s[k] for k in ('before', 'after')} for p, s in plan['sources'].items()}
             result['skill_files'] = len(plan['writes'])

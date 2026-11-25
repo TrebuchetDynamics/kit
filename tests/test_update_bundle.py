@@ -485,7 +485,7 @@ class UpdateTests(unittest.TestCase):
             '#!/bin/bash\n'
             'echo \'{"item":"tx","status":"installed","exit":0}\' > "$KIT_INSTALL_REPORT"\n'
             f'(sleep 0.5; touch "{child}") &\nwait\n')
-        with patch.object(self.mod, 'HOST_REFRESH_TIMEOUT_S', 0.1):
+        with patch.object(self.mod, 'HOST_ORBI_REFRESH_TIMEOUT_S', 0.1):
             rows = self.mod.refresh_hosts(self.repo)
         self.assertEqual(rows, [
             {'item': 'pi-bolt', 'status': 'timeout', 'exit': None},
@@ -1686,6 +1686,44 @@ class ManagedRecoveryTests(unittest.TestCase):
         self.assertEqual((code, again['status']), (0, 'up_to_date'))
         self.assertEqual(again['recovery']['backup'], backup)
 
+        state = self.home / 'maintenance/toolset-update'
+        journal = state / 'recovery.json'
+        completed = journal.read_bytes()
+        self.assertNotEqual(json.loads(completed)['status'], 'incomplete')
+        path = self.home / 'skills/demo/SKILL.md'
+        upstream_skill = self.remote / 'skills/demo/SKILL.md'
+        edited = path.read_bytes() + b'background review lesson\n'
+        path.write_bytes(edited)
+        with patch.object(self.mod, 'finalize_profiles', return_value=[{'status': 'ready'}]), \
+             patch.object(self.mod, 'heal_chat_menus', return_value=[]), \
+             patch.object(self.mod, 'gateway_running', return_value=False):
+            code, preview = self.run_update('--check')
+            self.assertEqual((code, preview['status']), (0, 'update_available'), preview)
+            self.assertEqual([(row['path'], row['action']) for row in preview['local_edits']],
+                             [(str(path), 'reset')])
+            self.assertEqual(journal.read_bytes(), completed)
+            self.assertEqual(path.read_bytes(), edited)
+            code, repaired = self.run_update()
+            self.assertEqual((code, repaired['status']), (0, 'updated'), repaired)
+            self.assertEqual(journal.read_bytes(), completed)
+            self.assertEqual(path.read_bytes(), upstream_skill.read_bytes())
+            receipt = json.loads((state / 'latest.json').read_text())
+            self.assertEqual(receipt, repaired)
+            self.assertEqual([(row['path'], row['action']) for row in receipt['local_edits']],
+                             [(str(path), 'reset')])
+            update_backup = Path(receipt['backup'])
+            manifest = json.loads((update_backup / 'manifest.json').read_text())
+            (saved,) = [row['backup'] for row in manifest if row['path'] == str(path)]
+            self.assertEqual((update_backup / saved).read_bytes(), edited)
+
+            upstream_skill.write_bytes(b'later upstream release\n')
+            self.git(self.remote, 'commit', '-am', 'later release')
+            code, advanced = self.run_update()
+            self.assertEqual((code, advanced['status']), (0, 'updated'), advanced)
+            self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), self.git(self.remote, 'rev-parse', 'HEAD'))
+            self.assertEqual(path.read_bytes(), upstream_skill.read_bytes())
+            self.assertEqual(journal.read_bytes(), completed)
+
     def test_canonical_shared_and_live_consumers_hold_recovery(self):
         alias = self.home / 'profiles/not-live/plugins/kit'
         alias.parent.mkdir(parents=True)
@@ -1754,6 +1792,37 @@ class ManagedRecoveryTests(unittest.TestCase):
         self.assertEqual(again['recovery']['backup'], str(backup))
         self.assertEqual(self.calls, calls)
         self.assertEqual(path.read_text(), 'new\none\ntwo\nthree\nlocal lesson\n')
+
+        # Ordinary work started after recovery must not reopen the native journal,
+        # even if a profile writer races the ordinary update.
+        journal = self.home / 'maintenance/toolset-update/recovery.json'
+        completed = journal.read_bytes()
+        independent_skill = independent / 'skills/demo/SKILL.md'
+        independent_skill.write_text('ordinary edit\n')
+        code, preview = self.run_update('--check')
+        self.assertEqual((code, preview['status']), (0, 'update_available'), preview)
+        self.assertEqual(journal.read_bytes(), completed)
+        self.assertEqual(independent_skill.read_text(), 'ordinary edit\n')
+        apply = self.mod.apply
+        def change_before_apply(plan, backup, **kwargs):
+            independent_skill.write_text('newer ordinary edit\n')
+            return apply(plan, backup, **kwargs)
+        with patch.object(self.mod, 'apply', change_before_apply):
+            code, held = self.run_update()
+        self.assertEqual(code, 1, held)
+        self.assertIn(f'Destination changed since preflight: {independent_skill}', held['error'])
+        self.assertEqual(journal.read_bytes(), completed)
+        self.assertEqual(independent_skill.read_text(), 'newer ordinary edit\n')
+        with patch.object(self.mod, 'finalize_profiles', return_value=[{'status': 'ready'}]), \
+             patch.object(self.mod, 'heal_chat_menus', return_value=[]), \
+             patch.object(self.mod, 'gateway_running', return_value=False):
+            code, repaired = self.run_update()
+        self.assertEqual((code, repaired['status']), (0, 'updated'), repaired)
+        self.assertEqual(journal.read_bytes(), completed)
+        self.assertEqual(independent_skill.read_text(), 'new\none\ntwo\nthree\n')
+        self.assertEqual([row['path'] for row in repaired['local_edits']], [str(independent_skill)])
+        self.assertEqual(path.read_text(), 'new\none\ntwo\nthree\nlocal lesson\n')
+
         # A later managed source still on the old release must not be masked by
         # the completed consumers' no-op, or replace their preservation bases.
         late = self.home / 'profiles/late'
@@ -1918,6 +1987,7 @@ class ManagedRecoveryTests(unittest.TestCase):
                     foreign.write_text('foreign ordinary edit\n')
                     code, held = fixture.run_update()
                     self.assertEqual(code, 1, held)
+                    self.assertEqual(held['error'], f'Ordinary destination changed since preflight: {foreign}')
                     self.assertEqual(foreign.read_text(), 'foreign ordinary edit\n')
                     foreign.write_text('new\none\ntwo\nthree\n')  # operator reconciles the disposable fixture
                 code, result = fixture.run_update()

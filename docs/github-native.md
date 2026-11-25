@@ -161,6 +161,14 @@ separate deployment checkout, not inside Kit or a delivery worktree. Inspect the
 installer or follow upstream's editable `uv tool` installation instructions.
 Do not patch upstream Hermes or change agent credentials to make setup pass.
 
+The [suite installer](installation.md#orbi-cli) does not create repository
+deployments. Selecting Orbi explicitly authorizes a host-wide stop, stable release
+update and restart of verified local Linux installations, including paused ones.
+For this installer path, verified manager/unit/file ownership, a validated release
+pin and a passing `orbi check` are the activation checks; no separate cutover or
+human approval record is required. Use `--skip orbi` if scheduling must stay paused.
+This is a maintenance path, not a live-qualification procedure.
+
 Example configuration shape (merge with the shipped Orbi example):
 
 ```toml

@@ -24,8 +24,9 @@ installed is skipped and says so, and fails when named with --only. Pi-Bolt is
 the only Pi harness Kit installs; its destination executable manages the Kit package.
 The Pi package is refreshed on both `install` and `update` even when its files look
 complete; Pi-Bolt checks release metadata and skips a proven current native build.
-Orbi installs the CLI only via uv; existing CLIs and deployments are kept so a
-pinned deployment is never replaced. Pi-Bolt bootstraps or refreshes the upstream
+Orbi selection authorizes stopping, updating and restarting verified local Linux
+deployments, including paused deployments. Use --skip orbi to leave them alone.
+With no deployment, bootstrap/reuse the pinned CLI. Pi-Bolt bootstraps or refreshes the upstream
 native Pi build and never installs its optional extensions. Hermes options
 (--hermes-home, --bundle-only, --no-reload, --yes-deps) apply to the Hermes item.
 Refresh success alone is not a change: compare installed identity, content, links and settings.
@@ -37,6 +38,7 @@ import argparse
 import codecs
 import fcntl
 import hashlib
+import importlib.util
 import json
 from dataclasses import dataclass, field
 import os
@@ -1101,7 +1103,7 @@ def install_orbi(output=None):
     for candidate in candidates:
         if candidate and os.path.lexists(candidate):
             # Even update must not replace an editable CLI serving a pinned deployment.
-            return f'{candidate}: {orbi_version(candidate)} (already installed; kept; deployment updates are separate)'
+            return f'{candidate}: {orbi_version(candidate)} (already installed; kept)'
     uv = shutil.which('uv')
     if not uv:
         raise OSError('Orbi requires uv; install uv and retry ./install.sh --only orbi')
@@ -1116,15 +1118,52 @@ def install_orbi(output=None):
     return f'{binary}: {orbi_version(binary)}; CLI only, no deployment configured or started'
 
 
+def refresh_orbi_fleet(*, report_progress=None):
+    path = ROOT / 'skills/orbi/scripts/orbi_control.py'
+    spec = importlib.util.spec_from_file_location('kit_installer_orbi_control', path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    previous = sys.dont_write_bytecode
+    try:
+        # Match the lifecycle helper's regular `python -B` entry point.
+        sys.dont_write_bytecode = True
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
+        del sys.modules[spec.name]
+    return module.installer_fleet(module.Context(noninteractive=True), report_progress=report_progress)
+
+
+def orbi_fleet_summary(receipt):
+    if receipt['status'] == 'no_deployments':
+        return 'No installed Orbi deployment verified; CLI only'
+    lines = [f"Orbi fleet {receipt['status']}"]
+    if 'error' in receipt:
+        error = receipt['error']
+        where = ' '.join(error[key] for key in ('config', 'unit', 'step') if error.get(key))
+        lines[0] += f": {where + ': ' if where else ''}{error['message']}"
+        if error.get('fix'):
+            lines.append(error['fix'])
+    for row in receipt['deployments']:
+        steps = ', '.join(step['step'] + (' ' + step['unit'] if 'unit' in step else '')
+                          for step in row['steps'])
+        lines.append(f"{row['config']}: {row['status']} ({row.get('engine_update', 'not applied')})"
+                     + (f'; completed: {steps}' if steps else '')
+                     + (f"; {row['recovery']}" if receipt['status'] != 'completed' else ''))
+    if 'recovery' in receipt:
+        lines.append(receipt['recovery'])
+    return '\n  '.join(lines)
+
+
 def orbi_item(output=None):
-    system = platform.system()
-    return Item('orbi', 'Orbi CLI (no deployment activation)',
-                note='requires uv and git for the pinned XelHaku fork; preserves existing installations and source pins',
-                missing='' if system in ('Linux', 'Darwin') else f'unsupported Orbi platform: {system}',
-                steps=[Step('reuse existing orbi --version, or install a missing CLI with '
-                            f'uv tool install --python 3.14 {ORBI_SOURCE}; verify the installed version; '
-                            'no setup, scheduler changes or deployment upgrades',
-                            run=lambda: install_orbi(output))],
+    return Item('orbi', 'Orbi host deployment refresh / CLI bootstrap',
+                note='stop, update and restart verified local Linux deployments, including paused ones; --skip orbi opts out',
+                missing='unsupported Orbi platform: Windows' if platform.system() == 'Windows' else '',
+                steps=[Step('verify local managers and ownership; stop deployments without natural drain, '
+                            'pin and validate the newest official stable release, then restart scheduling '
+                            'and authorized services (even if paused or already current); '
+                            'macOS has no lifecycle mutations; with no deployment, keep the CLI or run '
+                            f'uv tool install --python 3.14 {ORBI_SOURCE}', run=refresh_orbi_fleet)],
                 inputs=lambda: installed_evidence([Path(shutil.which('orbi') or
                     Path(os.environ.get('UV_TOOL_BIN_DIR') or BIN).absolute() / 'orbi')]))
 
@@ -1649,7 +1688,7 @@ def choose_text(all_items, chosen, read=input, write=print):
 # -- installing -------------------------------------------------------------------
 def restart_services(output, observations=None):
     """Only successful changes with executable/config reference evidence may restart."""
-    observations = observations or {}
+    observations = {key: row for key, row in (observations or {}).items() if key != 'orbi'}
     candidates = {key: row for key, row in observations.items()
                   if row['change'] in ('changed', 'unverified')}
     reasons = []
@@ -1693,6 +1732,15 @@ def restart_services(output, observations=None):
         consumed = '\n'.join(line for line in shown.stdout.splitlines()
                              if line.startswith(('ExecStart=', 'EnvironmentFiles=')))
         references = {Path(value) for value in re.findall(r'(?<![\w./-])(/[^\s;"{}]+)', consumed)}
+        # An Orbi deployment can use an arbitrary unit name, including kit-*.
+        # Never restart it through the payload-consumer path, even if the
+        # installer skipped Orbi and the unit also uses a selected host input.
+        if not shown.returncode and (re.search(r'(?:^|[\s"=])ORBI_CONFIG=', shown.stdout, re.M)
+                                    or re.search(r'\s-m\s+orbi(?:\.runner)?(?:\s|;|$)', consumed)
+                                    or any(p.name in {'orbi', 'orbi-exporter.py'}
+                                           or p.parts[-2:] == ('.orbi', 'env') for p in references)):
+            reasons.append(f'{unit}: skipped (Orbi lifecycle is separate)')
+            continue
         if shown.returncode or not references:
             reasons.append(f'{unit}: held (unverified executable/config references for '
                            f'{", ".join(candidates)}); inspect systemctl --user show {unit} and restart manually if affected')
@@ -1757,7 +1805,7 @@ def restart_services(output, observations=None):
     return '; '.join(reasons) or 'no active supported consumers; no service restart requests'
 
 
-def install(all_items, chosen, dry_run=False, output=None, mode='install', baseline=None):
+def install(all_items, chosen, dry_run=False, output=None, mode='install', baseline=None, *, skip_orbi=False):
     output = output or Output()
     if dry_run or (not chosen and not os.environ.get('KIT_INSTALL_REPORT')):
         return _install(all_items, chosen, dry_run=dry_run, output=output, mode=mode)
@@ -1794,14 +1842,17 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install', basel
             lock.truncate()
             lock.write(f'{os.getpid()}\n')
             lock.flush()
-        return _install(all_items, chosen, output=output, mode=mode, lock_fd=lock.fileno(), baseline=baseline)
+        return _install(all_items, chosen, output=output, mode=mode, lock_fd=lock.fileno(), baseline=baseline,
+                        skip_orbi=skip_orbi)
 
 
-def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock_fd=None, baseline=None):
+def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock_fd=None, baseline=None,
+             *, skip_orbi=False):
     results = []
     baseline = dict(baseline or {})
     observations = {}
     native_decisions = []
+    delegated_orbi = None
     # Private machine-readable progress for update_bundle.py, separate from native output.
     report = None if dry_run else os.environ.get('KIT_INSTALL_REPORT')
     if report:
@@ -1812,6 +1863,17 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
         if report:
             with Path(report).open('a') as stream:
                 stream.write(json.dumps({'item': key, 'status': status, 'exit': code, **fields}) + '\n')
+
+    def report_orbi_progress(fleet):
+        # The native delegate can enforce a suite-wide timeout. Persist the last
+        # known fleet stages without adding a result to the live installer summary.
+        try:
+            with Path(report).open('a') as stream:
+                stream.write(json.dumps({'item': 'orbi', 'status': 'failed', 'exit': 1, 'orbi_fleet': fleet}) + '\n')
+        except OSError as exc:
+            output.line(f'  Could not save intermediate Orbi receipt: {exc}')
+
+    orbi_progress = report_orbi_progress if report and os.environ.get('KIT_INSTALL_ORBI_PROGRESS') == '1' else None
 
     def observe(key, status, before, after):
         before = baseline.get(key, before)
@@ -1832,7 +1894,12 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
         output.line('Selected: ' + (', '.join(i.key for i in all_items if i.key in chosen) or 'none'))
     for item in all_items:
         if item.key not in chosen:
-            record(item.key, 'skipped', describe(item) if not item.available else 'not chosen')
+            if item.key == 'orbi' and delegated_orbi:
+                record('orbi', delegated_orbi['status'], 'Hermes delegated: ' +
+                       orbi_fleet_summary(delegated_orbi['orbi_fleet']), delegated_orbi['exit'],
+                       orbi_fleet=delegated_orbi['orbi_fleet'])
+            else:
+                record(item.key, 'skipped', describe(item) if not item.available else 'not chosen')
             continue
         current += 1
         if output.verbosity or dry_run:
@@ -1858,7 +1925,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
             baseline.update(installed_baseline(missing, output))
         before = read_evidence(item) if not dry_run and item.key != 'hermes' else None
         refresh = None
-        native = None
+        native = fleet = None
         outcome, detail, exit_code = 'installed', [], 0
         for index, step in enumerate(item.steps, 1):
             if output.verbosity or dry_run:
@@ -1874,15 +1941,26 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                 attempt += 1
                 try:
                     if step.run:
-                        message = step.run()
+                        message = step.run(report_progress=orbi_progress) if item.key == 'orbi' else step.run()
                         if isinstance(message, Refresh):
                             refresh, message = message, message.message
+                        if item.key == 'orbi':
+                            fleet = message
+                            message = orbi_fleet_summary(fleet)
+                            if fleet['status'] == 'no_deployments':
+                                message = install_orbi(output)
+                            elif fleet['status'] != 'completed':
+                                outcome, exit_code = 'failed', 1
+                                output.line('  FAILED: ' + message, 'failed')
                         detail.append(message)
-                        if output.verbosity:
+                        if output.verbosity and outcome != 'failed':
                             output.line('  ' + message)
                         break
                     if item.key == 'hermes':
                         env = {'KIT_INSTALL_DEFER_SERVICES': '1'}
+                        if skip_orbi or 'orbi' in chosen:
+                            # Explicit opt-out or let the outer Orbi item own the one fleet refresh.
+                            env['KIT_INSTALL_SKIP_ORBI'] = '1'
                         if lock_fd is not None:
                             env['KIT_INSTALL_LOCK_FD'] = str(lock_fd)
                         native = {}
@@ -1933,6 +2011,13 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                     native_decisions.append(f'Hermes: native gateway disposition {disposition}; no outer restart')
                     for row in native.get('hosts', []):
                         key = row['item']
+                        if key == 'orbi' and not skip_orbi and 'orbi' not in chosen:
+                            if 'orbi_fleet' in row:
+                                delegated_orbi = row
+                            elif row['status'] != 'skipped':
+                                delegated_orbi = {'status': 'failed', 'exit': row['exit'] or 1,
+                                    'orbi_fleet': {'status': 'unverified', 'deployments': [],
+                                                   'error': {'message': 'delegated Orbi receipt unavailable; inspect host state before retrying'}}}
                         if key == 'services' or row['status'] == 'skipped':
                             continue
                         evidence = row.get('evidence', {})
@@ -1969,6 +2054,8 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                               'evidence': {'before': row['before'], 'after': row['after']}}
                     if outcome == 'installed' and row['change'] != 'unverified':
                         detail.append(f'checked; contents {row["change"]}')
+        if fleet is not None:
+            fields['orbi_fleet'] = fleet
         record(item.key, 'planned' if dry_run else outcome, '; '.join(d for d in detail if d),
                None if dry_run else exit_code, **fields)
     if chosen:
@@ -2167,8 +2254,8 @@ def main(argv=None):
     chosen = {i.key for i in all_items if i.available}
     if args.only:
         chosen = {k for k in args.only.split(',') if k}
-    if args.skip:
-        chosen -= set(args.skip.split(','))
+    skipped = set((args.skip or '').split(','))
+    chosen -= skipped
     menu = args.menu
     if menu and not (sys.stdin.isatty() and sys.stdout.isatty()) and os.environ.get('KIT_INSTALL_UI') != 'text':
         parser.error('no terminal for the menu; choose with --all, --only or --skip (see --list)')
@@ -2181,7 +2268,10 @@ def main(argv=None):
         if not go:
             print('Nothing installed.')
             return 0
-    return install(all_items, chosen, dry_run=args.dry_run, output=output, mode=args.command, baseline=baseline)
+    if 'orbi' in skipped:
+        chosen.discard('orbi')
+    return install(all_items, chosen, dry_run=args.dry_run, output=output, mode=args.command, baseline=baseline,
+                   skip_orbi='orbi' in skipped or (menu and 'orbi' not in chosen))
 
 
 if __name__ == '__main__':
