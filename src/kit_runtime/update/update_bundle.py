@@ -2298,7 +2298,15 @@ def main(argv=None):
             result['sources'] = {str(p): {k: s[k] for k in ('before', 'after')} for p, s in plan['sources'].items()}
             result['skill_files'] = len(plan['writes'])
             result['linked_profiles'] = [{k: r[k] for k in ('profile', 'target')} for r in linked_profiles(profiles)]
-            changed = bool(plan['writes']) or any(s['before'] != s['after'] for s in plan['sources'].values())
+            owed = state_dir / 'owed.json'
+            owed_tmp = owed.with_suffix('.tmp')
+            safe_path(owed)
+            safe_path(owed_tmp)
+            restart_owed = owed.exists()
+            # A staged record also counts: apply may have finished before the updater could publish it.
+            staged_owed = owed_tmp.exists()
+            changed = (bool(plan['writes']) or any(s['before'] != s['after'] for s in plan['sources'].values())
+                       or restart_owed or staged_owed)
             missing = any(not plugin_dir(h).exists() for _, h in profiles)
             result['drift'] = plan['drift']
             # Profile edits reset to the release or removed (bytes in the backup); port any
@@ -2313,7 +2321,13 @@ def main(argv=None):
                 stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
                 if plan['writes']:
                     result['backup'] = str(state_dir / stamp)
+                if changed and not (restart_owed or staged_owed):
+                    # Stage the write before applying changes; publish only once apply succeeds.
+                    with owed_tmp.open('x') as stream:
+                        stream.write(json.dumps({'started_ns': result['started_ns']}) + '\n')
                 apply(plan, state_dir / stamp)
+                if changed and not restart_owed:
+                    owed_tmp.replace(owed)
                 before = config_snapshot(profiles)
                 # Refresh even on equal revisions: a prior setup/reload may have failed.
                 # Plugin activation also re-applies each profile's command menu and settings.
@@ -2361,6 +2375,8 @@ def main(argv=None):
                         start_quiet_restart(root, state_dir, result['started_ns'], gateway_pid(root))
                 else:
                     result['gateway_restart'] = 'not_running'
+                if changed and ready:
+                    owed.unlink(missing_ok=True)
             result['note'] = ('Existing chats may retain loaded instructions. The gateway restarts only when no chat '
                               'turn is in flight; while one is, the restart is deferred and retried for up to 6 h, '
                               'never forced. It then refreshes commands and Telegram menus; the durable restart receipt '
