@@ -25,14 +25,21 @@ class CheckWorkflowTests(unittest.TestCase):
             'push': {'branches': ['main'], 'tags': ['**']},
         })
         jobs = workflow['jobs']
-        self.assertEqual(set(jobs), {'test'})
-        steps = jobs['test']['steps']
+        self.assertEqual(set(jobs), {'shard', 'test'})
+        shards = jobs['shard']['strategy']['matrix']['shard']
+        self.assertEqual(shards, list(range(1, len(shards) + 1)))
+        steps = jobs['shard']['steps']
         commands = [step['run'] for step in steps if 'run' in step]
         self.assertEqual(commands[1:], [
             'python -m py_compile __init__.py',
             'node --test tests/portable_pi.test.mjs',
-            'python scripts/check.py',
+            f'python scripts/check.py --shard ${{{{ matrix.shard }}}}/{len(shards)}',
         ])
+        # The required `test` check aggregates every shard, including failed or cancelled ones.
+        gate = jobs['test']
+        self.assertEqual((gate['needs'], gate['if']), ('shard', 'always()'))
+        self.assertEqual([step['run'] for step in gate['steps']],
+                         ['test "${{ needs.shard.result }}" = success'])
         self.assertIn('python -m pip install -r requirements-test.txt', commands[0].splitlines())
         self.assertNotIn('textual', commands[0])
         setups = {step['uses'].split('@')[0]: step.get('with', {}) for step in steps if 'uses' in step}
