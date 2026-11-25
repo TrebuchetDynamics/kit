@@ -74,6 +74,36 @@ SELinux/AppArmor stay enabled. Diagnose denials against the distro's Waydroid
 policy rather than disabling security. Restricted containers/WSL often lack native
 requirements; supplying a distro name does not establish the capabilities.
 
+## Sudo admission, cancellation and safe retry
+
+Setup inspects prerequisites before and after acquiring its per-user lock, but
+prints only the final inspection summary. `--check` remains read-only and sudo-free.
+Cached or passwordless sudo authorization works without a terminal. If interaction
+is required, setup needs a controlling terminal: log in normally and rerun the
+same setup command **in that same terminal**. Do not pipe credentials, put them in
+arguments/environment variables, or send them to an agent or log.
+
+The admission prompt uses bounded foreground execution (five minutes, followed by
+up to five seconds for forced termination). Ordinary sudo owns password input and
+terminal echo; setup does not read, store or log passwords. Press **Ctrl-C once**
+to cancel. Admission interruption returns **130**, timeout returns **124** (or
+**137** if forced termination was needed), and authorization rejection returns
+**1**, with distinct diagnostics. Repair authorization or terminal state if needed,
+then rerun the same command when ready. Admission failure does not install packages,
+stop sessions or change units; the local setup directory/lock file can remain.
+The lock is released on exit; do not delete it to bypass a running setup.
+
+After admission, privileged steps and credential refresh use **noninteractive
+sudo**. Expired/revoked authorization fails the affected step instead of opening a
+second password prompt. The diagnostic identifies the failed stage; refresh helpers
+are stopped and reaped on exit. There is no automatic authorization retry or rollback.
+Once provisioning begins, cancellation or failure **can leave partial host changes**
+(packages, initialization, GUI transfer or service configuration). Inspect the
+reported stage, package-manager state, `waydroid status` and service journals below;
+preserve Android data and ADB keys, repair the reported cause, then retry setup.
+If managed headless is already running, use `--status` to verify it. A failed step
+is not a ready device and is not evidence that earlier changes were undone.
+
 ## What persists and how retries work
 
 One host Waydroid container is shared by one testing user, not one per repository.

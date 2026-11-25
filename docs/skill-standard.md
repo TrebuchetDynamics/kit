@@ -71,6 +71,17 @@ Skill tool"; our hosts have commands, so the adapter states the composition dire
 Every skill separates what it read, what it changed and what it ran. Offline checks
 never qualify a live run, a rendered artifact or model behavior.
 
+For authorized GUI actions or visual claims, load the
+[shared GUI decision](../skills/shared/COMMON-CONTRACT.md#gui-actions-and-visual-evidence)
+from the common entry routes, independent of optional Ponytail coaching. Keep the
+conditional decision in that owner; add short workflow pointers only where needed,
+including explicit edit verification as well as findings. Use current semantic
+targets when available, rendered evidence for appearance, and report missing host
+modalities rather than claiming parity. Complete source/CLI evidence needs no browser.
+All-entrypoint and portable archive checks must test the actual conditional
+instruction and GUI anchor, not fragment-stripped reachability. Discovery proves
+that instructions are available, not that a model read or followed them.
+
 ## 9. Adapters stay thin
 
 `adapters/skills/<name>/SKILL.md` names the host contract, links the host-neutral
@@ -132,6 +143,33 @@ live adherence. The checked-in traces are synthetic fixtures.
   commands and `ask-kit` as its only router; Addy's phases map to existing
   owners instead of a second command set. High-risk skills adopt Addy's
   rationalization and red-flag sections.
+
+## Unlicensed upstream: Sakurai pointer
+
+The [`sakurai` wrapper](../skills/sakurai/SKILL.md) ships pointer-only. On
+2026-11-25, [kociden/sakurai-skill](https://github.com/kociden/sakurai-skill) had
+no LICENSE file, GitHub reported no detectable license (license endpoint HTTP 404),
+and no owner's written redistribution grant was available. There is no grant URL
+or grant condition to encode. The [source note](../skills/sakurai/UPSTREAM.json)
+records the checked URLs, evidence and empty file inventory. Package inventory
+already includes `skills/` and `adapters/`, so it ships the wrapper and portable
+adapter without upstream text, tools, examples or images.
+
+The requested commit `c138943cd6c35276d02e9bcbcf9e4332e58aa2ef` returns HTTP 404
+upstream. Observed main `913dc46b9dedc5e0b12e3834d25d684cf8213f87` matches the
+requested timestamp and skill blob, but is not a replacement vendoring pin.
+Links follow upstream `main`; no byte-integrity pass is claimed for this pointer.
+Before vendoring, obtain the owner's written redistribution grant, record its URL
+and summary in the source note and this section, and resolve the verified commit.
+Encode any grant conditions in the wrapper and source note, then preserve upstream
+bytes and verify their recorded hashes under the pinned-vendoring convention.
+
+Upstream is an unofficial fan-made resource based on Masahiro Sakurai's
+[桜井政博のゲーム作るには / Masahiro Sakurai on Creating Games](https://www.youtube.com/@sora_sakurai_jp)
+YouTube series, whose copyright holders are Masahiro Sakurai and Sora Ltd.
+Its AI summaries of automatic YouTube captions may contain transcription errors
+and are not human-verified or verbatim statements. Check the original videos.
+The wrapper preserves this caveat and attribution without implying endorsement.
 
 ## Review checklist
 

@@ -97,7 +97,10 @@ inside `upstream/`, except its README audit: run this skill's
   is warranted, isolate it from shared heroes rather than changing unrelated
   surfaces or forcing recapture. Keep existing capture guards intact;
   label retained older screenshots as older simulated UI, not current parity proof.
-- **Preview what you ship.** Render every SVG at 900 px and 360 px wide before
+- **Preview what you ship.** Apply the
+  [shared GUI decision](../shared/COMMON-CONTRACT.md#gui-actions-and-visual-evidence)
+  for authorized preview interactions and visual claims, including explicit edits;
+  source/CLI reader findings need no browser. Render every SVG at 900 px and 360 px wide before
   embedding it, with whatever renderer is installed (`rsvg-convert`, Inkscape or a
   headless browser), and check light and dark backgrounds. Embed with relative paths
   and meaningful `alt` text so the README still reads with images off.

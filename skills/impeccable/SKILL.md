@@ -28,6 +28,12 @@ accessibility and accepted behavior; simplicity does not mean generic design.
   with no writes. Scheduled, cron or unattended runs audit only unless their accepted
   task scope explicitly authorizes the requested writes. The shared handoff keeps
   no-dispatch and live-owner restrictions.
+## Verification
+
+For authorized GUI steps and visual claims, including explicit edit verification,
+apply the [shared GUI decision](../shared/COMMON-CONTRACT.md#gui-actions-and-visual-evidence).
+A playbook's successful capture or full tree label alone is not a visual pass.
+
 ## Boundaries
 
 - Not README art; use `/beautify-github-readme`.

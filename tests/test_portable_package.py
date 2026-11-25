@@ -89,6 +89,17 @@ class PortablePackageTests(unittest.TestCase):
                 self.assertIn('](' + target, entry.read_text())
                 self.assertEqual((entry.parent / target).resolve(), policy.resolve())
 
+            # Enumerate every shipped entrypoint and check the actual conditional
+            # GUI instruction + fragment, including portable-only Graphify and
+            # canonical compatibility entries. No claim of model loading/adherence.
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                'skill_standard', ROOT / 'tests/test_skill_standard.py')
+            standard = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(standard)
+            shipped = standard.gui_entrypoint_routes(installed)
+            self.assertEqual(set(shipped), set(standard.gui_entrypoint_routes(ROOT)))
+
             # Writing guidance is reached through the real installed adapter,
             # including its mode-specific completion, not a checkout-only copy.
             adapter = installed / 'adapters/skills/writing-for-agents/SKILL.md'
@@ -207,7 +218,7 @@ class PortablePackageTests(unittest.TestCase):
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
         self.assertEqual(names, {'plan-with-me', 'unblock', 'plan-for-me', 'docs-sync', 'orbi', 'update-kit',
             'autoresearch', 'impeccable', 'lgtm', 'goal',
-            'git-commit-push', 'push', 'ui-taste', 'unslop', 'beautify-github-readme',
+            'git-commit-push', 'push', 'ui-taste', 'sakurai', 'unslop', 'beautify-github-readme',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
             'ponytail-gain', 'ponytail-help', 'bug-harvest',
             'autonomous-codebase-improver', 'split-folder', 'unused-code',

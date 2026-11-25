@@ -1,0 +1,34 @@
+{
+  "repository": "https://github.com/kociden/sakurai-skill",
+  "distribution": "pointer-only",
+  "revision": null,
+  "checked_at": "2026-11-25",
+  "requested_revision": "c138943cd6c35276d02e9bcbcf9e4332e58aa2ef",
+  "revision_evidence": {
+    "requested_tree_url": "https://api.github.com/repos/kociden/sakurai-skill/git/trees/c138943cd6c35276d02e9bcbcf9e4332e58aa2ef",
+    "requested_tree_status": 404,
+    "observed_main_revision": "913dc46b9dedc5e0b12e3834d25d684cf8213f87",
+    "observed_commit_url": "https://github.com/kociden/sakurai-skill/commit/913dc46b9dedc5e0b12e3834d25d684cf8213f87",
+    "observed_skill_blob": "4b69e184a347c4f4efc222c7aab37369f521cd4a",
+    "observed_reference_count": 14,
+    "summary": "The requested revision is Kit's delivery base and is unavailable upstream. Observed main matches the issue's timestamp and SKILL.md blob. It is evidence only, not a replacement vendoring pin. Links follow main. A corrected verified pin and written grant are required before copying bytes."
+  },
+  "license": null,
+  "license_evidence": {
+    "status": "no-redistribution-grant",
+    "grant_url": null,
+    "repository_url": "https://api.github.com/repos/kociden/sakurai-skill",
+    "license_url": "https://api.github.com/repos/kociden/sakurai-skill/license",
+    "issues_url": "https://github.com/kociden/sakurai-skill/issues?q=is%3Aissue",
+    "summary": "Repository metadata reports license=null. The license endpoint returns HTTP 404. The observed main tree has no LICENSE file, and the all-state issue list is empty. No owner's written redistribution grant was obtained. Kit ships only original pointer instructions, not upstream content."
+  },
+  "source_note": {
+    "readme_url": "https://github.com/kociden/sakurai-skill/blob/913dc46b9dedc5e0b12e3834d25d684cf8213f87/README.md",
+    "series": "桜井政博のゲーム作るには / Masahiro Sakurai on Creating Games",
+    "series_url": "https://www.youtube.com/@sora_sakurai_jp",
+    "copyright_holders": "Masahiro Sakurai and Sora Ltd.",
+    "caveat": "Unofficial fan-made resource, with no affiliation or endorsement. AI summaries of automatic YouTube captions may contain transcription errors and are not human-verified. These are not verbatim statements by Sakurai; check the original videos for accuracy."
+  },
+  "files": {},
+  "excluded": "All upstream bytes: SKILL.md, all 14 references, tools, examples, images and subtitle tooling. No Japanese text is copied, rewritten or translated. No upstream file hashes or vendored-integrity pass are claimed."
+}

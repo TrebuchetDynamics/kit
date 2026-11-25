@@ -59,6 +59,10 @@ python3 "<skill-dir>/scripts/capture.py" URL [URL ...] \
 
 ## Verify before reporting
 
+Apply the [shared GUI decision](../shared/COMMON-CONTRACT.md#gui-actions-and-visual-evidence)
+when making visual claims. Scripted capture and measured overflow diagnostics
+need no interaction or snapshot; keep this capture-only scope.
+
 1. Read the exit status: `0` all captured, `1` a capture failed, `2` a usage refusal or
    horizontal overflow under `--fail-on-overflow`. Browser diagnostics alone do not
    change the exit status. `captured` means completion, not page or visual correctness;

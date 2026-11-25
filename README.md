@@ -402,6 +402,7 @@ states its own boundaries and what "done" means.
 
 - `/impeccable`, `/ui-taste` — [publish actionable UI findings](docs/workflows.md#ui-findings); explicit design/edit requests keep their playbooks.
 - `/beautify-github-readme` — audit reader paths and publish verified issues; explicit redesign/hero and audit-only requests keep their scope.
+- [`/sakurai`](skills/sakurai/SKILL.md) — pointer to Sakurai's game-design guidance and 14 Japanese category references online; upstream text is not bundled without a redistribution grant.
 - `/responsive-screenshots` — capture pages at breakpoints, report overflow.
 - `/agents-md-generator` — [revamp both root instructions, audit, or update scoped rules](docs/workflows.md#repository-instruction-reconciliation).
   Bare Pi invocation rewrites `AGENTS.md` and `CLAUDE.md`; `audit` is read-only.
