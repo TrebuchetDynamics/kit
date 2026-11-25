@@ -342,6 +342,58 @@ class UpdateKitTests(unittest.TestCase):
             with self.assertRaisesRegex(updater.Hold, 'native updater'):
                 self.real_idle(self.source)
 
+    def test_root_updater_lock_holds_before_fetch_when_only_named_profile_links(self):
+        native = self.home / '.hermes'
+        flags = ('--skip', 'hermes', '--hermes-home', str(native))
+        self.success(*flags)
+        head = git(self.source, 'rev-parse', 'HEAD')
+        argv = self.argv()
+        target = self.advance()
+        plugins = native / 'profiles/work/plugins'
+        plugins.mkdir(parents=True)
+        (plugins / 'kit').symlink_to(self.source, target_is_directory=True)
+        # The unlinked root's gateway receipt must not block the retry.
+        (native / 'gateway.pid').touch()
+        lock = native / 'maintenance/toolset-update/lock'
+        lock.parent.mkdir(parents=True)
+        holder = '''
+import fcntl, select, sys
+with open(sys.argv[1], 'w') as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    print('locked', flush=True)
+    # Release even if the caller regresses to a blocking flock.
+    if not select.select([sys.stdin], [], [], 15)[0]:
+        sys.exit('fixture timed out waiting for lock release')
+'''
+        with patch.object(updater, 'ensure_idle', self.real_idle):
+            with subprocess.Popen([sys.executable, '-B', '-c', holder, str(lock)],
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as owner:
+                try:
+                    with selectors.DefaultSelector() as selector:
+                        selector.register(owner.stdout, selectors.EVENT_READ)
+                        self.assertTrue(selector.select(timeout=5), 'fixture did not acquire the root lock')
+                    self.assertEqual(owner.stdout.readline(), 'locked\n')
+                    with patch.object(updater, 'git', wraps=updater.git) as commands:
+                        code, out = self.invoke(*flags)
+                finally:
+                    owner.stdin.close()
+                    try:
+                        owner.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        owner.kill()
+                        raise
+            self.assertEqual(owner.returncode, 0, 'fixture released the lock before the invocation returned')
+            self.assertEqual(code, 1, out)
+            self.assertIn(f'Concurrent/unknown native updater at {native}; retry after native owner finishes', out)
+            self.assertNotIn('fetch', [call.args[1] for call in commands.call_args_list])
+            self.assertEqual(git(self.source, 'rev-parse', 'HEAD'), head)
+            self.assertEqual(self.argv(), argv)
+
+            out = self.success(*flags)
+        self.assertIn('installer_exit=0', out)
+        self.assertEqual(git(self.source, 'rev-parse', 'HEAD'), target)
+        self.assertEqual(self.argv(), argv * 2)
+
     def test_real_open_source_consumer_is_detected(self):
         if not updater.shutil.which('lsof'):
             self.skipTest('lsof unavailable for real open-file fixture')
