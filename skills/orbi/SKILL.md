@@ -19,7 +19,7 @@ gates. This skill is a lifecycle client with read-only local host inventory, not
 | Preview setup/default start | `setup --dry-run` maps to `start --dry-run`: write-free preview of preparation then activation. Staging-dependent validation and activation checks remain deferred; success is not authorization. |
 | Setup (default) or start; valid existing target | Skip setup; retain saved provider/harness/pin and omit bootstrap selectors. A missing explicit config, partial or foreign target is **not absent**: inspect and repair deliberately. |
 | Enabled/active owned timer; no observed running workers | Scheduling is active, but no worker was observed. Do not call it stopped or say setup is needed. Missing evidence or activity outside the scan is unknown, not zero. |
-| `setup_busy` | Cite observed timer/worker state and use `status` to inspect. Offer authorized stop/drain only when deliberately re-preparing or pausing, not just to make a preview pass. |
+| `setup_busy` | Cite observed timer/worker state and use `status` to inspect. Offer authorized stop only when deliberately re-preparing or pausing, not just to make a preview pass. |
 | Activation check fails or cannot be verified | Name the failed technical check and give the next read-only check or exact repair. Do not report a prepared deployment as started. |
 
 ## Common path
@@ -88,8 +88,10 @@ concrete unmet need, not a fixed sequence of model turns.
    paid GitHub plan, engine release/proof or second approval on that basis.
    Authentication, repository access, ownership and other technical checks still apply.
    Plain `update` requests scheduling after engine validation, even after an earlier
-   `stop`. Use `update --stop` to update and leave scheduling stopped. Workers finish naturally.
-   Stop disables only owned timers; `draining` is not `stopped`. Never kill/restart workers.
+   `stop`. Use `update --stop` to update and leave scheduling stopped. Stop and
+   update disable owned timers, cancel verified queued starts and stop owned workers
+   through systemd. Confirm inactivity from the receipt. Preserve attempts,
+   worktrees and recovery inputs; no direct kill or restart.
    Other mutations require their own accepted scope. Offline checks grant none.
 3. **Invoke once.** Preserve literal argument values, quoting, paths, provider/model
    IDs, `--config`, `--repo-dir` and all restrictions. Build argv, never interpolate
@@ -110,19 +112,13 @@ concrete unmet need, not a fixed sequence of model turns.
 4. **Relay receipt.** Return the helper's safe result directly wherever the host
    supports it. If a tool-result model turn is mandatory, relay only observed facts;
    no new plan or paraphrase pass. Lead with target and outcome, then a next action
-   only when needed. Use the helper's `human_resume_command` for a deliberate drain
-   retry: plain `/orbi update` only when the helper verifies this checkout selects
-   the same deployment. Keep the exact `resume_command` for automation and outside
-   that context. Relay `error.fix`; never guess selectors or shorten bound recovery commands.
-
-   Distinguish partial, uncertain and failed results, even on exit 0. For example,
-   given one draining worker and `engine_update: deferred`, say: “sdrhf: scheduling
-   paused. The engine was not updated; one worker is still running.” Follow with
-   the supplied human retry action. Do not suggest start while the engine is deferred.
-   Disabled timers are not an applied engine update, and `prepared`, `activated: false` does not prove scheduler inactivity.
+   only when needed. Relay `error.fix` and any exact `repair_command`; never guess
+   selectors or shorten bound recovery commands. Failed quiesce blocks engine sync;
+   disabled timers alone do not prove workers stopped or the engine updated. A
+   `prepared` receipt with `activated: false` does not prove scheduler inactivity.
 
    Keep structured evidence available: errors, `error.fix`, `error.mutated`,
-   completed/failed `steps`, confirmed timer lists, `preparation`, `activation` and
+   completed/failed `steps`, disabled timers, stopped workers, `preparation`, `activation` and
    scheduler uncertainty. A short summary must not hide partial mutation. For partial
    mutation or activation, use [partial failure and recovery](references/lifecycle.md#partial-failure-and-recovery).
    Preserve the nonzero timer error, `recurring_scheduling: incomplete`, `first_tick`
@@ -206,7 +202,7 @@ For host/fixture measurement limits, use the reference's
 | --- | --- |
 | "One more model should route or rephrase this." | Interpret once; the helper owns checks, and its safe receipt is the answer. Host-mandated continuations only relay it. |
 | "I remember help, so I can compose the table." | Run the helper's `help`; report observed output. |
-| "Start needs setup first; update needs a separate stop command." | Absent start composes preparation internally. Update pauses owned timers by default and defers until drained; it never authorizes service interruption or restart. |
+| "Start needs setup first; update needs a separate stop command." | Absent start composes preparation internally. Update stops owned workers before syncing; no separate stop or natural-drain wait. |
 | "A passing preview authorizes activation." | Only an explicit activating command authorizes it; previews perform no activation. |
 | "The command failed, so nothing changed and retry is safe." | Preserve mutation/activation evidence and repair deliberately; failure can be partially applied. |
 | "The queue is empty because the status read failed." | Failed reads are unavailable; partial reads disclose gaps. Zero verified ready is not zero pending. |
@@ -238,4 +234,4 @@ The standing [Definition of Done](../shared/DEFINITION-OF-DONE.md) applies beyon
 this task's acceptance.
 
 **Done when:** the helper's observed state or precise refusal and evidence are
-reported, with only authorized scoped mutations and active workers preserved.
+reported, with only authorized scoped mutations and recovery inputs preserved.

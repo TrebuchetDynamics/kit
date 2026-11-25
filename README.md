@@ -205,8 +205,8 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `setup` | Start by default: map to `start`, preparing and validating if absent. |
 | `setup --prepare-only` | Prepare source/configuration without scheduling or timer activation (direct helper `setup`). |
 | `start` | The command authorizes scheduling after technical checks. Prepare first if absent. |
-| `update` | The command authorizes maintenance and activation, even after an earlier `stop`. Pause owned timers, defer while workers finish, then pin and validate the newest official release before starting scheduling. `update --stop` leaves scheduling stopped. Not `/update-kit`. |
-| `stop` | Disable owned timers without killing active workers; report draining while they finish. |
+| `update` | Plain `update` authorizes maintenance and activation, even after an earlier `stop`. Disable owned timers, cancel queued starts and stop owned workers, then pin and validate the newest official release before starting scheduling. `update --stop` updates and leaves scheduling stopped. It is not `/update-kit`. |
+| `stop` | Disable owned timers, cancel queued starts and stop owned workers through systemd. Report `stopped` after verified inactivity. |
 
 Linux supports lifecycle changes. macOS supports status, version and help only.
 Never run bare `orbi` to inspect: it runs a Runner tick, not status.
@@ -218,10 +218,10 @@ Update the release and start scheduling in one command (no separate stop or star
 /orbi update
 ```
 
-Active workers finish naturally. A `draining` receipt names pending units and the
-exact command to retry after drain; no background update or restart follows.
-Plain update enables configured timers only after validation and existing start
-checks. `--stop` skips activating unit refresh. Neither mode interrupts workers.
+Update interrupts owned workers without waiting for them to finish naturally.
+It syncs only after verifying inactivity and preserves recovery inputs. Plain
+update enables configured timers only after validation and start’s technical checks.
+Use `--stop` to leave scheduling stopped and skip activating unit refresh.
 
 The upstream CLI remains available for diagnostics:
 
