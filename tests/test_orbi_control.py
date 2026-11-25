@@ -3451,6 +3451,18 @@ class InstallerFleetTests(unittest.TestCase):
         root = self.enterContext(tempfile.TemporaryDirectory())
         self.h = Harness(Path(root))
 
+    def test_fleet_manager_bounds_reads_and_allows_time_for_service_transitions(self):
+        ctx = helper.Context(env=self.h.env, platform='linux')
+        manager = helper.FleetManager('system', ('--system',), 0, Path('/root'))
+        with mock.patch.object(ctx, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
+            for verb, budget in (('show', helper.PROBE_TIMEOUT), ('list-jobs', helper.PROBE_TIMEOUT),
+                                 ('stop', helper.MUTATION_TIMEOUT), ('start', helper.MUTATION_TIMEOUT),
+                                 ('enable', helper.MUTATION_TIMEOUT), ('disable', helper.MUTATION_TIMEOUT)):
+                with self.subTest(verb=verb):
+                    manager.call(ctx, verb)
+                    self.assertEqual(run.call_args.args[0], ['systemctl', '--system', '--no-ask-password', verb])
+                    self.assertEqual(run.call_args.kwargs.get('timeout', helper.PROBE_TIMEOUT), budget)
+
     def test_inventory_loads_configured_disabled_orbi_template_instances(self):
         ctx = helper.Context(env=self.h.env, platform='linux')
         manager = helper.FleetManager('user', ('--user',), os.getuid(), self.h.home)

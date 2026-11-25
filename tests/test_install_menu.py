@@ -1629,6 +1629,19 @@ else:
         self.assertEqual(state.read_bytes(), original)
         self.assertEqual(self.calls('orbi sync-engine-source'), [])
 
+    def test_orbi_holds_when_effective_worker_and_fragment_name_different_configs(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        states = json.loads(state.read_text())
+        service = states['--system']['working-extra.service']
+        service['ExecStart'] = service['ExecStart'].replace('/working/orbi.toml', '/paused/orbi.toml')
+        state.write_text(json.dumps(states))
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('working-extra.service: effective worker config disagrees with its unit fragment', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
     def test_orbi_partial_failures_keep_bound_receipts(self):
         for phase, failed_step in (('stop', 'stop_service'), ('sync', 'sync_engine_source'),
                                    ('check', 'validate_non_activating'), ('enable', 'enable_trigger')):

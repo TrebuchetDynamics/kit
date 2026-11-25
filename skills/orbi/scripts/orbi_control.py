@@ -3871,8 +3871,11 @@ class FleetManager:
         env = {key: value for key, value in ctx.env.items() if not key.startswith(
             ('DBUS_', 'SYSTEMD_'))}
         env.update(LC_ALL='C', XDG_RUNTIME_DIR=f'/run/user/{os.getuid()}')
+        # Unlike a probe, start waits for unit startup including Orbi's bounded
+        # ExecStartPre steps; stop waits for the manager's termination sequence.
+        timeout = MUTATION_TIMEOUT if verb in {'start', 'stop', 'enable', 'disable'} else PROBE_TIMEOUT
         proc = ctx.run(['systemctl', *self.flags, '--no-ask-password', verb, *args],
-                       env=env, allow_failure=True)
+                       env=env, timeout=timeout, allow_failure=True)
         if proc.returncode:
             subject = ' '.join(str(arg) for arg in args if not str(arg).startswith('-'))
             fleet_refuse(f'{self.name}: {verb} {host_read_failure(proc)}'
@@ -4039,6 +4042,10 @@ def fleet_service(ctx, manager, name, values, fragments):
             or any(path.suffix == '.conf' for path, _ in fragments)):
         fleet_refuse(f'{label}: config binding or drop-in overrides are ambiguous')
     config = Path(next(iter(refs)))
+    # A config parsed from the fragment is not evidence that the manager's
+    # loaded ExecStart points at the same deployment.
+    if any(host_resolve_configs([ref], cwd) != [str(config)] for ref in command['configs']):
+        fleet_refuse(f'{label}: effective worker config disagrees with its unit fragment')
     user = values.get('User', '')
     expected_uid = manager.uid
     if manager.name == 'system' and user:
