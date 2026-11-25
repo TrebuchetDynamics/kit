@@ -196,8 +196,16 @@ elif name == 'dnf' and 'list' in args:
                'access': 'Permission denied reading cached metadata',
                'timeout': ''}[cache], file=sys.stderr)
         sys.exit(124 if cache == 'timeout' else 1)
-elif name in ['apt-get', 'dnf']:
-    if name == 'dnf':
+elif name == 'pacman' and args[0] == '-Si':
+    assert len(args) == 2
+    if args[1] == os.environ['PACMAN_MISSING']:
+        print(f"error: package '{args[1]}' was not found", file=sys.stderr)
+        sys.exit(1)
+elif name in ['apt-get', 'dnf', 'pacman']:
+    if name == 'pacman':
+        assert args[:3] == ['-S', '--needed', '--noconfirm']
+        assert (root / 'sudo-admitted').exists()
+    elif name == 'dnf':
         assert args[:3] == ['--refresh', 'install', '-y']
         assert (root / 'sudo-admitted').exists()
         failure = os.environ.get('DNF_FAILURE', '')
@@ -207,7 +215,7 @@ elif name in ['apt-get', 'dnf']:
                    'network': 'Curl error (6): Could not resolve host: fixture.invalid',
                    'access': 'Permission denied opening repository metadata'}[failure], file=sys.stderr)
             sys.exit(1)
-    for package in args[3:] if name == 'dnf' else args[2:]:
+    for package in args[2:] if name == 'apt-get' else args[3:]:
         p = root / 'bin' / ('adb' if package == 'android-tools' else package)
         p.write_text(Path(sys.argv[0]).read_text())
         p.chmod(0o755)
@@ -916,6 +924,8 @@ print('fixture-shell-usable', flush=True)
         result = self.invoke('--check', mode='no-package')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('repositories', result.stderr)
+        self.assertIn('https://docs.waydro.id/usage/install-on-desktops', result.stderr)
+        self.assertIn('universe', result.stderr)
         self.assertNotIn('sudo ', self.calls())
         self.assertFalse((self.home / '.local').exists())
         self.assert_ok(self.invoke())
@@ -1030,6 +1040,64 @@ print('fixture-shell-usable', flush=True)
         self.assert_ok(self.invoke('--check'))
         self.assert_ok(self.invoke())
         self.assertNotIn('dnf ', self.calls())
+
+    def use_pacman(self, *missing):
+        for name in ['apt-get', 'apt-cache', *missing]:
+            (self.bin / name).unlink()
+        pacman = self.bin / 'pacman'
+        pacman.write_text(FAKE)
+        pacman.chmod(0o755)
+        self.env['PACMAN_MISSING'] = ''
+
+    def test_pacman_installs_missing_packages_before_gui_transfer(self):
+        self.complete_device()
+        self.use_pacman('waydroid', 'adb')
+        result = self.invoke(mode='gui')
+        self.assert_ok(result)
+        self.assertIn('ADB serial: 192.0.2.8:5555\nAndroid: 13\nABI: x86_64', result.stdout)
+        calls = self.calls().splitlines()
+        command = 'sudo -n -- pacman -S --needed --noconfirm waydroid android-tools'
+        self.assertEqual([c for c in calls if c.startswith('sudo -n -- pacman ')], [command])
+        self.assertEqual([c for c in calls if c.startswith('pacman ') and not c.startswith('pacman -Si ')],
+                         ['pacman -S --needed --noconfirm waydroid android-tools'])
+        self.assertLess(calls.index('flock -n 9'), calls.index('sudo -n -v'))
+        self.assertLess(calls.index('sudo -n -v'), calls.index(command))
+        self.assertLess(calls.index(command), calls.index('waydroid session stop'))
+        self.assertLess(calls.index(command), calls.index('systemctl enable --now waydroid-container.service'))
+        (self.base / 'calls').write_text('')
+        self.assert_ok(self.invoke())
+        self.assertNotIn('pacman ', self.calls())
+
+    def test_pacman_check_uses_sync_database_without_sudo(self):
+        self.use_pacman('waydroid', 'weston', 'adb')
+        self.env['PACMAN_MISSING'] = 'weston'
+        result = self.invoke('--check')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Missing binary: waydroid; pacman candidate: waydroid; available', result.stdout)
+        self.assertIn('Missing binary: adb; pacman candidate: android-tools; available', result.stdout)
+        self.assertIn('Missing binary: weston; pacman candidate: weston; availability unknown', result.stderr)
+        self.assertEqual([c for c in self.calls().splitlines() if c.startswith('pacman ')],
+                         ['pacman -Si waydroid', 'pacman -Si weston', 'pacman -Si android-tools'])
+        self.assertNotIn('sudo ', self.calls())
+        self.assertEqual(list(self.home.iterdir()), [])
+        self.assert_no_provisioning()
+
+    def test_pacman_missing_sync_target_stops_before_gui_transfer(self):
+        self.complete_device()
+        self.use_pacman('weston')
+        self.env['PACMAN_MISSING'] = 'weston'
+        result = self.invoke(mode='gui')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('weston', result.stderr)
+        self.assertIn('sudo pacman -Syu', result.stderr)
+        self.assertIn('retry', result.stderr)
+        self.assertNotIn('ADB serial:', result.stdout)
+        self.assertIn('pacman -Si weston', self.calls())
+        for forbidden in ['sudo ', 'pacman -S ', 'pacman -Sy', 'session stop', 'enable --now',
+                          'daemon-reload', 'enable-linger', 'waydroid init']:
+            self.assertNotIn(forbidden, self.calls())
+        self.assertFalse((self.base / 'stop-attempted').exists())
+        self.assertFalse((self.base / 'session').exists())
 
     def test_foreign_unit_and_damaged_data_refuse_before_sudo(self):
         unit = self.home / '.config/systemd/user/kit-waydroid.service'

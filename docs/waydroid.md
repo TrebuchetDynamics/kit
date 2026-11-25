@@ -47,7 +47,9 @@ working DNS/HTTPS, storage for downloaded archives plus extracted Android images
 and working local DHCP/Waydroid networking are also necessary.
 
 - APT: installs missing `waydroid`, `weston`, `adb` from **already configured**
-  repositories. Configure Waydroid's official repository first if absent.
+  repositories. If APT cannot find `waydroid`, see the [official Waydroid desktop
+  installation instructions](https://docs.waydro.id/usage/install-on-desktops).
+  Recent Ubuntu releases provide `waydroid` in `universe`.
 - DNF: maps missing `waydroid`, `weston`, `adb` binaries to `waydroid`, `weston`,
   `android-tools`. Ordinary setup does not require a warm/readable user cache:
   after sudo authorization, under the setup lock, one bounded
@@ -62,6 +64,17 @@ and working local DHCP/Waydroid networking are also necessary.
   means **availability unknown**, not package absence; fresh availability cannot
   be verified without modifying the cache. Run ordinary setup for authorized
   fresh resolution, rather than prewarming metadata yourself.
+- pacman (Omarchy and other Arch hosts): maps missing `waydroid`, `weston`, `adb`
+  binaries to `waydroid`, `weston`, `android-tools`, provided by Arch's official
+  `extra` repository. `--check` uses `pacman -Si` against the local sync database
+  only, reports candidates as available or unknown, and returns nonzero for
+  missing binaries. Setup uses one `pacman -S --needed --noconfirm` transaction
+  for the missing packages after sudo authorization and under the setup lock.
+  It uses existing sync databases and enabled repositories, with no AUR helper
+  or added repository. Keep the system and sync databases in sync: if the
+  database lacks a package, run `sudo pacman -Syu` yourself first, then retry
+  setup. Setup runs neither a database refresh (`-Sy`) nor a system upgrade
+  (`-Syu`). Arch does not support partial upgrades.
 - Other Linux distributions/package managers: install those native capabilities
   using the distribution's supported Waydroid instructions, then run the same
   script. An unknown distro name is not rejected. No arbitrary third-party
@@ -302,6 +315,9 @@ For DNF, also verify one ordinary invocation with missing Weston and a cold user
 cache: authorized fresh resolution/install must precede headless capability checks
 and any GUI transfer. Capture repository/package errors without disrupting the GUI
 when resolution fails. Fake DNF tests do not prove package availability on Fedora.
+On Omarchy, verify a clean setup with missing packages resolved from Arch `extra`,
+then repeat setup and confirm it performs no pacman install and preserves Android
+state and keys.
 These checks require operator authorization and are **not performed by offline
 fixtures or by the delivery runner**.
 

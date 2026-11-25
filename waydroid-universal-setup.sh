@@ -25,11 +25,14 @@ Usage: waydroid-universal-setup.sh [--check | --status | --stop] [--wait SECONDS
   (no action)  Check prerequisites, ask for sudo if needed, transfer same-user GUI
                to managed headless (interrupts open GUI apps), and verify Android.
   --check      Read-only checks and planned same-user transfer; no sudo or writes.
-               Missing DNF dependencies return nonzero; cache evidence only.
+               Missing DNF/pacman dependencies return nonzero; cached metadata only.
   --status     Connect/query ADB as this user; wait for authorized Android boot.
   --stop       Disable this user's headless service; preserve Android data/keys.
   --wait       Per-stage session/device wait (default 180 seconds, max 3600).
   --help       Show this help. Operator/removal guide: docs/waydroid.md
+Setup installs missing Waydroid, Weston and ADB via APT, DNF or pacman.
+On Arch hosts (including Omarchy), pacman uses existing sync databases and maps
+ADB to android-tools. Setup never refreshes those databases or upgrades the system.
 No graphical login is required; Weston uses a private headless Wayland socket.
 Setup/status exit: 0 verified ready, 2 authorization pending; other failures nonzero.
 Pending means Android does not trust the current user's ADB key. Keep headless
@@ -346,7 +349,12 @@ PY
             MANAGER=apt-get
             PACKAGES=("${missing[@]}")
             for tool in "${PACKAGES[@]}"; do
-                timeout 30 apt-cache show "$tool" >/dev/null 2>&1 || fail "Missing package $tool in configured APT repositories. Follow official Waydroid distro installation instructions, then retry."
+                if ! timeout 30 apt-cache show "$tool" >/dev/null 2>&1; then
+                    if [[ $tool == waydroid ]]; then
+                        fail 'Missing package waydroid in configured APT repositories. Recent Ubuntu releases provide it in universe. See the official Waydroid installation instructions: https://docs.waydro.id/usage/install-on-desktops — then retry setup.'
+                    fi
+                    fail "Missing package $tool in configured APT repositories. Follow official Waydroid distro installation instructions, then retry."
+                fi
             done
         elif command -v dnf >/dev/null; then
             MANAGER=dnf
@@ -367,8 +375,26 @@ PY
                     fi
                 fi
             done
+        elif command -v pacman >/dev/null; then
+            MANAGER=pacman
+            local candidate evidence
+            for tool in "${missing[@]}"; do
+                candidate=$tool
+                [[ $tool != adb ]] || candidate=android-tools
+                PACKAGES+=("$candidate")
+                if evidence=$(timeout 30 pacman -Si "$candidate" 2>&1); then
+                    if [[ $ACTION == check ]]; then
+                        printf 'Missing binary: %s; pacman candidate: %s; available in the local sync database.\n' "$tool" "$candidate"
+                    fi
+                elif [[ $ACTION == check ]]; then
+                    printf 'Missing binary: %s; pacman candidate: %s; availability unknown from the local sync database.\n%s\n' "$tool" "$candidate" "$evidence" >&2
+                else
+                    printf '%s\n' "$evidence" >&2
+                    fail "Cannot verify $candidate in the local pacman sync database. If the database lacks the package, run the full system update (sudo pacman -Syu) first, then retry setup."
+                fi
+            done
         else
-            fail "Missing dependencies: ${missing[*]}. Install native Waydroid, Weston and ADB using your distribution's packages, then retry (automatic install supports APT/DNF)."
+            fail "Missing dependencies: ${missing[*]}. Install native Waydroid, Weston and ADB using your distribution's packages, then retry (automatic install supports APT/DNF/pacman)."
         fi
     fi
     if command -v weston >/dev/null; then
@@ -505,6 +531,8 @@ EOF
                 [[ $rc != 124 ]] || reason='timed out after 1800 seconds'
                 fail "DNF resolution/install $reason for: ${PACKAGES[*]}. Inspect DNF diagnostics above; repair the reported package/repository/network/access cause, then retry setup. No GUI stop or device service activation performed." "$rc"
             fi
+        elif [[ $MANAGER == pacman ]]; then
+            root pacman -S --needed --noconfirm "${PACKAGES[@]}"
         else
             root "$MANAGER" install -y "${PACKAGES[@]}"
         fi
@@ -634,6 +662,8 @@ case "$ACTION" in
         fi
         if [[ $MANAGER == dnf ]] && ((${#PACKAGES[@]})); then
             fail "Missing DNF dependencies: ${PACKAGES[*]}; --check cannot verify fresh availability without modifying the cache. After inspecting diagnostics, run ordinary setup for authorized fresh resolution/install."
+        elif [[ $MANAGER == pacman ]]; then
+            fail "Missing pacman dependencies: ${PACKAGES[*]}; run ordinary setup to install from the local sync database. If a package is missing from that database, run sudo pacman -Syu first."
         fi ;;
 
     status) verify_device ;;
