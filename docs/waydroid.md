@@ -8,15 +8,17 @@ normal testing user (replace the absolute checkout path):
 ```
 
 Review the script first. This is an **operator-run host change**, not part of Kit
-installation. It asks for ordinary sudo authorization, installs missing packages,
-initializes native Waydroid, enables its container at boot and enables a lingering
-headless user service. It does not install APKs, accounts, Maestro or project tests.
+installation. It asks for ordinary sudo authorization when needed, installs
+missing packages, initializes native Waydroid, enables its container at boot and
+enables a lingering headless user service. It does not install APKs, accounts,
+Maestro or project tests.
 No VM, emulator, SELinux relaxation, firewall change or ADB authorization bypass is
 provided. If this user has a graphical Waydroid session, default setup transfers
 it to the managed headless service in the same invocation. **Open GUI apps will be
 interrupted.** There is no extra flag, manual stop or second confirmation; ordinary
-sudo admission still applies. A device is reported ready only after the managed
-session, authorized ADB, Android boot, release and ABI checks succeed.
+sudo admission still applies when privileged work is needed. A device is reported
+ready only after the managed session, authorized ADB, Android boot, release and ABI
+checks succeed.
 No graphical login is required for setup, operation or recovery. An incoming
 same-user graphical session is transferred, not a supported steady state.
 **Live qualification is still outstanding**; fixture tests are not installation or
@@ -36,6 +38,7 @@ Android Binder IPC (loaded nodes or available `binder_linux` module), memfd or
 ashmem, cgroups and container namespaces. Bash, Python 3 with `os.memfd_create`
 (unless ashmem is present), GNU timeout/coreutils, util-linux flock and sudo must
 already be installed, including systemd's `busctl` with JSON output support.
+Setup also uses `cmp` from diffutils to compare installed files.
 Waydroid's distro package supplies LXC/networking helpers;
 Weston must include the headless backend and `--use-pixman`. Its private
 `wayland-kit` socket is not a desktop environment requirement; neither `DISPLAY`
@@ -78,7 +81,11 @@ requirements; supplying a distro name does not establish the capabilities.
 
 Setup inspects prerequisites before and after acquiring its per-user lock, but
 prints only the final inspection summary. `--check` remains read-only and sudo-free.
-Cached or passwordless sudo authorization works without a terminal. If interaction
+Setup calls sudo and keeps its authorization alive only if it needs to install
+packages, finish initialization, update the container drop-in, enable or start
+`waydroid-container.service`, or enable linger. A ready host skips sudo entirely,
+including the cached-authorization check. Cached or passwordless sudo authorization
+works without a terminal when privileged work is needed. If interaction
 is required, setup needs a controlling terminal: log in normally and rerun the
 same setup command **in that same terminal**. Do not pipe credentials, put them in
 arguments/environment variables, or send them to an agent or log.
@@ -101,8 +108,11 @@ Once provisioning begins, cancellation or failure **can leave partial host chang
 (packages, initialization, GUI transfer or service configuration). Inspect the
 reported stage, package-manager state, `waydroid status` and service journals below;
 preserve Android data and ADB keys, repair the reported cause, then retry setup.
-If managed headless is already running, use `--status` to verify it. A failed step
-is not a ready device and is not evidence that earlier changes were undone.
+If a `daemon-reload` failed after the unit file was installed, retry the reload
+for the affected manager (`sudo systemctl daemon-reload` or
+`systemctl --user daemon-reload`) before rerunning setup. If managed headless is
+already running, use `--status` to verify it. A failed step is not a ready device
+and is not evidence that earlier changes were undone.
 
 ## What persists and how retries work
 
@@ -110,15 +120,22 @@ One host Waydroid container is shared by one testing user, not one per repositor
 A different or missing session UID, ambiguous display, foreign loaded user unit,
 or colliding `wayland-kit` socket/lock refuses takeover. A running session is
 recognized as managed only with the current UID, `wayland-kit` display and an
-active owned `kit-waydroid.service`. A stopped device starts as needed; a working
-managed session is not stopped or restarted on repeat.
+active owned `kit-waydroid.service`. Setup only writes the container drop-in,
+user unit and service executable when they are missing or their bytes differ. It
+runs `daemon-reload` for the corresponding manager only after changing a unit
+file or drop-in, and runs `enable --now` only for a unit that is not enabled or
+not active. A working managed session is not stopped or restarted on repeat, even
+when setup updates the service executable. The new copy takes effect at the
+next restart. To apply it now, run `systemctl --user restart kit-waydroid.service`
+when an interruption is acceptable. An unchanged repeat still verifies Android
+and prints the ADB serial, Android version and ABI.
 
 `--check` reports a planned same-user graphical transfer without sudo, writes,
 stops or service changes. Classification uses non-activating system-bus queries,
 not `waydroid status` (whose D-Bus proxy can activate a stopped manager).
-Default setup finishes capability, image/data, ownership,
-package and sudo checks before disrupting the GUI. Under the existing setup lock
-it re-reads the session UID, display and process identity immediately before one
+Default setup finishes capability, image/data, ownership, package and any
+required sudo checks before disrupting the GUI. Under the existing setup lock it
+re-reads the session UID, display and process identity immediately before one
 bounded, **unprivileged** `waydroid session stop`. Changed identity refuses the stop.
 It then waits for successful system-bus container `GetSession` evidence of **no
 session**. A successful stop exit or a `STOPPED` status line alone is insufficient:
