@@ -1732,6 +1732,15 @@ def restart_services(output, observations=None):
         consumed = '\n'.join(line for line in shown.stdout.splitlines()
                              if line.startswith(('ExecStart=', 'EnvironmentFiles=')))
         references = {Path(value) for value in re.findall(r'(?<![\w./-])(/[^\s;"{}]+)', consumed)}
+        # An Orbi deployment can use an arbitrary unit name, including kit-*.
+        # Never restart it through the payload-consumer path, even if the
+        # installer skipped Orbi and the unit also uses a selected host input.
+        if not shown.returncode and (re.search(r'(?:^|[\s"=])ORBI_CONFIG=', shown.stdout, re.M)
+                                    or re.search(r'\s-m\s+orbi(?:\.runner)?(?:\s|;|$)', consumed)
+                                    or any(p.name in {'orbi', 'orbi-exporter.py'}
+                                           or p.parts[-2:] == ('.orbi', 'env') for p in references)):
+            reasons.append(f'{unit}: skipped (Orbi lifecycle is separate)')
+            continue
         if shown.returncode or not references:
             reasons.append(f'{unit}: held (unverified executable/config references for '
                            f'{", ".join(candidates)}); inspect systemctl --user show {unit} and restart manually if affected')
@@ -2002,12 +2011,13 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                     native_decisions.append(f'Hermes: native gateway disposition {disposition}; no outer restart')
                     for row in native.get('hosts', []):
                         key = row['item']
-                        if key == 'orbi' and 'orbi_fleet' in row:
-                            delegated_orbi = row
-                        elif key == 'orbi' and row['status'] in {'timeout', 'failed'}:
-                            delegated_orbi = {'status': 'failed', 'exit': row['exit'] or 1,
-                                'orbi_fleet': {'status': 'unverified', 'deployments': [],
-                                               'error': {'message': 'delegated Orbi receipt unavailable; inspect host state before retrying'}}}
+                        if key == 'orbi' and not skip_orbi and 'orbi' not in chosen:
+                            if 'orbi_fleet' in row:
+                                delegated_orbi = row
+                            elif row['status'] != 'skipped':
+                                delegated_orbi = {'status': 'failed', 'exit': row['exit'] or 1,
+                                    'orbi_fleet': {'status': 'unverified', 'deployments': [],
+                                                   'error': {'message': 'delegated Orbi receipt unavailable; inspect host state before retrying'}}}
                         if key == 'services' or row['status'] == 'skipped':
                             continue
                         evidence = row.get('evidence', {})

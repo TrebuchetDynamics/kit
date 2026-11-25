@@ -970,6 +970,18 @@ esac
                                  ['systemctl --user try-restart kit-bolt.service'])
                 self.assertIn('unchanged', second.stdout)
 
+    def test_skip_orbi_excludes_its_kit_named_units_from_consumer_restarts(self):
+        self.recording_services()
+        body = (self.bin / 'systemctl').read_text().replace(
+            'PI_CODING_AGENT_DIR=%s/.pi/agent\\n', 'PI_CODING_AGENT_DIR=%s/.pi/agent ORBI_CONFIG=/orbi/orbi.toml\\n')
+        self.fake('systemctl', body)
+        self.bolt.write_text(PI + '# previous release\n')
+        result = self.install('--only', 'pi-bolt,orbi', '--skip', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('kit-bolt.service: skipped (Orbi lifecycle is separate)', result.stdout)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [])
+        self.assertFalse(any('--no-ask-password' in call for call in self.calls('systemctl')))
+
     def test_tx_without_consumer_and_failed_or_preview_payloads_never_restart(self):
         self.recording_services()
         for args, env, code in ((('--only', 'tx'), {}, 0),
@@ -1498,7 +1510,14 @@ esac
                     Type='' if kind == 'timer' else 'oneshot' if slot == 'worker' else 'simple', Result='success',
                     ExecMainStatus='0', ExecMainStartTimestampMonotonic='1', ConditionResult='yes',
                     CanStart='yes', CanStop='yes', KillMode='control-group', SendSIGKILL='yes')
-        states['--system']['working-alias.service'] = states['--system']['working-worker.service']
+        worker = states['--system']['working-worker.service']
+        hook = "/usr/bin/timeout 90s /usr/bin/flock {{ORBI_REPO_DIR}}/.orbi/base-sync.lock -c 'orbi sync-engine-source'"
+        (self.home / 'working/native-template').write_text('ExecStartPre=' + hook + '\n')
+        hook = hook.replace('{{ORBI_REPO_DIR}}', str(self.home / 'working'))
+        fragment = Path(worker['FragmentPath'])
+        fragment.write_text(fragment.read_text() + 'ExecStartPre=' + hook + '\n')
+        worker['ExecStartPre'] = '{ path=/usr/bin/timeout ; argv[]=' + hook + ' ; }'
+        states['--system']['working-alias.service'] = worker
         state = self.home / 'fleet.json'
         state.write_text(json.dumps(states))
         self.fake('git', LOGGING + f'''
@@ -1521,6 +1540,7 @@ case $3 in
             cat "$2/head"
         fi ;;
     status) ;;
+    show) [[ $4 == HEAD:systemd/orbi@.service ]] && cat "$2/native-template" ;;
     remote) echo https://github.com/orbi-build/orbi ;;
     *) exit 97 ;;
 esac
@@ -1736,6 +1756,27 @@ else:
         self.assertIn('working-extra.service: effective worker config disagrees with its unit fragment', result.stdout)
         self.assertEqual(state.read_bytes(), original)
         self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_before_downtime_for_unverified_start_hooks(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        states = json.loads(state.read_text())
+        service = states['--system']['working-extra.service']
+        hook = '/usr/bin/systemctl start other.service'
+        fragment = Path(service['FragmentPath'])
+        definition = fragment.read_text()
+        for prop, failure in (('ExecStartPre', 'ExecStartPre differs from the pinned engine template'),
+                              ('ExecStartPost', 'unverified config environment or lifecycle hooks')):
+            with self.subTest(prop=prop):
+                fragment.write_text(f'{definition}{prop}={hook}\n')
+                service[prop] = '{ path=/usr/bin/systemctl ; argv[]=' + hook + ' ; }'
+                state.write_text(json.dumps(states))
+                original = state.read_bytes()
+                result = self.install('--only', 'orbi')
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(f'working-extra.service: {failure}', result.stdout)
+                self.assertEqual(state.read_bytes(), original)
+                self.assertEqual(self.calls('orbi sync-engine-source'), [])
+                del service[prop]
 
     def test_orbi_delegated_receipt_survives_installer_interruption(self):
         receipt, _, _ = self.orbi_fleet_fixture()

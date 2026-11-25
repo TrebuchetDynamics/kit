@@ -3988,7 +3988,8 @@ FLEET_UNIT_NAME = re.compile(r'(?!-)[a-zA-Z0-9_.:@\\-]+\.(?:service|timer)')
 FLEET_START_JOBS = frozenset({'start', 'restart', 'reload-or-start'})
 FLEET_UNIT_PROPS = ('Id', 'Names', 'LoadState', 'ActiveState', 'SubState', 'FragmentPath', 'DropInPaths', 'NeedDaemonReload',
                     'WorkingDirectory', 'User', 'DynamicUser', 'Environment', 'EnvironmentFiles',
-                    'UnsetEnvironment', 'PassEnvironment', 'ExecStart', 'ExecStop', 'ExecStopPost',
+                    'UnsetEnvironment', 'PassEnvironment', 'ExecCondition', 'ExecStartPre', 'ExecStart', 'ExecStartPost',
+                    'ExecStop', 'ExecStopPost',
                     'UnitFileState', 'Unit', 'Triggers', 'TriggeredBy', 'Type', 'Result',
                     'ExecMainStartTimestampMonotonic', 'ExecMainStatus', 'ConditionResult',
                     'CanStart', 'CanStop', 'KillMode', 'SendSIGKILL', 'PartOf', 'ConsistsOf', 'BoundBy', 'RequiredBy',
@@ -4038,8 +4039,8 @@ def fleet_owned_fragment(path, uid):
     return (path, info.st_dev, info.st_ino, info.st_uid, info.st_mode, bounded_bytes(path))
 
 
-def fleet_exec(values):
-    return tuple(re.findall(r'\{ path=([^;]+?) ; argv\[\]=(.*?) ;', values.get('ExecStart', '')))
+def fleet_exec(values, prop='ExecStart'):
+    return tuple(re.findall(r'\{ path=([^;]+?) ; argv\[\]=(.*?) ;', values.get(prop, '')))
 
 
 def fleet_service(ctx, manager, name, values, fragments):
@@ -4077,8 +4078,8 @@ def fleet_service(ctx, manager, name, values, fragments):
             fleet_refuse(f'{label}: effective worker config disagrees with its unit fragment')
     if (any(token.partition('=')[0] == 'ORBI_CONFIG' for prop in ('PassEnvironment', 'UnsetEnvironment')
             for token in shlex.split(values.get(prop, '')))
-            or any(values.get(prop) for prop in ('ExecStop', 'ExecStopPost'))):
-        fleet_refuse(f'{label}: unverified config environment or stop hooks')
+            or any(values.get(prop) for prop in ('ExecCondition', 'ExecStartPost', 'ExecStop', 'ExecStopPost'))):
+        fleet_refuse(f'{label}: unverified config environment or lifecycle hooks')
     user = values.get('User', '')
     expected_uid = manager.uid
     if manager.name == 'system' and user:
@@ -4109,6 +4110,19 @@ def fleet_service(ctx, manager, name, values, fragments):
     # redirect a bare worker to a different checkout.
     if command['runner'] and not (command['configs'] or effective_env or env_config):
         fleet_refuse(f'{label}: no effective worker config binding')
+    if values.get('ExecStartPre'):
+        # Native templates run bounded bootstrap/source checks before the tick.
+        # Do not activate arbitrary local hooks (including an unrelated unit
+        # start) just because the main command is a bound Orbi worker.
+        pattern = r'^[ \t]*ExecStartPre[ \t]*=(.*)$'
+        fragment_hooks = re.findall(pattern, bounded_text(fragments[0][0]), re.M)
+        if not command['runner'] or not fragment_hooks:
+            fleet_refuse(f'{label}: unverified ExecStartPre hooks')
+        native = ctx.run(['git', '-C', target.deploy_home, 'show', 'HEAD:systemd/orbi@.service'],
+                         allow_failure=True)
+        native_hooks = re.findall(pattern, native.stdout.replace('{{ORBI_REPO_DIR}}', str(cwd)), re.M)
+        if native.returncode or fragment_hooks != native_hooks or len(fleet_exec(values, 'ExecStartPre')) != len(native_hooks):
+            fleet_refuse(f'{label}: ExecStartPre differs from the pinned engine template')
     return target, command['runner']
 
 
@@ -4161,9 +4175,9 @@ def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', r
     binding = (tuple(fleet_owned_fragment(path, manager.uid) for path, _ in fragments),
                tuple(values.get(prop) for prop in FLEET_UNIT_PROPS if prop not in {
                    'ActiveState', 'SubState', 'UnitFileState', 'Result', 'ExecMainStartTimestampMonotonic',
-                   'ExecMainStatus', 'ConditionResult', 'Names', 'TriggeredBy', 'WantedBy', 'ExecStart'}))
-    # ExecStart's status fields change when a service stops. Keep just its executable/argv.
-    binding += (fleet_exec(values),)
+                   'ExecMainStatus', 'ConditionResult', 'Names', 'TriggeredBy', 'WantedBy', 'ExecStart', 'ExecStartPre'}))
+    # Execution status fields change when a service stops. Keep just the executable/argv.
+    binding += (fleet_exec(values), fleet_exec(values, 'ExecStartPre')),
     return FleetUnit(manager, name, target, binding, values['ActiveState'], values.get('UnitFileState', ''),
                      triggers, runner, values.get('Type', ''), frozenset(values.get('TriggeredBy', '').split()))
 
@@ -4374,7 +4388,9 @@ def fleet_preflight_target(ctx, target):
     state, _ = bootstrap_evidence(ctx, target)
     if state != 'compatible':
         fleet_refuse(f'{target.config_path}: deployment bootstrap is {state}')
-    file_identity(scheduling_intent_path(ctx, target))
+    pause = scheduling_intent_path(ctx, target)
+    if file_identity(pause) is not None and not os.access(pause.parent, os.W_OK | os.X_OK):
+        fleet_refuse(f'{pause}: cannot clear the deployment pause intent')
     run_orbi_check(ctx, target)
     return identities, source['head'], bootstrap
 
@@ -4469,7 +4485,8 @@ def installer_fleet(ctx, *, report_progress=None):
                       and '@' not in unit.name and unit.runner and unit.service_type != 'oneshot'}
         for config in targets:
             if config not in scheduled and not any(u.config == config and
-                    (u.label in standalone or u.active in ACTIVE_STATES) for u in units):
+                    (u.label in standalone or (u.active in ACTIVE_STATES and u.service_type != 'oneshot'))
+                    for u in units):
                 fleet_refuse(f'{config}: no verified scheduling or persistent worker to restore')
         fleet_check_permissions(ctx, units, jobs)
         tag, expected = fleet_latest_release(ctx)
@@ -4525,7 +4542,7 @@ def installer_fleet(ctx, *, report_progress=None):
 
             # Discover newly queued jobs after quiescing triggers, rather than
             # cancelling by an id from the frozen plan. Other units are untouched.
-            interrupted = set()
+            interrupted, previously_active = set(), set()
             for manager in managers:
                 for job, (name, verb) in fleet_jobs(ctx, manager).items():
                     unit = next((u for u in units if u.manager == manager and u.name == name), None)
@@ -4541,10 +4558,12 @@ def installer_fleet(ctx, *, report_progress=None):
                     continue
                 current = {'step': 'recheck_service', 'unit': unit.label}
                 active = fleet_verify_units(ctx, (unit,))[unit.label]
+                if active in ACTIVE_STATES or unit.active in ACTIVE_STATES:
+                    previously_active.add(unit.label)
                 if active in DRAIN_STATES or unit.label in interrupted:
                     action(unit, 'stop_service', 'stop', unit.name)
                     interrupted.add(unit.label)
-                elif unit.active in ACTIVE_STATES:
+                elif unit.label in previously_active:
                     interrupted.add(unit.label)  # ran at entry but finished during trigger shutdown
             current = {'step': 'verify_fleet_quiescent'}
             if fleet_managers(ctx) != managers:
@@ -4592,12 +4611,15 @@ def installer_fleet(ctx, *, report_progress=None):
                         or fleet_bootstrap_identity(ctx) != before[config][2]):
                     fleet_refuse(f'{config}: validated pin or file identity changed before activation')
                 worker_requested = False
-                for unit in sorted((u for u in owned if not u.triggers and
-                                    (u.label in interrupted or u.label in standalone)),
-                                   key=lambda u: (u.active not in ACTIVE_STATES, u.label)):
+                for unit in sorted((u for u in owned if not u.triggers),
+                                   key=lambda u: (u.label not in previously_active, u.label)):
                     timer_worker = (unit.manager, unit.name) in worker_timers and unit.runner
-                    if timer_worker and worker_requested:
-                        continue
+                    if timer_worker:
+                        if unit.label not in interrupted or worker_requested:
+                            continue
+                    elif (unit.label not in standalone and
+                          (unit.label not in previously_active or unit.service_type == 'oneshot')):
+                        continue  # only restore persistent services outside the timer-worker path
                     current = {'step': 'recheck_service_before_start', 'unit': unit.label}
                     fleet_verify_units(ctx, (unit,), idle=True)
                     baseline = fleet_unit(ctx, unit.manager, unit.name).get('ExecMainStartTimestampMonotonic', '')
