@@ -189,6 +189,7 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
 ''')
         (self.home / 'release.json').write_text(json.dumps({'tag_name': 'bolt-v1.4.0', 'draft': False, 'prerelease': False}))
         self.fake('systemctl', LOGGING)
+        self.fake('getent', '#!/bin/sh\nexit 0\n')
         self.claude_host()
         self.codex_registry()
         self.env = {'PATH': f'{self.bin}:/usr/bin:/bin', 'HOME': str(self.home), 'FAKE_LOG': str(self.log),
@@ -944,6 +945,7 @@ fi'''
     def recording_services(self):
         self.fake('systemctl', LOGGING + r'''
 case "$*" in
+  *--no-ask-password*) exit 0 ;;
   *list-units*)
     printf '%s\n' 'kit-bolt.service loaded active running Bolt' 'kit-other.service loaded active running Other' 'kit-stopped.service loaded inactive dead Stopped' 'orbi-kit@1.service loaded active running Paused' 'hermes-gateway.service loaded active running Hermes' ;;
   *show*kit-bolt.service*)
@@ -967,6 +969,18 @@ esac
                 self.assertEqual(self.calls('systemctl --user try-restart'),
                                  ['systemctl --user try-restart kit-bolt.service'])
                 self.assertIn('unchanged', second.stdout)
+
+    def test_skip_orbi_excludes_its_kit_named_units_from_consumer_restarts(self):
+        self.recording_services()
+        body = (self.bin / 'systemctl').read_text().replace(
+            'PI_CODING_AGENT_DIR=%s/.pi/agent\\n', 'PI_CODING_AGENT_DIR=%s/.pi/agent ORBI_CONFIG=/orbi/orbi.toml\\n')
+        self.fake('systemctl', body)
+        self.bolt.write_text(PI + '# previous release\n')
+        result = self.install('--only', 'pi-bolt,orbi', '--skip', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('kit-bolt.service: skipped (Orbi lifecycle is separate)', result.stdout)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [])
+        self.assertFalse(any('--no-ask-password' in call for call in self.calls('systemctl')))
 
     def test_tx_without_consumer_and_failed_or_preview_payloads_never_restart(self):
         self.recording_services()
@@ -1120,6 +1134,7 @@ if [[ "$*" == *list-units* ]]; then echo 'kit-unknown.service loaded active runn
         shutil.copy2(INSTALL, source / 'install.sh')
         shutil.copy2(ROOT / 'scripts/install_menu.py', source / 'scripts/install_menu.py')
         shutil.copytree(ROOT / 'tmux', source / 'tmux')
+        shutil.copytree(ROOT / 'skills/orbi/scripts', source / 'skills/orbi/scripts')
         clone = self.home / '.hermes/plugins/kit'
         (clone / '.git').mkdir(parents=True)
         self.fake('hermes', LOGGING)
@@ -1153,10 +1168,21 @@ if __name__ == '__main__':
                         self.assertEqual(rows['hermes']['gateway_restart'], disposition)
                         nested = {r['item']: r for r in rows['hermes']['hosts']}
                         self.assertIn('evidence', nested['pi-bolt'])
+                        self.assertEqual(nested['orbi']['orbi_fleet']['status'], 'no_deployments')
                         self.assertIn('delegated to outer installer', nested['services']['decision'])
                     self.assertEqual(len(self.calls('pi-bolt-installer')), 4)
                     self.assertEqual(self.calls('systemctl --user try-restart'),
                                      ['systemctl --user try-restart kit-bolt.service'])
+        for flags in (('--only', 'hermes', '--skip', 'orbi'), ('--only', 'hermes,orbi')):
+            self.log.write_text('')
+            result = subprocess.run(['bash', str(source / 'install.sh'), *flags], env=env,
+                                    capture_output=True, text=True, timeout=30, cwd=self.project)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
+            nested = {r['item']: r for r in rows['hermes']['hosts']}
+            self.assertEqual(nested['orbi']['status'], 'skipped')
+            self.assertEqual(len(self.calls('systemctl --system --no-ask-password list-units')),
+                             0 if '--skip' in flags else 1)
         self.log.write_text('')
         self.bolt.write_text(PI + '# previous release\n')
         env['NATIVE_HOST_FAIL'] = '1'
@@ -1176,7 +1202,8 @@ if __name__ == '__main__':
             'installed': True, 'enabled': True, 'source': {'source': 'local', 'path': str(payload)},
             'marketplaceSource': registration['marketplaceSource']}]}})
         self.fake('systemctl', LOGGING + f'''
-if [[ "$*" == *list-units* ]]; then echo 'kit-codex.service loaded active running Codex';
+if [[ "$*" == *--no-ask-password* ]]; then exit 0;
+elif [[ "$*" == *list-units* ]]; then echo 'kit-codex.service loaded active running Codex';
 elif [[ "$*" == *show* ]]; then echo 'ExecStart={{ path=/usr/bin/codex ; argv[]=/usr/bin/codex --plugin {payload}/SKILL.md ; }}'; fi
 ''')
         env.pop('NATIVE_HOST_FAIL')
@@ -1398,6 +1425,7 @@ exit 23
                 self.assertRegex(result.stdout, r'orbi\s+planned')
                 self.assertIn(f'uv tool install --python 3.14 {ORBI_SOURCE}', result.stdout)
         self.assertRegex(self.install('--list').stdout, r'orbi\s+available')
+        self.assertIn('even if paused or already current', self.install('--only', 'orbi', '--dry-run').stdout)
         self.assertEqual(self.calls('orbi'), [])
         self.assertEqual(self.calls('uv'), [])
         self.assertEqual(self.calls('systemctl'), [])
@@ -1416,6 +1444,399 @@ exit 23
                 install_menu.install_orbi()
         run.assert_not_called()
         self.assertFalse((self.home / '.local/bin/orbi').exists())
+
+    def test_plain_install_holds_orbi_before_mutation_when_system_manager_is_denied(self):
+        self.fake('systemctl', LOGGING + '''
+case " $* " in
+    *' --system '*' list-units '*) echo 'Access denied' >&2; exit 1 ;;
+esac
+''')
+        receipt = self.home / 'install.jsonl'
+        result = self.install(env={'KIT_INSTALL_REPORT': str(receipt)})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('system: list-units denied', result.stdout)
+        self.assertRegex(result.stdout, r'pi\s+installed')
+        self.assertEqual(self.calls('uv'), [])
+        self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
+                             for verb in ('stop', 'disable', 'cancel', 'start', 'enable')))
+        row = next(row for row in map(json.loads, receipt.read_text().splitlines()) if row['item'] == 'orbi')
+        self.assertEqual(row['orbi_fleet']['status'], 'held')
+
+    def orbi_fleet_fixture(self):
+        receipt = self.home / 'install.jsonl'
+        states = {'--system': {}, '--user': {}}
+        head = 'a' * 40
+        old = 'b' * 40
+        bootstrap = self.home / '.local/bin/orbi'
+        bootstrap.write_text(LOGGING + f'''
+case "$1" in
+  --version) echo orbi 1.2.3 ;;
+  sync-engine-source) echo {head} > "$(dirname "$3")/head"
+    touch "$(dirname "$3")/sync-attempted"
+    if [[ "$3" == "$INTERRUPT_INSTALLER" ]]; then kill -TERM "$PPID"; fi
+    test "$3" != "$FAIL_SYNC" ;;
+  check) test "$3" != "$FAIL_PREFLIGHT" &&
+    {{ test "$3" != "$FAIL_CHECK" || test ! -e "$(dirname "$3")/sync-attempted"; }} ;;
+  *) exit 99 ;;
+esac
+''')
+        bootstrap.chmod(0o755)
+        for manager, slug, previous in (('--system', 'working', head), ('--user', 'paused', old)):
+            deploy = self.home / slug
+            deploy.mkdir(exist_ok=True)
+            (deploy / '.git').mkdir(exist_ok=True)
+            config = deploy / 'orbi.toml'
+            config.write_text(f'source_repos = ["example/{slug}"]\nengine_source_track = "sha:{previous}"\n')
+            (deploy / 'head').write_text(previous)
+            (deploy / 'sync-attempted').unlink(missing_ok=True)
+            (deploy / 'units').mkdir(exist_ok=True)
+            for kind, slot, active in (('service', 'worker', slug == 'working'),
+                                       ('service', 'extra', slug == 'working'),
+                                       ('service', 'queued', False),
+                                       ('timer', 'worker', slug == 'working'), ('timer', 'queued', False)):
+                name = f'{slug}-{slot}.{kind}'
+                fragment = deploy / 'units' / name
+                unit = f'{slug}-{slot}.service' if kind == 'timer' else ''
+                fragment.write_text((f'[Service]\nWorkingDirectory={deploy}\nExecStart={bootstrap} --config {config}\n'
+                                     if kind == 'service' else f'[Timer]\nUnit={unit}\n[Install]\nWantedBy=timers.target\n'))
+                fragment.chmod(0o644)
+                states[manager][name] = dict(Id=name, Names=name, LoadState='loaded', FragmentPath=str(fragment),
+                    NeedDaemonReload='no', WorkingDirectory=str(deploy) if kind == 'service' else '',
+                    ActiveState='active' if active else 'inactive', SubState='waiting' if unit and active else 'dead',
+                    User=str(os.getuid()) if manager == '--system' else '',
+                    DynamicUser='no', ExecStart=f'{{ path={bootstrap} ; argv[]={bootstrap} --config {config} ; }}' if not unit else '',
+                    Unit=unit, Triggers=unit, TriggeredBy=f'{slug}-{slot}.timer' if slot in {'worker', 'queued'} and kind == 'service' else '',
+                    UnitFileState=('enabled' if active else 'disabled') if unit else 'static',
+                    Type='' if kind == 'timer' else 'oneshot' if slot == 'worker' else 'simple', Result='success',
+                    ExecMainStatus='0', ExecMainStartTimestampMonotonic='1', ConditionResult='yes',
+                    CanStart='yes', CanStop='yes', KillMode='control-group', SendSIGKILL='yes')
+        worker = states['--system']['working-worker.service']
+        hook = "/usr/bin/timeout 90s /usr/bin/flock {{ORBI_REPO_DIR}}/.orbi/base-sync.lock -c 'orbi sync-engine-source'"
+        (self.home / 'working/native-template').write_text('ExecStartPre=' + hook + '\n')
+        hook = hook.replace('{{ORBI_REPO_DIR}}', str(self.home / 'working'))
+        fragment = Path(worker['FragmentPath'])
+        fragment.write_text(fragment.read_text() + 'ExecStartPre=' + hook + '\n')
+        worker['ExecStartPre'] = '{ path=/usr/bin/timeout ; argv[]=' + hook + ' ; }'
+        states['--system']['working-alias.service'] = worker
+        state = self.home / 'fleet.json'
+        state.write_text(json.dumps(states))
+        self.fake('git', LOGGING + f'''
+if [[ $1 == ls-remote ]]; then
+    printf '{old}\\trefs/tags/v1.2.2\\n{old}\\trefs/tags/v1.2.3\\n{head}\\trefs/tags/v1.2.3^{{}}\\n{old}\\trefs/tags/v9.0.0-rc.1\\n'
+    exit 0
+fi
+if [[ $1 == rev-parse && $2 == --local-env-vars ]]; then
+    printf 'GIT_DIR\\nGIT_WORK_TREE\\nGIT_INDEX_FILE\\n'
+    exit 0
+fi
+[[ $1 == -C ]] || exit 98
+case $3 in
+    rev-parse)
+        if [[ $4 == --show-toplevel ]]; then
+            if [[ $2 == "$FAKE_PARENT_REPO" ]]; then dirname "$2"; else echo "$2"; fi
+        elif [[ $4 == --path-format=absolute && $5 == --git-common-dir ]]; then
+            if [[ $2 == "$FAKE_SHARED_REPO" ]]; then echo "$2/../working/.git"; else echo "$2/.git"; fi
+        else
+            cat "$2/head"
+        fi ;;
+    status) ;;
+    show) [[ $4 == HEAD:systemd/orbi@.service ]] && cat "$2/native-template" ;;
+    remote) echo https://github.com/orbi-build/orbi ;;
+    *) exit 97 ;;
+esac
+''')
+        self.fake('systemctl', '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+with open(os.environ['FAKE_LOG'], 'a') as log:
+    log.write('systemctl ' + ' '.join(args) + '\\n')
+if '--no-ask-password' not in args:
+    sys.exit(0)  # ordinary Kit consumer restarts are a different path
+if any(a.startswith('--machine=') for a in args):
+    sys.exit('Access denied')
+path = pathlib.Path(os.environ['FAKE_HOME']) / 'fleet.json'
+state = json.loads(path.read_text())
+manager, _, verb, *args = args
+units = state[manager]
+if verb == 'list-units':
+    assert {'--plain', '--no-legend', '--full'} <= set(args)
+    for n, u in units.items():
+        print(n, 'loaded', u['ActiveState'], 'running', 'An example unit description')
+elif verb == 'list-unit-files':
+    for n, u in units.items():
+        print(n, u.get('UnitFileState', 'static'), '-')
+elif verb == 'list-jobs':
+    if 'working-queued.service' in units and not (path.parent / 'cancelled').exists():
+        print('42 working-queued.service start waiting')
+elif verb == 'cancel':
+    assert args == ['42']
+    (path.parent / 'cancelled').touch()
+elif verb == 'show':
+    if args == ['-p', 'UnitPath', '--value']:
+        print(path.parent / ('.unknown-config' if os.environ.get('UNKNOWN_UNIT_PATH') else '.config') / 'systemd/user')
+    else:
+        for k, v in units[args[-1]].items():
+            print(f'{k}={v}')
+elif verb in ('disable', 'stop', 'start', 'enable'):
+    unit = units[args[-1]]
+    if ((verb == 'enable' and os.environ.get('FAIL_START') == args[-1]) or
+            (verb == 'stop' and os.environ.get('FAIL_STOP') == args[-1])):
+        sys.exit(1)
+    if verb in ('stop', 'start'):
+        unit['ActiveState'] = 'inactive' if verb == 'stop' or unit.get('Type') == 'oneshot' else 'active'
+        if args[-1].endswith('.timer'):
+            unit['SubState'] = ('dead' if verb == 'stop' else
+                                'elapsed' if os.environ.get('ELAPSED_TIMER') == args[-1] else 'waiting')
+    if verb == 'start':
+        unit['ExecMainStartTimestampMonotonic'] = '2'
+    if verb in ('enable', 'disable'):
+        unit['UnitFileState'] = 'enabled' if verb == 'enable' else 'disabled'
+    path.write_text(json.dumps(state))
+else:
+    sys.exit(99)
+''')
+        self.fake('pkcheck', LOGGING)
+        unrelated = self.home / 'orbi-lookalike.service'
+        unrelated.write_text('[Service]\nExecStart=/bin/true\n')
+        states['--user'][unrelated.name] = dict(Id=unrelated.name, LoadState='loaded',
+                                               FragmentPath=str(unrelated), ActiveState='active')
+        state.write_text(json.dumps(states))
+        return receipt, state, head
+
+    def test_plain_install_updates_and_restarts_the_verified_fleet(self):
+        receipt, state, head = self.orbi_fleet_fixture()
+        result = self.install(env={'KIT_INSTALL_REPORT': str(receipt)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rows = next(r['orbi_fleet']['deployments'] for r in map(json.loads, receipt.read_text().splitlines())
+                    if r['item'] == 'orbi')
+        self.assertEqual([(r['status'], r['engine_update']) for r in rows],
+                         [('started', 'updated'), ('started', 'up_to_date')])
+        self.assertEqual([r['step'] for r in rows[0]['steps'] if r['step'].startswith('verify_')],
+                         ['verify_scheduling', 'verify_scheduling'])
+        self.assertEqual([r['step'] for r in rows[1]['steps'] if r['step'].startswith('verify_')],
+                         ['verify_service_start', 'verify_service_start', 'verify_scheduling', 'verify_scheduling'])
+        calls = self.calls()
+        mutations = [line for line in calls if (line.startswith('orbi sync-engine-source') or
+                     line.startswith('orbi check') or ('--no-ask-password' in line and
+                     any(f' {verb} ' in line for verb in ('disable', 'stop', 'cancel', 'enable', 'start'))))]
+        verbs = [line.split()[line.split().index('--no-ask-password') + 1] if line.startswith('systemctl')
+                 else line.split()[1] for line in mutations]
+        self.assertEqual(verbs, ['check', 'check', 'disable', 'stop', 'cancel', 'stop', 'stop', 'stop',
+                                 'sync-engine-source', 'check', 'enable', 'start', 'enable', 'start',
+                                 'sync-engine-source', 'check', 'start', 'start', 'enable', 'start', 'enable', 'start'])
+        self.assertNotIn('orbi-lookalike', '\n'.join(mutations))
+        self.assertNotIn('working-alias', '\n'.join(mutations))
+        self.assertFalse(any(' start working-queued.service' in line for line in mutations))
+        self.assertIn('systemctl --system --no-ask-password start working-worker.service', mutations)
+        self.assertTrue(all(f'"sha:{head}"' in (self.home / d / 'orbi.toml').read_text()
+                            for d in ('paused', 'working')))
+        self.assertEqual(json.loads(state.read_text())['--user']['paused-worker.timer']['ActiveState'], 'active')
+        self.assertEqual(self.calls('uv'), [])
+        self.assertFalse((ROOT / 'skills/orbi/scripts/__pycache__').exists())
+
+    def test_orbi_holds_the_whole_fleet_for_an_inaccessible_other_local_account(self):
+        receipt, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        other = self.home / 'other-home'
+        directory = other / '.config/systemd/user'
+        directory.mkdir(parents=True)
+        (directory / 'delivery.service').write_text(
+            '[Service]\nExecStart=/bin/orbi --config /home/other/config.toml\n')
+        uid = 65533 if os.getuid() != 65533 else 65532
+        self.fake('getent', LOGGING + f'echo "other:x:{uid}:{uid}:Other:{other}:/bin/sh"\n')
+        result = self.install('--only', 'orbi', env={'KIT_INSTALL_REPORT': str(receipt)})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('user:other: list-units denied', result.stdout)
+        self.assertEqual(self.calls('orbi'), [])
+        self.assertEqual(state.read_bytes(), original)
+        self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
+                             for verb in ('stop', 'disable', 'cancel', 'start', 'enable')))
+
+    def test_orbi_holds_before_downtime_if_the_current_deployment_fails_check(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        config = str(self.home / 'working/orbi.toml')
+        result = self.install('--only', 'orbi', env={'FAIL_PREFLIGHT': config})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(config + ' preflight_deployment: orbi check failed', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+        self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
+                             for verb in ('stop', 'disable', 'cancel', 'start', 'enable')))
+
+    def test_orbi_holds_before_downtime_for_unverified_user_enablement_path(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi', env={'UNKNOWN_UNIT_PATH': '1'})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('user: cannot verify enablement directory', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+        self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
+                             for verb in ('stop', 'disable', 'cancel', 'start', 'enable')))
+
+    def test_orbi_holds_before_downtime_if_pin_rewrite_would_change_a_table(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        config = self.home / 'working/orbi.toml'
+        text = config.read_text().replace('"sha:' + 'a' * 40 + '"', "'sha:" + 'a' * 40 + "'")
+        text += '\n[unrelated]\nengine_source_track = "main"\n'
+        config.write_text(text)
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'{config}: engine_source_track is not writable at the top level', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(config.read_text(), text)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_for_configured_deployment_without_a_verified_unit(self):
+        config = self.home / '.local/share/orphan/orbi.toml'
+        config.parent.mkdir(parents=True)
+        config.write_text('source_repos = ["example/orphan"]\n')
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'{config}: configured deployment has no verified service binding', result.stdout)
+        self.assertEqual(self.calls('orbi'), [])
+        self.assertEqual(self.calls('uv'), [])
+
+    def test_orbi_reports_active_but_elapsed_timer_as_incomplete(self):
+        receipt, _, _ = self.orbi_fleet_fixture()
+        result = self.install('--only', 'orbi', env={
+            'KIT_INSTALL_REPORT': str(receipt), 'ELAPSED_TIMER': 'working-worker.timer',
+        })
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        fleet = next(r['orbi_fleet'] for r in map(json.loads, receipt.read_text().splitlines()) if r['item'] == 'orbi')
+        self.assertEqual(fleet['status'], 'incomplete')
+        paused, working = fleet['deployments']
+        self.assertEqual((paused['status'], working['status']), ('started', 'failed'))
+        self.assertEqual(working['failed_step'], 'verify_scheduling')
+        self.assertTrue(any(s['step'] == 'verify_service_start' for s in working['steps']))
+        self.assertIn('timer not confirmed enabled and scheduling', result.stdout)
+
+    def test_orbi_restores_a_paused_standalone_persistent_worker(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        states = json.loads(state.read_text())
+        worker = states['--user']['paused-extra.service']
+        worker['UnitFileState'] = 'disabled'
+        states['--user'] = {'paused-extra.service': worker}
+        state.write_text(json.dumps(states))
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('systemctl --user --no-ask-password start paused-extra.service', self.calls())
+        self.assertNotIn('systemctl --user --no-ask-password start paused-worker.service', self.calls())
+
+    def test_orbi_holds_before_downtime_for_a_parent_git_checkout(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi', env={'FAKE_PARENT_REPO': str(self.home / 'paused')})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('engine directory is not its own Git checkout root', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_before_downtime_for_shared_git_storage(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi', env={'FAKE_SHARED_REPO': str(self.home / 'paused')})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('Git state is not contained in the engine checkout', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_before_downtime_for_nonworker_orbi_commands(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        states = json.loads(state.read_text())
+        service = states['--system']['working-extra.service']
+        service['ExecStart'] = service['ExecStart'].replace(' --config ', ' setup --config ')
+        fragment = Path(service['FragmentPath'])
+        fragment.write_text(fragment.read_text().replace(' --config ', ' setup --config '))
+        state.write_text(json.dumps(states))
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('working-extra.service: effective worker/exporter command is unverified', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_when_effective_worker_and_fragment_name_different_configs(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        states = json.loads(state.read_text())
+        service = states['--system']['working-extra.service']
+        service['ExecStart'] = service['ExecStart'].replace('/working/orbi.toml', '/paused/orbi.toml')
+        state.write_text(json.dumps(states))
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('working-extra.service: effective worker config disagrees with its unit fragment', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_before_downtime_for_unverified_start_hooks(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        states = json.loads(state.read_text())
+        service = states['--system']['working-extra.service']
+        hook = '/usr/bin/systemctl start other.service'
+        fragment = Path(service['FragmentPath'])
+        definition = fragment.read_text()
+        for prop, failure in (('ExecStartPre', 'ExecStartPre differs from the pinned engine template'),
+                              ('ExecStartPost', 'unverified config environment or lifecycle hooks')):
+            with self.subTest(prop=prop):
+                fragment.write_text(f'{definition}{prop}={hook}\n')
+                service[prop] = '{ path=/usr/bin/systemctl ; argv[]=' + hook + ' ; }'
+                state.write_text(json.dumps(states))
+                original = state.read_bytes()
+                result = self.install('--only', 'orbi')
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(f'working-extra.service: {failure}', result.stdout)
+                self.assertEqual(state.read_bytes(), original)
+                self.assertEqual(self.calls('orbi sync-engine-source'), [])
+                del service[prop]
+
+    def test_orbi_delegated_receipt_survives_installer_interruption(self):
+        receipt, _, _ = self.orbi_fleet_fixture()
+        config = str(self.home / 'working/orbi.toml')
+        result = self.install('--only', 'orbi', env={'KIT_INSTALL_REPORT': str(receipt),
+                              'KIT_INSTALL_ORBI_PROGRESS': '1', 'INTERRUPT_INSTALLER': config})
+        self.assertNotEqual(result.returncode, 0)
+        row = json.loads(receipt.read_text().splitlines()[-1])
+        self.assertEqual((row['item'], row['status']), ('orbi', 'failed'))
+        fleet = row['orbi_fleet']
+        self.assertEqual(fleet['status'], 'incomplete')
+        self.assertEqual(fleet['error']['config'], config)
+        self.assertEqual(fleet['error']['step'], 'apply_release')
+        paused, working = fleet['deployments']
+        self.assertEqual((paused['status'], working['status']), ('started', 'stopped'))
+        self.assertIn('last request may have taken effect', fleet['recovery'])
+
+    def test_orbi_partial_failures_keep_bound_receipts(self):
+        for phase, failed_step in (('stop', 'stop_service'), ('sync', 'sync_engine_source'),
+                                   ('check', 'validate_non_activating'), ('enable', 'enable_trigger')):
+            with self.subTest(phase=phase):
+                receipt, state, _ = self.orbi_fleet_fixture()
+                self.log.write_text('')
+                (self.home / 'cancelled').unlink(missing_ok=True)
+                result = self.install('update', '--only', 'orbi', env={
+                    'KIT_INSTALL_REPORT': str(receipt),
+                    'FAIL_STOP': 'working-worker.service' if phase == 'stop' else '',
+                    'FAIL_SYNC': str(self.home / 'working/orbi.toml') if phase == 'sync' else '',
+                    'FAIL_CHECK': str(self.home / 'working/orbi.toml') if phase == 'check' else '',
+                    'FAIL_START': 'working-worker.timer' if phase == 'enable' else '',
+                })
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                fleet = next(r['orbi_fleet'] for r in map(json.loads, receipt.read_text().splitlines()) if r['item'] == 'orbi')
+                paused, working = fleet['deployments']
+                self.assertEqual((fleet['status'], paused['status'], working['status']),
+                                 ('incomplete', 'untouched' if phase == 'stop' else 'started', 'failed'))
+                self.assertEqual(working['failed_step'], failed_step)
+                self.assertIn('No rollback attempted', result.stdout)
+                self.assertIn(working['config'], working['recovery'])
+                if phase != 'enable':
+                    self.assertFalse(any(' start working-' in call for call in self.calls('systemctl')))
+                if phase == 'stop':
+                    self.assertEqual(self.calls('orbi sync-engine-source'), [])
+                if phase == 'sync':
+                    self.assertEqual(working['engine_update'], 'sync_unverified')
+                    self.assertEqual(working['steps'][-1]['track'], 'tag:v1.2.3')
 
     def test_orbi_preserves_existing_cli_even_on_update(self):
         self.fake('orbi', LOGGING + 'echo orbi 0.7.41\n')
