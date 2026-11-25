@@ -4,7 +4,9 @@ import contextlib
 import io
 import fcntl
 import json
+import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -1100,6 +1102,82 @@ class ScopedUpdateTests(unittest.TestCase):
         self.assertEqual(first['backup'], second['backup'])
         self.assertNotIn('install', [a for a, _ in self.calls])
 
+    def test_fleet_update_waits_for_scoped_publication(self):
+        reviewed = self.root / 'reviewed checkout'
+        self.git(self.root, 'clone', str(self.remote), str(reviewed))
+        (self.profiles[1][1] / 'config.yaml').write_text('{}\n')
+        fleet_args = ['--hermes-home', str(self.home)]
+        scoped_args = [*fleet_args, '--profile', 'default', '--source', str(reviewed),
+                       '--revision', self.revision, '--native-python', sys.executable]
+
+        def run(args):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                code = self.mod.main(args)
+            return code, json.loads(output.getvalue())
+
+        def fail_install(action, *args):
+            if action == 'install':
+                raise OSError('interrupted native install')
+            return self.fake_native(action, *args)
+
+        with patch.object(self.mod, 'native_call', fail_install):
+            code, failed = run(scoped_args)
+        self.assertEqual((code, failed['status']), (1, 'incomplete'))
+        self.assertEqual(failed['profiles']['default']['phase'], 'backed_up')
+        receipt = self.home / 'maintenance/toolset-update/scoped.json'
+        saved = receipt.read_bytes()
+        head = self.git(self.repo, 'rev-parse', 'HEAD')
+        paths = [self.repo / 'skills/demo/SKILL.md',
+                 *(home / 'skills/demo/SKILL.md' for _, home in self.profiles)]
+        before = [path.read_bytes() for path in paths]
+        (self.remote / 'skills/demo/SKILL.md').write_text('latest\n')
+        self.git(self.remote, 'commit', '-am', 'new upstream release')
+        latest = self.git(self.remote, 'rev-parse', 'HEAD')
+
+        prepare = self.mod.prepare
+        with patch.object(self.mod, 'prepare',
+                          side_effect=lambda source, profiles: prepare(source, profiles, upstream=str(self.remote))) as prep, \
+             patch.object(self.mod, 'finalize_profiles', return_value=[{'status': 'ready'}]), \
+             patch.object(self.mod, 'gateway_running', return_value=False):
+            for extra in ([], ['--check']):
+                with self.subTest(extra=extra):
+                    code, blocked = run([*fleet_args, *extra])
+                    self.assertEqual((code, blocked['status']), (1, 'incomplete'), blocked)
+                    instructions, command, next_step = blocked['action'].splitlines()
+                    self.assertIn('checkout where you ran it', instructions)
+                    self.assertEqual(shlex.split(command), ['python3', 'scripts/update_bundle.py',
+                                                           *scoped_args[:-1], '/path/to/original/hermes-python'])
+                    self.assertIn('retry hermes kit update', next_step)
+                    self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), head)
+                    self.assertEqual([path.read_bytes() for path in paths], before)
+                    self.assertEqual(receipt.read_bytes(), saved)
+            prep.assert_not_called()
+
+            code, resumed = run(scoped_args)
+            self.assertEqual((code, resumed['status']), (0, 'updated'), resumed)
+            self.assertEqual(resumed['profiles']['default']['status'], 'ready')
+            self.assertEqual(resumed['backup'], failed['backup'])
+            self.assertEqual(paths[1].read_bytes(), b'new\n')
+
+            code, updated = run(fleet_args)
+            self.assertEqual((code, updated['status']), (0, 'updated'), updated)
+            self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), latest)
+            self.assertEqual([path.read_bytes() for path in paths], [b'latest\n'] * len(paths))
+
+    def test_fleet_update_refuses_unreadable_scoped_evidence(self):
+        receipt = self.scan_blocked_receipt()
+        for data in (b'{', b'null', b'{"status":"incomplete"}'):
+            with self.subTest(data=data):
+                receipt.write_bytes(data)
+                with patch.object(self.mod, 'prepare') as prepare, contextlib.redirect_stdout(io.StringIO()) as output:
+                    code = self.mod.main(['--hermes-home', str(self.home), '--check'])
+                result = json.loads(output.getvalue())
+                self.assertEqual((code, result['status']), (1, 'incomplete'))
+                self.assertIn(str(receipt), result['error'])
+                self.assertIn('preserve', result['error'])
+                self.assertEqual(receipt.read_bytes(), data)
+                prepare.assert_not_called()
+
     def test_source_race_during_scan_prevents_publication(self):
         def race(action, *args):
             if action == 'scan': (self.remote/'plugin.yaml').write_text('raced source')
@@ -2119,6 +2197,66 @@ class PinProfileTests(unittest.TestCase):
         self.assertTrue((Path(result['clone_kept_at'])/'.git').is_dir())
         with self.assertRaisesRegex(ValueError, 'No saved link'):
             self.unpin()
+
+    def pin_work_eu(self):
+        checkout = self.root/'checkout-eu'
+        self.git(self.root, 'clone', str(self.remote), str(checkout))
+        self.profiles.append(('work-eu', self.home/'profiles/work-eu'))
+        plugin = self.plugin('work-eu')
+        plugin.parent.mkdir(parents=True)
+        plugin.symlink_to(checkout)
+        return Path(self.pin('work-eu')['backup']), checkout
+
+    def test_unpin_restores_only_the_exact_profiles_saved_link(self):
+        work_backup = Path(self.pin()['backup'])
+        eu_backup, eu_checkout = self.pin_work_eu()
+
+        result = self.unpin()
+
+        self.assertEqual(self.plugin().readlink(), self.repo)
+        self.assertEqual(Path(result['clone_kept_at']).parent, work_backup)
+        self.assertEqual((eu_backup/'link').readlink(), eu_checkout)
+        self.assertFalse(self.plugin('work-eu').is_symlink())
+        self.unpin('work-eu')
+        self.assertEqual(self.plugin('work-eu').readlink(), eu_checkout)
+
+    def test_unpin_refuses_plain_clone_when_only_prefixed_profile_is_pinned(self):
+        plugin = self.plugin()
+        plugin.unlink()
+        self.git(self.root, 'clone', str(self.remote), str(plugin))
+        eu_backup, eu_checkout = self.pin_work_eu()
+        before = sorted(self.home.rglob('*'))
+
+        with self.assertRaisesRegex(ValueError, 'No saved link for work; nothing to restore'):
+            self.unpin()
+
+        self.assertEqual(sorted(self.home.rglob('*')), before)
+        self.assertTrue((plugin/'.git').is_dir())
+        self.assertEqual((eu_backup/'link').readlink(), eu_checkout)
+
+    def test_unpin_ignores_invalid_pin_records(self):
+        backup = Path(self.pin()['backup'])
+        record = backup/'record.json'
+        for kind, contents in (
+            ('syntax', b'{'), ('encoding', b'\xff'), ('array', b'[]'), ('no profile', b'{}'),
+            ('integer limit', b'{"revision":' + b'1' * 5000 + b'}'),
+            ('nesting limit', b'[' * 10_000 + b'0' + b']' * 10_000),
+        ):
+            with self.subTest(kind=kind):
+                record.write_bytes(contents)
+                with self.assertRaisesRegex(ValueError, 'No saved link for work'):
+                    self.unpin(dry_run=True)
+        record.unlink()
+        os.mkfifo(record)  # Unlike a regular record, opening this could block.
+        (self.home/'profiles/work/config.yaml').write_text('{}\n')
+        result = subprocess.run([sys.executable, str(ROOT/'scripts/update_bundle.py'),
+                                 '--hermes-home', str(self.home), '--unpin-profile', 'work'],
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {'profile': 'work', 'status': 'refused',
+                                                    'error': 'No saved link for work; nothing to restore'})
+        self.assertTrue((self.plugin()/'.git').is_dir())
+        self.assertEqual((backup/'link').readlink(), self.repo)
 
     def test_unlinked_profile_and_cli_refusal(self):
         self.pin()

@@ -262,8 +262,34 @@ real upstream installation, package refresh, model run or live skill discovery.
 
 Default/full/menu and `update` include `pi-bolt`. Use `./install.sh --only pi-bolt`
 to install it alone or `--skip pi-bolt` to leave it untouched. Every install and
-`update` runs the upstream installer again: a present `pi-bolt` is refreshed rather
-than kept, so a stale native build never survives an install.
+`update` checks freshness before downloading the bootstrap script for an existing
+installation. Kit uses HTTPS GitHub release metadata: stable `releases/latest`,
+`releases/tags/<PIBOLT_VERSION>` for an explicit tag, or the highest numeric
+`bolt-vX.Y.Z` tag among the first 30 releases for upstream's beta selection.
+The lookup has a 10-second connection timeout, a 30-second transfer limit, and
+at most five HTTPS-only redirects. A transfer rate cap also bounds downloads
+when older curl versions do not know the response size upfront. Kit rejects
+responses larger than 1 MiB for a single release or 8 MiB for the beta list,
+which includes assets for each release.
+Preview performs no live lookup.
+
+A current result requires the **Pi-Bolt version inside the banner**, not the
+leading Pi version, plus a healthy build manifest/assets, the requested
+platform/variant and install root, effective channel, and the selected Kit BIN
+symlink to the expected upstream command. A proven match leaves the payload and
+links untouched and runs no bootstrap, archive download or installer shell.
+`PIBOLT_VERSION`, `PIBOLT_CHANNEL`, `PIBOLT_VARIANT` and `PIBOLT_INSTALL` retain
+upstream meanings; default x86-64 selection follows upstream's AVX2/libc rules.
+With no channel override, upstream selects the latest stable release for this
+install but preserves any stored beta channel for future `pi-bolt update` calls;
+an explicit channel override must match the stored channel to skip installation.
+Special modes (including Termux, mirrors, `PIBOLT_NO_PATH=1` and explicit Paseo
+registration) use the official installer directly. Missing, stale, broken, locally
+compiled or otherwise unproven builds use the official install/repair path. A failed or malformed
+release lookup for an existing installation reports `Pi-Bolt release check failed`,
+preserves it without reinstalling, and asks to retry `./install.sh --only pi-bolt`.
+This is a failed check, not an unchanged success. Pi package freshness/skill repairs
+and other suite components' native checks still run independently.
 
 Kit downloads the [official installer](https://pi-bolt.opensec.in/install.sh) into a
 private temporary file with HTTPS-only redirects, five redirects at most, a 15-second
@@ -271,7 +297,7 @@ connection timeout, a 300-second transfer limit and a 1 MiB size limit, then run
 the published file unmodified with `sh`. The run cannot prompt and installs no
 optional extensions (`PIBOLT_YES=1`, `PIBOLT_EXTENSIONS=no`). `PIBOLT_BIN_DIR` is
 the Kit binary directory (`~/.local/bin`, or `KIT_BIN_DIR`); the payload keeps
-upstream's `~/.pi-bolt` default. Kit verifies the linked `pi-bolt --version` and
+upstream's `~/.pi-bolt` default (or `PIBOLT_INSTALL` override). Kit verifies the linked `pi-bolt --version` and
 never writes through a broken link. Upstream owns release selection, channel,
 signature and checksum verification, and `pi-bolt update`; Kit pins no version and
 edits no shell profile. An upstream failure can leave a partial installation: no
@@ -627,14 +653,16 @@ the receipt to `requested`; if another restart loaded the update first it record
 next step and restarts nothing. Cron schedules persist (a job mid-run during a
 restart is marked `unknown` and not retried; its next tick runs normally).
 Otherwise it reports `not_running`, or `not_needed` for a no-op or incomplete
-activation. While a deferred or requested restart is outstanding, a later update
-reports `pending` and joins it instead of starting another one, so a burst of
-updates restarts the gateway once; that restart loads the newest release, and its
-outcome reaches the latest receipt with `gateway_restart_covers`, the number of
-updates it covers. The waiter never restarts while an update is still applying
-files: it shares the update lock and waits for the next check. The waiter records
-its outcome in the durable receipt; a subsequent update also records a completed
-requested restart. `completed` includes `gateway_restart_result` (new gateway PID,
+activation. A later update can join an outstanding requested restart. It can join
+an outstanding deferred restart only if its waiter watches the same running
+gateway. If the deferred waiter watches a different gateway or has no recorded
+gateway PID, the update makes its own restart decision. An update that joins
+reports `pending`, so a burst of updates restarts the gateway once; that restart
+loads the newest release, and its outcome reaches the latest receipt with
+`gateway_restart_covers`, the number of updates it covers. The waiter never
+restarts while an update is still applying files: it shares the update lock and
+waits for the next check. The waiter records its outcome in the durable receipt;
+a subsequent update also records a completed requested restart. `completed` includes `gateway_restart_result` (new gateway PID,
 start time, observed menu resends and interruptions); `restart_failed` means the
 old gateway still runs. `restart.json` retains the outcome. These receipt fields
 are evidence, not a promise of the former chat summary. To restart immediately
@@ -902,7 +930,11 @@ the original plugin is moved back if the slot is still empty; partial native out
 An interruption can leave plugin and skill publication at different phases.
 Rerun the same command to resume the original source, selection, staging and
 backup. A different revision/selection, including the same profiles in a different order,
-is refused while that run is incomplete.
+is refused while that run is incomplete. If an incomplete scoped run has a recorded
+phase for any selected profile, `hermes kit update` and `hermes kit update --check`
+return `incomplete` before fetching or changing the checkout or skill files. Follow
+the reported action to resume the original scoped command before retrying the
+all-profile update.
 
 If the original source is gone and **publication never began**, inspect the receipt
 and its backup manifest, then cancel only that exact attempt:
