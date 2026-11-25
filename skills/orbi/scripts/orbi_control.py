@@ -1445,18 +1445,18 @@ def timer_enabled(ctx, unit):
                                                'reason': 'timer enablement could not be verified'}})
 
 
-def scheduler_inventory(deployment):
+def scheduler_inventory(deployment, *, scan_last=MAX_INSTANCES):
     """The scan describes local evidence, not total deployment capacity/activity."""
-    return {'scope': 'local-target-prefix', 'scan_first': 1, 'scan_last': MAX_INSTANCES,
+    return {'scope': 'local-target-prefix', 'scan_first': 1, 'scan_last': scan_last,
             'outside_scan': 'unobserved', 'configured_slots': deployment.max_concurrency,
-            'configured_slots_covered': deployment.max_concurrency <= MAX_INSTANCES,
+            'configured_slots_covered': deployment.max_concurrency <= scan_last,
             'counts': {name: {'state': 'unavailable', 'value': None}
                        for name in ('enabled_timers', 'active_timers', 'running_services')}}
 
 
-def unavailable_scheduler(deployment, reason):
+def unavailable_scheduler(deployment, reason, *, scan_last=MAX_INSTANCES):
     return {'state': 'unavailable', 'reason': reason, 'timers': {}, 'services': {},
-            'inventory': scheduler_inventory(deployment)}
+            'inventory': scheduler_inventory(deployment, scan_last=scan_last)}
 
 
 def fragment_kind(fragment, unit):
@@ -1474,21 +1474,23 @@ def fragment_kind(fragment, unit):
     return 'unknown'
 
 
-def scheduler_snapshot(ctx, deployment, *, indices=None):
+def scheduler_snapshot(ctx, deployment, *, indices=None, scan_last=MAX_INSTANCES):
     timers, services = {}, {}
-    inventory = scheduler_inventory(deployment)
+    inventory = scheduler_inventory(deployment, scan_last=scan_last)
     ownership_complete = True
-    for index in (indices if indices is not None else range(1, MAX_INSTANCES + 1)):
+    for index in (indices if indices is not None else range(1, scan_last + 1)):
         timer = f'{deployment.prefix}@{index}.timer'
         service = f'{deployment.prefix}@{index}.service'
         fragment = systemctl_show(ctx, timer, 'FragmentPath')
         if fragment.returncode != 0:
-            return unavailable_scheduler(deployment, 'the systemd user session is not readable')
+            return unavailable_scheduler(deployment, 'the systemd user session is not readable',
+                                         scan_last=scan_last)
         timer_fragment = fragment.stdout.strip()
         installed = bool(timer_fragment)
         service_fragment = systemctl_show(ctx, service, 'FragmentPath')
         if service_fragment.returncode != 0:
-            return unavailable_scheduler(deployment, 'loaded service ownership could not be verified')
+            return unavailable_scheduler(deployment, 'loaded service ownership could not be verified',
+                                         scan_last=scan_last)
         service_path = service_fragment.stdout.strip()
         owned = False
         if service_path:
@@ -1508,7 +1510,8 @@ def scheduler_snapshot(ctx, deployment, *, indices=None):
             try:
                 enabled = timer_enabled(ctx, timer)
             except ControlError as exc:
-                exc.evidence['scheduler'] = unavailable_scheduler(deployment, exc.message)
+                exc.evidence['scheduler'] = unavailable_scheduler(deployment, exc.message,
+                                                                  scan_last=scan_last)
                 raise
             timers[timer] = {'installed': True, 'owned': owned, 'enabled': enabled,
                              'active': systemctl_state(ctx, timer),
@@ -1536,11 +1539,12 @@ def scheduler_snapshot(ctx, deployment, *, indices=None):
     return {'state': 'ok', 'timers': timers, 'services': services, 'inventory': inventory}
 
 
-def safe_scheduler_snapshot(ctx, deployment):
+def safe_scheduler_snapshot(ctx, deployment, *, scan_last=MAX_INSTANCES):
     try:
-        return scheduler_snapshot(ctx, deployment)
+        return scheduler_snapshot(ctx, deployment, scan_last=scan_last)
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError):
-        return unavailable_scheduler(deployment, 'scheduler evidence could not be read')
+        return unavailable_scheduler(deployment, 'scheduler evidence could not be read',
+                                     scan_last=scan_last)
 
 
 def deployment_state(snapshot):
@@ -2127,8 +2131,7 @@ def require_setup_transport(repo, target):
 
 
 def require_setup_idle(ctx, target, *, action='setup'):
-    snapshot = scheduler_snapshot(
-        ctx, target, indices=range(1, max(MAX_INSTANCES, target.max_concurrency) + 1))
+    snapshot = scheduler_snapshot(ctx, target, scan_last=max(MAX_INSTANCES, target.max_concurrency))
     if snapshot.get('state') != 'ok':
         raise ControlError('scheduler_unavailable', f'{action} cannot verify inactive/no-worker evidence',
                            fix='restore read-only systemd user-session evidence; do not repair while '
@@ -2729,8 +2732,8 @@ def command_stop(ctx, args):
         target = select_target(ctx, repo, args.config, require=True)
         validate_target(target, repo)
         require_unit_ownership(ctx, target)
-        snapshot = scheduler_snapshot(
-            ctx, target, indices=range(1, max(MAX_INSTANCES, target.max_concurrency) + 1))
+        scan_last = max(MAX_INSTANCES, target.max_concurrency)
+        snapshot = scheduler_snapshot(ctx, target, scan_last=scan_last)
         if snapshot['state'] != 'ok':
             raise ControlError('scheduler_unavailable',
                                f"cannot read the target scheduler: {snapshot.get('reason')}",
@@ -2758,8 +2761,7 @@ def command_stop(ctx, args):
             validate_target(target, repo)
             require_unit_ownership(ctx, target)
             current = {'step': 'observe_scheduler', 'mutation': 'none'}
-            snapshot = scheduler_snapshot(
-                ctx, target, indices=range(1, max(MAX_INSTANCES, target.max_concurrency) + 1))
+            snapshot = scheduler_snapshot(ctx, target, scan_last=scan_last)
             if snapshot['state'] != 'ok':
                 raise ControlError('scheduler_unavailable',
                                    f"cannot read the target scheduler: {snapshot.get('reason')}",
@@ -2785,7 +2787,9 @@ def command_stop(ctx, args):
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
         exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=steps,
                                 current=current, mutated=mutated,
-                                evidence={'disabled_timers': disabled, 'pending_services': pending})
+                                evidence={'disabled_timers': disabled, 'pending_services': pending},
+                                snapshot_reader=lambda c, t: safe_scheduler_snapshot(
+                                    c, t, scan_last=max(MAX_INSTANCES, t.max_concurrency)))
         raise exc from (error if exc is not error else None)
 
 

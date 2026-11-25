@@ -2878,9 +2878,9 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                                   'write': {str(marker): 'disabled'}}, *self.h.scheduler_rules())
                     reads = []
 
-                    def broken_snapshot(ctx, target, *, indices=None):
+                    def broken_snapshot(ctx, target, **kwargs):
                         if not marker.exists():
-                            return original(ctx, target, indices=indices)
+                            return original(ctx, target, **kwargs)
                         reads.append('read')
                         if len(reads) > 1:
                             raise UnicodeError(SECRET)
@@ -3007,6 +3007,23 @@ class LifecycleSequenceTests(unittest.TestCase):
                                  [['--user', 'disable', '--now', timer] for timer in timers])
                 self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
 
+    def test_stop_failure_receipt_observes_configured_slot_above_five(self):
+        h = self.fresh()
+        config = h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace('max_concurrency = 1',
+                                                   'max_concurrency = 6'))
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        timer = f'{prefix}@6.timer'
+        h.rules({'tool': 'systemctl', 'argv_contains': ['disable', '--now', timer], 'exit': 7},
+                *h.scheduler_rules(timers={6: 'active'}, enabled={6: True}))
+        code, doc, err = h.run('stop')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'command_failed')
+        self.assertEqual(doc['steps'][-1]['unit'], timer)
+        self.assertNotIn(timer, doc['disabled_timers'])
+        self.assertTrue(doc['scheduler']['timers'][timer]['enabled'])
+        self.assertEqual(doc['scheduler']['inventory']['scan_last'], 6)
+
     def test_setup_configured_slots_above_five_are_busy(self):
         h = self.fresh()
         config = h.deploy / 'orbi.toml'
@@ -3028,6 +3045,9 @@ class LifecycleSequenceTests(unittest.TestCase):
                     self.assertNotEqual(code, 0, (doc, err))
                     self.assertEqual(doc['error']['code'], 'setup_busy')
                     self.assertIn(f'{prefix}@6.service', doc['scheduler']['services'])
+                    inventory = doc['scheduler']['inventory']
+                    self.assertEqual(inventory['scan_last'], 6)
+                    self.assertTrue(inventory['configured_slots_covered'])
                     self.assertIn('stop/drain', doc['error']['fix'])
                     self.assertIn('preserve workers', doc['error']['fix'])
                     self.assertEqual(snapshot(h.home), before)
