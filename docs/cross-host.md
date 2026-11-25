@@ -35,7 +35,7 @@ Caller restrictions and host permissions propagate across every handoff.
 
 Both planners publish GitHub Issues and stop. Orbi owns automatic delivery.
 Retained authorized fix/apply modes keep their scope, actual ownership, checks,
-independent review and PR gates. Orbi remains paused and live-unqualified.
+independent review and PR gates.
 
 ## OpenCode
 
@@ -67,9 +67,9 @@ or `/orbi` in Pi or Hermes. All hosts load the same
 [Orbi workflow](../skills/orbi/SKILL.md); default status is read-only. `version [--repo-dir PATH] [--config PATH] [--json]`
 passes unchanged into one read-only helper invocation and identifies the selected
 deployment engine without full status, bootstrap, scheduler or network probes. `help` prints the action reference read-only and needs no repository.
-Linux lifecycle changes require the workflow's ownership and authorization gates;
-macOS supports read-only status/version. Installing the skill does not activate a deployment or
-qualify live delivery. Existing pauses and cutover gates remain in force.
+On Linux, explicit lifecycle commands authorize activation after technical checks.
+macOS supports read-only status/version. Installing the skill does not activate a
+deployment or qualify live delivery.
 
 ## Update Kit on every host
 
@@ -665,8 +665,7 @@ remain evidence; no live login, inference or delivery is established by removal.
 
 ### Removed executor
 
-Use [GitHub/Orbi delivery](github-native.md); Orbi remains paused and
-live-unqualified until the cutover pilot succeeds. Preserve existing task records,
+Use [GitHub/Orbi delivery](github-native.md). Preserve existing task records,
 worktrees, attempts and recovery state; they are not an executable queue.
 
 ## Behavior and verification
@@ -679,8 +678,7 @@ no bundled parallel-worker templates, service installers or provider setup CLI.
 Package installation does not install external integrations, change approval
 policies, copy credentials or alter model/memory settings. Host permissions and
 repository instructions still apply. Ordinary Pi provider setup belongs to Pi.
-Skills are discoverable instructions, not proof of executed workflows. Orbi stays
-paused and live-unqualified until [cutover](github-native.md) is separately verified.
+Skills are discoverable instructions, not proof of executed workflows or live delivery.
 
 Offline checks:
 

@@ -129,7 +129,7 @@ class AutoresearchInstructionContracts(unittest.TestCase):
         self.assertIn('An Orbi-owned substep returns to the same coordinator', self.section('Boundaries'))
         self.assertIn('return to the same issue and candidate', ' '.join(self.text.split()))
         handoff = self.section('Document and schedule through docs-sync')
-        self.assertIn('Orbi remains paused and live-unqualified', handoff)
+        self.assertIn('This handoff does not activate Orbi', handoff)
         self.assertIn('Never start a competing worker or reinstall the removed executor', handoff)
         execution = self.section('Execution, experiments and completion')
         self.assertIn('Push, deploy, publication and external messages need the actual user-authorized scope', execution)

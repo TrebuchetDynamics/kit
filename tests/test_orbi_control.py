@@ -287,7 +287,8 @@ class Harness:
             props['Triggers'] = unit.removesuffix('.timer') + '.service'
         else:
             bootstrap = self.home / '.local/bin/orbi'
-            props.update(Environment=shlex.quote('ORBI_CONFIG=' + str(service_config or self.deploy / 'orbi.toml')),
+            props.update(WorkingDirectory=str(self.deploy),
+                         Environment=shlex.quote('ORBI_CONFIG=' + str(service_config or self.deploy / 'orbi.toml')),
                          EnvironmentFiles=f'{self.deploy}/.orbi/env (ignore_errors=yes)',
                          UnsetEnvironment='', KillMode='control-group',
                          ExecStart=f'{{ path={bootstrap} ; argv[]={bootstrap} ; ignore_errors=no ; }}')
@@ -1353,6 +1354,7 @@ class FirstDeploymentTests(unittest.TestCase):
         self.assertNotEqual(code, 0, (doc, err))
         self.assertEqual(doc['action'], 'start')
         self.assertEqual(doc['error']['code'], 'validation_failed')
+        self.assertIn('orbi check failed with exit 1', doc['error']['message'])
         self.assertTrue(doc['error']['mutated'])
         self.assertEqual(doc['preparation']['state'], 'failed')
         self.assertEqual(doc['preparation']['steps'][-1]['step'], 'validate_non_activating')
@@ -2599,7 +2601,7 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                 for json_mode in (True, False):
                     with self.subTest(index=failed_index, failure=failure, json=json_mode):
                         timers = [f'{self.prefix}@{i}.timer' for i in range(1, failed_index + 1)]
-                        failed = ['--user', 'disable', '--now', timers[-1]]
+                        failed = ['--user', 'disable', '--now', '--no-reload', timers[-1]]
                         self.h.rules({'tool': 'systemctl', 'argv_contains': ['disable', timers[-1]],
                                       'exit': 7, 'stderr': SECRET,
                                       'sleep': 2 if failure == 'timeout' else 0},
@@ -2610,7 +2612,7 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                             code, doc, err = self.h.run('stop', json_mode=json_mode)
                         expected = 'command_timeout' if failure == 'timeout' else 'command_failed'
                         self.assertEqual(code, 1)
-                        self.assertEqual(self.mutations(), [['--user', 'disable', '--now', t]
+                        self.assertEqual(self.mutations(), [['--user', 'disable', '--now', '--no-reload', t]
                                                            for t in timers])
                         if json_mode:
                             self.assert_receipt(doc, expected, 'disable_timer', timers[-1],
@@ -2848,7 +2850,10 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
             for failure in ('exit', 'timeout'):
                 with self.subTest(action=action, failure=failure):
                     timers = [f'{self.prefix}@{i}.timer' for i in (1, 2)]
-                    failed = ['--user', operation, '--now', timers[-1]]
+                    argv = ['--user', operation, '--now']
+                    if action == 'stop':
+                        argv.append('--no-reload')
+                    failed = [*argv, timers[-1]]
                     self.h.rules({'tool': 'systemctl', 'argv_contains': failed,
                                   'exit': 7, 'stderr': SECRET,
                                   'sleep': 2 if failure == 'timeout' else 0},
@@ -2871,7 +2876,7 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                                         (completed_key, timers[:-1]))
                     self.assertTrue(closed, 'lock handle must close even if unlock fails')
                     self.assertEqual(self.mutations(),
-                                     [['--user', operation, '--now', t] for t in timers]
+                                     [[*argv, t] for t in timers]
                                      + ([['--user', 'start', f'{self.prefix}@1.service']]
                                         if action == 'start' and failure == 'exit' else []))
                     self.assertNotIn(SECRET, err)
@@ -2947,8 +2952,11 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                 self.assertEqual(success.returncode, 0, success.stderr)
                 self.assertEqual(json.loads(success.stdout)['status'], state)
                 timer = f'{self.prefix}@2.timer'
+                flags = ['--user', operation, '--now']
+                if action == 'stop':
+                    flags.append('--no-reload')
                 self.h.rules({'tool': 'systemctl',
-                              'argv_contains': ['--user', operation, '--now', timer],
+                              'argv_contains': [*flags, timer],
                               'exit': 7, 'stderr': SECRET}, *self.h.scheduler_rules())
                 self.h.clear_calls()
                 failed = subprocess.run(argv, env=self.h.env, capture_output=True,
@@ -2958,8 +2966,7 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                 self.assert_receipt(doc, 'command_failed', step, timer,
                                     (completed_key, [f'{self.prefix}@1.timer']))
                 self.assertEqual(self.mutations(),
-                                 [['--user', operation, '--now', f'{self.prefix}@{i}.timer']
-                                  for i in (1, 2)]
+                                 [[*flags, f'{self.prefix}@{i}.timer'] for i in (1, 2)]
                                  + ([['--user', 'start', f'{self.prefix}@1.service']]
                                     if action == 'start' else []))
                 self.assertNotIn(SECRET, failed.stdout + failed.stderr)
@@ -2999,10 +3006,37 @@ class LifecycleSequenceTests(unittest.TestCase):
         self.assertEqual(doc['pending_services'], [])
         mutations = [c['argv'] for c in h.calls() if c['tool'] == 'systemctl'
                      and set(c['argv']) & {'disable', 'stop', 'kill', 'restart'}]
-        self.assertEqual(mutations, [['--user', 'disable', '--now', f'{prefix}@{i}.timer']
+        self.assertEqual(mutations, [['--user', 'disable', '--now', '--no-reload', f'{prefix}@{i}.timer']
                                      for i in range(1, helper.MAX_INSTANCES + 1)] +
                          [['--user', 'stop', service]])
         self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
+
+    def test_stop_disables_runtime_timer_before_stopping_worker(self):
+        h = self.fresh()
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        timer, service = f'{prefix}@1.timer', f'{prefix}@1.service'
+        disabled = str(h.root / 'runtime-disabled')
+        # Disabling real symlinks without a reload marks all loaded units stale,
+        # even though their effective runtime bindings haven't changed.
+        stale_worker = h.loaded_unit_rule(service, NeedDaemonReload='yes')
+        stale_worker['if_exists'] = disabled
+        next_timer = h.loaded_unit_rule(f'{prefix}@2.timer', NeedDaemonReload='yes')
+        next_timer['if_exists'] = disabled
+        h.rules(stale_worker, next_timer,
+                {'tool': 'systemctl', 'argv_contains': ['disable', '--runtime', timer],
+                 'write': {disabled: '1'}},
+                {'tool': 'systemctl', 'argv_contains': ['is-enabled', timer],
+                 'if_exists': disabled, 'stdout': 'disabled\n', 'exit': 1},
+                {'tool': 'systemctl', 'argv_contains': ['is-enabled', timer],
+                 'stdout': 'enabled-runtime\n'},
+                *h.stop_service_rules(service), *h.scheduler_rules(services={1: 'active'}))
+        code, doc, err = h.run('stop')
+        self.assertEqual(code, 0, (doc, err))
+        self.assertIn(timer, doc['disabled_timers'])
+        self.assertEqual(doc['stopped_services'], [service])
+        calls = [c['argv'] for c in h.calls() if c['tool'] == 'systemctl']
+        runtime_disable = ['--user', 'disable', '--runtime', '--no-reload', timer]
+        self.assertLess(calls.index(runtime_disable), calls.index(['--user', 'stop', service]))
 
     def test_stop_refuses_foreign_or_overridden_loaded_worker(self):
         h = self.fresh()
@@ -3012,9 +3046,9 @@ class LifecycleSequenceTests(unittest.TestCase):
         foreign.write_text(f'[Service]\nEnvironment="ORBI_CONFIG={h.a["config"]}"\n')
         for override in (
                 {'FragmentPath': str(foreign)},
+                {'WorkingDirectory': str(h.a['deploy'])},
                 {'Environment': f'ORBI_CONFIG={h.a["config"]}'},
                 {'DropInPaths': '/foreign/override.conf'},
-                {'NeedDaemonReload': 'yes'},
                 {'BoundBy': 'orbi-a@1.service'}):
             with self.subTest(override=override):
                 h.rules(h.loaded_unit_rule(service, **override), *h.scheduler_rules(services={1: 'active'}))
@@ -3025,6 +3059,18 @@ class LifecycleSequenceTests(unittest.TestCase):
                 self.assertEqual(doc['stopped_services'], [])
                 self.assertFalse([c for c in h.calls() if c['tool'] == 'systemctl'
                                   and set(c['argv']) & {'stop', 'kill', 'restart', 'cancel'}])
+
+    def test_stop_refuses_inactive_worker_with_foreign_loaded_binding(self):
+        h = self.fresh()
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        service = f'{prefix}@1.service'
+        h.rules(h.loaded_unit_rule(service, Environment=f'ORBI_CONFIG={h.a["config"]}'),
+                *h.scheduler_rules())
+        code, doc, err = h.run('stop')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'unit_conflict')
+        self.assertEqual(doc['stopped_services'], [])
+        self.assertFalse(any('stop' in c['argv'] for c in h.calls()))
 
     def test_stop_refuses_timer_pointing_to_another_deployment(self):
         h = self.fresh()
@@ -3112,7 +3158,7 @@ class LifecycleSequenceTests(unittest.TestCase):
                              and set(c['argv']) & {'enable', 'disable', 'start', 'stop',
                                                    'kill', 'restart'}]
                 self.assertEqual(mutations,
-                                 [['--user', 'disable', '--now', timer] for timer in timers]
+                                 [['--user', 'disable', '--now', '--no-reload', timer] for timer in timers]
                                  + ([['--user', 'stop', service]] if active_worker else []))
                 self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
 
@@ -3216,7 +3262,7 @@ class LifecycleSequenceTests(unittest.TestCase):
                     [c['argv'] for c in h.calls() if c['tool'] == 'systemctl'
                      and set(c['argv']) & {'enable', 'disable', 'start', 'stop', 'kill', 'restart'}],
                     [] if observation_fails else
-                    [['--user', 'disable', '--now', timer] for timer in timers])
+                    [['--user', 'disable', '--now', '--no-reload', timer] for timer in timers])
                 self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
 
     def test_shared_templates_are_not_enabled_capacity(self):
@@ -5169,7 +5215,8 @@ class PauseUpdateTests(unittest.TestCase):
                 if 'stop' in call['argv']:
                     self.assertIn(call['argv'], [['--user', 'stop', unit] for unit in owned_services])
                 if 'disable' in call['argv']:
-                    self.assertIn('--now', call['argv'])
+                    self.assertIn(call['argv'][:-1], (['--user', 'disable', '--now', '--no-reload'],
+                                                      ['--user', 'disable', '--runtime', '--no-reload']))
                     self.assertTrue(call['argv'][-1].endswith('.timer'), call)
             if call['tool'] == 'orbi':
                 self.assertNotIn(call['argv'][:1], (['setup'], ['install-units']), call)
@@ -5955,7 +6002,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertLess(text.getvalue().index('Quickstart:'), text.getvalue().index('Options:'))
         self.assertLess(text.getvalue().index('Examples:'), text.getvalue().index('Limits and next steps:'))
         for term in ('Pi-Bolt', '--harness pi', 'configured slots', 'running-process',
-                     'live-qualified', 'explicit pauses', 'Loaded helper:',
+                     'live-qualified', 'authorize activation', 'Loaded helper:',
                      'no explicit --config', 'one invocation', 'no worker was observed',
                      'outside the scan is unknown'):
             self.assertIn(term, text.getvalue())
@@ -5964,12 +6011,20 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertIn('/orbi setup --prepare-only', text.getvalue())
         self.assertIn('setup --prepare-only --resume-setup', doc['recovery']['partial_setup'])
         activation = doc['recovery']['activation']
-        for term in ('specific missing evidence', 'checklist', 'existing record',
-                     'no record was found', 'unprotected main', 'HTTP 403',
-                     'read-only', 'not approval', 'settled owner intent',
+        for term in ('failed technical check', 'read-only check or exact repair',
+                     'unprotected main', 'HTTP 403',
                      'informational, not scheduling blockers', 'PR-only',
-                     'repository access', 'ownership', 'explicit pauses'):
+                     'repository access', 'ownership', 'live qualification'):
             self.assertIn(term, activation)
+        for term in ('/orbi start', 'plain /orbi update', 'install.sh with Orbi selected',
+                     'verified unit and file ownership', 'a validated release pin',
+                     'a passing orbi check', 'Existing-target start does not run orbi check',
+                     'orbi check --config PATH', 'deployment bootstrap and scoped environment',
+                     'Do not start if validation fails or is unknown'):
+            self.assertIn(term, ' '.join(doc['quickstart']))
+        for term in ('cutover checklist', 'resolved gates', 'existing record',
+                     'human-only gates', 'resolved explicit pauses'):
+            self.assertNotIn(term, text.getvalue())
         busy = doc['recovery']['setup_busy']
         for term in ('observed timer/worker state', 'status', 'only when',
                      're-preparing or pausing'):
@@ -6074,7 +6129,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                      '`setup --prepare-only --resume-setup`',
                      'Remove only `--prepare-only`',
                      'Do not silently fall back to preparation',
-                     'explicit invocation expresses scheduling intent'):
+                     'Public `setup` has the same authority as `start`'):
             self.assertIn(rule, skill)
         for path in ('adapters/skills/orbi/SKILL.md',):
             adapter = (ROOT / path).read_text()
@@ -6091,7 +6146,9 @@ class InterfaceAndSkillTests(unittest.TestCase):
                          ['Resolve intent.', 'Authorize.', 'Invoke once.', 'Relay receipt.'])
         text = ' '.join(common.split())
         self.assertIn('**Help first.** For help requests, run only help. '
-                      'For lifecycle commands, go directly to the requested action.', text)
+                      'For lifecycle commands, go directly to the requested action '
+                      'except for the existing-target start validation', text)
+        self.assertIn('Do not run that check as part of dry-run.', text)
         for rule in ('No routine pre-status', 'Build argv', 'literal `--dry-run`',
                      'No separate model', 'No blind retry'):
             self.assertIn(rule, common)
@@ -6203,7 +6260,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertIn("helper's `help`", skill)
         self.assertIn('observed output', skill)
         self.assertIn('macOS', skill)
-        self.assertIn('explicit pauses, cutover requirements and human-only gates', skill)
+        self.assertIn('do not ask for a cutover record or separate approval', ' '.join(skill.split()))
         router = (ROOT / 'skills/ask-kit/SKILL.md').read_text()
         self.assertIn('`/orbi`', router)
         reference = (ROOT / 'skills/orbi/references/lifecycle.md').read_text()

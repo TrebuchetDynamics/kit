@@ -214,7 +214,7 @@ report partial inventory; no retry loop or alternate-credential workaround. Veri
 upstream Git sync and independent local delivery may continue under existing gates,
 but missing required protection/review evidence holds dependent publication. Report
 partial delivery separately from complete discovery. The Orbi lifecycle skill still
-does not commit or push; no observation enables paused/live-unqualified Orbi.
+does not commit or push; observation alone does not activate Orbi.
 
 ## Graph state
 

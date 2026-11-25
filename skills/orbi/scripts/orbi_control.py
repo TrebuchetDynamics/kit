@@ -2708,7 +2708,16 @@ def disable_owned_timers(ctx, target, snapshot, disabled, steps, current):
         require_quiesce_unit(ctx, target, timer)
         current.clear()
         current.update(step='disable_timer', unit=timer, mutation='possible')
-        ctx.run(['systemctl', '--user', 'disable', '--now', timer], timeout=MUTATION_TIMEOUT)
+        # Do not reload between verifying the loaded timer and --now stopping it.
+        ctx.run(['systemctl', '--user', 'disable', '--now', '--no-reload', timer],
+                timeout=MUTATION_TIMEOUT)
+        if snapshot['timers'][timer]['enabled']:
+            # A persistent disable does not remove runtime enablement links.
+            enabled = ctx.run(['systemctl', '--user', 'is-enabled', timer], allow_failure=True)
+            if enabled.returncode == 0 and enabled.stdout.strip() == 'enabled-runtime':
+                current.update(step='disable_runtime_timer')
+                ctx.run(['systemctl', '--user', 'disable', '--runtime', '--no-reload', timer],
+                        timeout=MUTATION_TIMEOUT)
         disabled.append(timer)
         steps.append({'step': 'disable_timer', 'unit': timer, 'status': 'disabled'})
 
@@ -2781,7 +2790,7 @@ def update_plan_steps(*, stop=False):
          'reason': 'leave stopped' if stop else 'only after successful validation'},
         {'step': 'observe_scheduler', 'status': 'conditional'},
         {'step': 'activate_deployment', 'status': 'deferred' if stop else 'conditional',
-         'reason': 'leave stopped' if stop else 'after validation and existing start gates'},
+         'reason': 'leave stopped' if stop else 'after engine validation and existing-target technical checks'},
     ]
 
 
@@ -2940,9 +2949,12 @@ def require_quiesce_unit(ctx, target, unit):
     side_effects = ('DropInPaths', 'ConsistsOf', 'BoundBy', 'RequiredBy', 'RequisiteOf',
                     'PropagatesStopTo', 'OnFailure', 'OnSuccess')
     timer = unit.endswith('.timer')
-    props = ('Id', 'LoadState', 'FragmentPath', 'NeedDaemonReload', *side_effects)
-    props += ('Triggers',) if timer else ('Environment', 'EnvironmentFiles', 'UnsetEnvironment',
-                                          'ExecStart', 'ExecStop', 'ExecStopPost', 'KillMode')
+    # Verify effective properties, not NeedDaemonReload: disabling a timer's
+    # links marks that flag for all units, even with no change to their bindings.
+    props = ('Id', 'LoadState', 'FragmentPath', *side_effects)
+    props += ('Triggers',) if timer else ('WorkingDirectory', 'Environment', 'EnvironmentFiles',
+                                          'UnsetEnvironment', 'ExecStart', 'ExecStop', 'ExecStopPost',
+                                          'KillMode')
     proc = ctx.run(['systemctl', '--user', 'show', '--all', *('-p' + p for p in props), unit],
                    allow_failure=True)
     values = {}
@@ -2952,15 +2964,14 @@ def require_quiesce_unit(ctx, target, unit):
             values[key] = values[key] + '\n' + value if key in values else value
     # systemctl omits empty arrays of structs even with show --all.
     optional = {'EnvironmentFiles', 'ExecStop', 'ExecStopPost'}
-    if (proc.returncode or set(props) - values.keys() - optional
-            or values['NeedDaemonReload'] not in {'yes', 'no'}):
+    if proc.returncode or set(props) - values.keys() - optional:
         raise ControlError('scheduler_unavailable', f'cannot verify loaded unit evidence for {unit}',
                            fix='restore readable systemd user-session evidence')
     conflict = ControlError('unit_conflict', f'cannot verify a scoped stop of {unit}',
                             fix='inspect the loaded unit binding, overrides and stop dependencies before retrying',
                             exit_code=2)
     fragment = values['FragmentPath']
-    if (values['Id'] != unit or values['LoadState'] != 'loaded' or values['NeedDaemonReload'] != 'no'
+    if (values['Id'] != unit or values['LoadState'] != 'loaded'
             or any(values[p] for p in side_effects)
             or fragment_kind(fragment, unit) not in {'instance', 'template'}):
         raise conflict
@@ -2984,6 +2995,7 @@ def require_quiesce_unit(ctx, target, unit):
     env_file = values.get('EnvironmentFiles')
     bootstrap = str(home_dir(ctx) / '.local/bin/orbi')
     if (configs != [str(target.config_path)]
+            or values['WorkingDirectory'] != str(target.deploy_home)
             or fleet_exec(values) != ((bootstrap, bootstrap),)
             or any(entry.partition('=')[0] == 'ORBI_CONFIG' for entry in unset)
             or (env_file and (not re.fullmatch(re.escape(str(target.env_path)) +
@@ -3031,19 +3043,20 @@ def quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current):
         snapshot = paused_observation(ctx, target, known_indices=known_indices)
         known_indices = snapshot['inventory']['additional_instances']
     for unit, item in snapshot['services'].items():
-        if item['state'] not in DRAIN_STATES:
+        if not item['installed']:
             continue
         current.clear()
         current.update(step='verify_service_ownership', unit=unit, mutation='none')
         require_quiesce_unit(ctx, target, unit)
+        if item['state'] not in DRAIN_STATES:
+            continue
         current.update(step='stop_service', mutation='possible')
         ctx.run(['systemctl', '--user', 'stop', unit], timeout=MUTATION_TIMEOUT)
         stopped.append(unit)
         steps.append({'step': 'stop_service', 'unit': unit, 'status': 'stopped'})
-    if starts or stopped or update_pending(snapshot):
-        current.clear()
-        current.update(step='verify_quiescent', mutation='none')
-        require_quiescent(ctx, target, known_indices=known_indices)
+    current.clear()
+    current.update(step='verify_quiescent', mutation='none')
+    require_quiescent(ctx, target, known_indices=known_indices)
     steps.append({'step': 'verify_quiescent', 'status': 'ok'})
 
 
@@ -3288,7 +3301,7 @@ def render(ctx, document, json_mode):
         if document.get('dry_run'):
             ctx.out.write('Engine unchanged (preview). Disable timers, cancel queued starts, stop workers, then conditional sync/validation.\n')
             ctx.out.write('Scheduling: ' + ('leave stopped.' if document['activation'] == 'none' else
-                                          'conditional activation after validation and existing start gates.') + '\n')
+                                          'conditional activation after engine validation and existing-target technical checks.') + '\n')
             ctx.out.write('Next: Run the requested update without --dry-run when ready.\n')
         else:
             if document['stopped_services']:
@@ -4772,10 +4785,13 @@ def command_help(ctx, args):
             'authorized start prepares, validates non-activating, then activates in one invocation; '
             'no separate setup or repeated approval. An existing valid target skips preparation and '
             'retains its provider/harness. Missing explicit configs, partial and foreign targets are not absent.',
-            'Start requires explicit scheduling authority and resolved explicit pauses, cutover '
-            'and human-only gates. Kit remains paused and live-unqualified; help grants no waiver.',
-            'Public skill syntax: /orbi setup starts by default (maps to helper start); its explicit '
-            'invocation expresses scheduling intent, not a gate waiver. /orbi setup --prepare-only '
+            'Explicit /orbi start, plain /orbi update, and install.sh with Orbi selected authorize activation. '
+            'Require verified unit and file ownership, a validated release pin and a passing orbi check. '
+            'Existing-target start does not run orbi check. Before starting, if there is no passing result '
+            'for the same config, pin and environment, run orbi check --config PATH with the bound '
+            'deployment bootstrap and scoped environment. Do not start if validation fails or is unknown. '
+            'No separate approval is required.',
+            'Public skill syntax: /orbi setup starts by default (maps to helper start). /orbi setup --prepare-only '
             'maps to non-activating helper setup. The skill consumes --prepare-only; it is not a Python flag. '
             'Public setup --resume-setup requires --prepare-only; otherwise reject before invocation and '
             'show setup --prepare-only --resume-setup with the original arguments. '
@@ -4796,7 +4812,7 @@ def command_help(ctx, args):
             'Plain update starts scheduling after validation, even after an earlier stop; --stop leaves stopped. '
             'Bind the unique matching deployment, disable owned timers, cancel verified queued starts and stop owned workers. '
             'After idle readback, sync-engine-source, pin sha:<commit> and check. No separate status, stop or start command. '
-            'Existing start gates still apply. No direct kill, restart or background continuation.',
+            'No direct kill, restart or background continuation.',
         ],
         'examples': [
             {'command': '/orbi status all --json',
@@ -4810,7 +4826,7 @@ def command_help(ctx, args):
                         'Replace paths/IDs with verified published metadata.'},
             {'command': '/orbi setup --harness pi --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
-             'outcome': 'With scheduling authority and resolved gates: prepare a new stock Pi target, then activate.'},
+             'outcome': 'Prepare a new stock Pi target, then activate if technical checks pass.'},
             {'command': '/orbi setup --prepare-only --dry-run --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
              'outcome': 'Preview preparation only; remove --dry-run to prepare without scheduling.'},
@@ -4821,7 +4837,7 @@ def command_help(ctx, args):
                         'never activate.'},
             {'command': '/orbi start --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
-             'outcome': 'Only with scheduling authority: prepare absent target with Pi-Bolt, then activate. '
+             'outcome': 'Prepare absent target with Pi-Bolt, then activate if technical checks pass. '
                         'Omit selectors on subsequent starts.'},
             {'command': '/orbi start --dry-run',
              'outcome': 'Preview existing activation, or absent preparation using donor metadata; '
@@ -4847,21 +4863,17 @@ def command_help(ctx, args):
                              'local provider permits public setup --prepare-only --resume-setup --config PATH '
                              '(direct helper setup --resume-setup) with complete matching '
                              'selectors. Start never performs legacy repair or changes a saved harness.',
-            'activation': 'Before actual start, separate the owner scheduling request from deployment-specific '
-                          'gate evidence. Name the specific missing evidence, applicable cutover checklist and '
-                          'existing record if found; otherwise say no record was found in the inspected sources. '
-                          'Name the next safe read-only check or exact owner repair and held operation. '
+            'activation': 'Name the failed technical check and the next safe read-only check or exact repair. '
                           'GitHub unprotected main is an observed branch state; protection/rules HTTP 403 means '
                           'access denied for that endpoint and unknown details, not absent rules. Both can coexist; '
                           'they are informational, not scheduling blockers. Branch protection is not a Kit '
                           'setup/start prerequisite. Do not require a protection read/repair, PR-only mode, special '
                           'opt-in, no-base-write engine proof, paid GitHub plan, engine release or second approval '
-                          'on that basis. Authentication, repository access, ownership, explicit pauses and other '
-                          'gates still apply. Status doctor.state=failed is diagnostic, not itself a scheduling gate. '
+                          'on that basis. Authentication, repository access and ownership still apply. '
+                          'Status doctor.state=failed is diagnostic, not itself a scheduling gate. '
                           'Existing protections, CI, review and merge requirements remain unchanged; startup is '
-                          'not successful merge or live qualification. A preview is '
-                          'not approval. Do not demand a generic cutover record, invent approval or reconfirm '
-                          'settled owner intent. See skills/orbi/references/lifecycle.md#activation-evidence.',
+                          'not successful merge or live qualification. A preview is not approval. '
+                          'See skills/orbi/references/lifecycle.md#activation-evidence.',
             'setup_busy': 'Preparation requires verified inactivity. Cite observed timer/worker state from '
                           'status or the error scheduler evidence. Offer authorized stop only when '
                           'deliberately re-preparing or pausing; do not stop workers to pass a preview. '
@@ -4925,8 +4937,7 @@ def command_help(ctx, args):
             'Not /unblock, /git-commit-push, /plan-with-me, /plan-for-me.',
             'Local visibility only: no cross-machine lock or capacity guarantee.',
             'Next steps: use status to inspect; public setup --prepare-only (helper setup) to prepare; '
-            'public setup or start only after an '
-            'owner scheduling request and resolved pauses, cutover and human-only gates. Update quiesces before '
+            'public setup or start authorizes activation after technical checks. Update quiesces before '
             'sync and starts scheduling after validation (--stop leaves stopped); stop quiesces without updating.',
         ],
     }
@@ -4973,10 +4984,8 @@ ACTIONS = {
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json',
                     '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--harness'],
-        'when': 'Run after an owner scheduling request; prepare only if genuinely absent with no explicit '
-                '--config, then activate in one invocation after resolution of explicit pauses, cutover '
-                'requirements and human-only gates. Missing/unknown gate evidence needs a specific '
-                'check and next safe action, not repeated owner consent.',
+        'when': 'An explicit start authorizes activation after technical checks. Prepare only if genuinely absent '
+                'with no explicit --config. On failure report the specific check and next safe action.',
     },
     'update': {
         'handler': command_update,
@@ -4985,7 +4994,7 @@ ACTIONS = {
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json', '--stop'],
         'when': 'Run for a prepared deployment: quiesce owned units under lock, then pin the newest official '
-                'release as sha:<commit> after fresh idle evidence. Plain update starts configured scheduling through existing start gates '
+                'release as sha:<commit> after fresh idle evidence. Plain update authorizes starting configured scheduling '
                 'after engine validation, even after an earlier stop. Explicit --stop leaves stopped. '
                 'No direct kill, restart or background continuation.',
     },

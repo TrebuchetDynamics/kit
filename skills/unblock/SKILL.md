@@ -16,8 +16,8 @@ an entire host fleet. Editing this skill does not invoke recovery.
 
 GitHub Issues and Orbi are the only executable backlog and delivery executor.
 Preserve existing tasks, worktrees, attempts and
-recovery evidence. Orbi remains paused and live-unqualified. This invocation
-does not authorize enabling it, clearing a pause or starting another implementer.
+recovery evidence. This invocation does not authorize enabling Orbi, clearing a
+pause or starting another implementer.
 
 ## Act by default
 

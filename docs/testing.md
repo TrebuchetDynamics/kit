@@ -6,7 +6,7 @@ Executor, task-store, Rust candidate, Textual and Paseo plugin checks no longer
 ship. Their [prior test contracts and qualification gaps](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/testing.md#rust-candidate-offline-checks)
 remain immutable evidence, not current test commands. Existing tasks, worktrees,
 attempts and recovery state are preserved. Removal does not satisfy outstanding
-live acceptance. Orbi remains paused and live-unqualified.
+live acceptance.
 
 ## Component inventory and source closure
 

@@ -20,8 +20,8 @@ workflow's receipt relay; it is not another routing or planning pass.
 
 ## Boundaries
 
-Explicit invocation only. This adapter grants no deployment authority and does not
-release pauses or live gates. Use the existing planners for GitHub issue publication and
+Explicit invocation only. Activation follows the canonical workflow above.
+Use the existing planners for GitHub issue publication and
 `/unblock` for recovery rather than lifecycle control. `/update-kit` owns Kit updates.
 
 **Done when:** the loaded workflow's completion condition is met and only observed

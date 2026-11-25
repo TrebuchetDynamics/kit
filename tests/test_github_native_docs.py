@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path, PurePosixPath
 import re
+import subprocess
 import unittest
 
 
@@ -184,7 +185,24 @@ class GithubNativeDocsTests(unittest.TestCase):
             self.assertIn(f'skills/orbi/references/lifecycle.md#{anchor}', setup)
         self.assertNotIn('issues/43', setup)
         self.assertNotIn('unresolved limitation', setup)
-        self.assertIn('**Orbi remains paused and live-unqualified**', readme)
+        for action in ('start', 'update'):
+            row = next(line for line in readme.splitlines() if line.startswith(f'| `{action}` |'))
+            self.assertIn('authorizes', row)
+
+    def test_current_docs_do_not_hold_orbi_activation_for_qualification(self):
+        files = subprocess.check_output(
+            ['git', 'ls-files', '-z', '--', '*.md', ':!docs/research/**', ':!docs/plans/**'], cwd=ROOT, text=True, timeout=10)
+        obsolete = re.compile(
+            r'\b(?:Orbi|Kit) (?:remains?|stays?|must stay) paused\b|'
+            r'\bpaused(?:,| and|/) live[- ]unqualified\b|'
+            r'\b(?:keep (?:Orbi|the replacement|dispatch) paused|keep dispatch disabled) until\b|'
+            r'\b(?:resolved (?:pauses|cutover)(?:/gates)?|pending the pilot and cutover gates)\b',
+            re.IGNORECASE)
+        hits = []
+        for name in filter(None, files.split('\0')):
+            if match := obsolete.search(compact((ROOT / name).read_text(encoding='utf-8'))):
+                hits.append(f'{name}: {match.group()}')
+        self.assertEqual(hits, [])
 
     def test_local_links_and_anchors_resolve(self):
         repo = docs.Repo(ROOT)

@@ -11,7 +11,7 @@ at `4a2dbe5`; pi-toolset's `tx` is deprecated in its favor. Installing this one 
 
 `tx` is a tmux session launcher only. GitHub Issues and Orbi own delivery;
 `tx` does not install or control a replacement. See
-[GitHub/Orbi delivery](../docs/github-native.md). Orbi remains paused until qualified.
+[GitHub/Orbi delivery](../docs/github-native.md).
 
 ## Files
 

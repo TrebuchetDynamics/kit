@@ -254,8 +254,11 @@ class SkillStandardTests(unittest.TestCase):
                          'informational, not scheduling blockers', 'HTTP 403',
                          'PR-only', 'repository access', 'ownership'):
                 self.assertIn(rule, text)
-        self.assertIn('explicit pauses, cutover requirements and human-only gates', skill)
-        self.assertIn('Keep explicit pauses and human-only gates', lifecycle)
+        for text in (skill, lifecycle):
+            for rule in ('Explicit `/orbi start`, plain `/orbi update`, and `install.sh` with Orbi selected',
+                         'authorize activation', 'verified unit and file ownership',
+                         'a validated release pin', 'a passing `orbi check`'):
+                self.assertIn(rule, text)
         self.assertNotIn('obtain the read-only protection view/owner repair above', lifecycle)
         self.assertNotIn('pause/cutover/branch/CI/human', lifecycle)
 

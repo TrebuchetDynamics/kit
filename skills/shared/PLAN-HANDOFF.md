@@ -384,8 +384,8 @@ apply to issues being published. A receipt is not retry authorization.
 
 Readiness is not pickup, PR delivery or merge. Distinguish a generic possible
 consumer from an observed deployment: pickup or timers require current evidence,
-not an assumed scheduler or a historical report. Kit remains paused and
-live-unqualified; publication does not release that pause.
+not an assumed scheduler or a historical report. Publication does not activate Orbi
+or qualify live delivery.
 
 ## Execution handoff
 

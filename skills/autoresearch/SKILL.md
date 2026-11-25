@@ -167,8 +167,8 @@ for affected owners; reconcile GitHub Issues; do not start a whole-repository bo
    implementation from publication. Repeated reconciliation preserves identities
    and existing ownership instead of duplicating work.
 5. Scheduling here means backlog ordering, not timers or service activation.
-   Retained authorized fix modes keep their own scope and PR/review gates; Orbi remains paused and
-   live-unqualified. Never start a competing worker or reinstall the removed executor.
+   Retained authorized fix modes keep their own scope and PR/review gates. This handoff does not
+   activate Orbi. Never start a competing worker or reinstall the removed executor.
 
 `plan`, `probe`, `predict`, `reason`, `scenario`, `learn`, `improve`, `evals` and
 `security` do not silently turn recommendations into product-code changes. Use the

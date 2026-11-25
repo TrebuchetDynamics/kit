@@ -2,7 +2,7 @@
 
 **Use Kit `/orbi version --json` to identify one deployment’s engine, `/orbi status --json` to inspect one repository, `/orbi status all --json` for observable local host services, and GitHub to establish what was delivered.** These answer different questions. In particular, bare **`/orbi`** in Kit means *status*; bare **`orbi`** in a shell runs a **real delivery tick**. Use `orbi --version` to identify a binary without running a tick.
 
-This reference covers Kit’s [lifecycle client](skills/orbi/SKILL.md) and the self-hosted engine at [Orbi v0.7.56](https://github.com/orbi-build/orbi/tree/v0.7.56). Check the deployed version before relying on a flag or format. The engine has no documented HTTP control plane to enumerate deployments, enqueue issues or restart workers. Its [public interface inventory](https://github.com/orbi-build/orbi/blob/v0.7.56/docs/public-contracts.mdx) defines what integrators can rely on; the optional exporter is monitoring, not that API. **Kit remains paused and live-unqualified** under its [cutover policy](docs/github-native.md#cutover). Nothing below authorizes activation.
+This reference covers Kit’s [lifecycle client](skills/orbi/SKILL.md) and the self-hosted engine at [Orbi v0.7.56](https://github.com/orbi-build/orbi/tree/v0.7.56). Check the deployed version before relying on a flag or format. The engine has no documented HTTP control plane to enumerate deployments, enqueue issues or restart workers. Its [public interface inventory](https://github.com/orbi-build/orbi/blob/v0.7.56/docs/public-contracts.mdx) defines what integrators can rely on; the optional exporter is monitoring, not that API. Explicit `/orbi start`, plain `/orbi update`, and `install.sh` with Orbi selected authorize activation after verified unit and file ownership, a validated release pin and a passing `orbi check`. Activation does not qualify live delivery. See [Kit lifecycle](docs/github-native.md#kit-lifecycle-skill).
 
 ## Inspect one repository with Kit
 
@@ -84,9 +84,9 @@ tick, activates/repairs anything or updates a stale installed helper.
 |---|---|
 | `help`, `status`, `version` | Read only. Help works on all platforms; status/version on Linux and macOS. Version reads only selected deployment engine evidence. |
 | `/orbi setup` | Starts by default. Use `/orbi setup --prepare-only` for non-activating preparation. The direct Python helper’s `setup` action is prepare-only; native `orbi setup` is different. |
-| `start` | Prepares if genuinely absent, then activates the owned timers and requests a first tick if idle. Requires separate scheduling authority. |
+| `start` | Prepares if genuinely absent, then activates the owned timers and requests a first tick if idle. The command authorizes activation after technical checks. |
 | `stop` | Under the config lock, disable owned timers, cancel verified queued starts, stop owned non-idle workers with `systemctl --user stop` and verify inactivity. Report `stopped` with `disabled_timers` and `stopped_services`. No direct kill, restart, issue cancellation or recovery-input removal. |
-| `update` | Quiesce as for `stop`, then sync/pin/check the release and start configured scheduling through start's existing gates, even after a previous `stop`, and confirm enabled/active timers (`activation: started`). `update --stop` updates and leaves stopped (`activation: held`). Quiesce failure is nonzero, preserves partial scheduler evidence and blocks engine sync. Dry-run does not mutate or lock. |
+| `update` | Quiesce as for `stop`, then sync/pin/check the release and start configured scheduling through start's technical checks, even after a previous `stop`, and confirm enabled/active timers (`activation: started`). `update --stop` updates and leaves stopped (`activation: held`). Quiesce failure is nonzero, preserves partial scheduler evidence and blocks engine sync. Dry-run does not mutate or lock. |
 
 Kit mutations are Linux-only; `--dry-run` previews them. On an error inspect the JSON `error.code`, `error.fix` and `error.mutated`: nonzero exit does not mean nothing changed. Use the helper for lifecycle changes, not hand-written unit commands.
 
