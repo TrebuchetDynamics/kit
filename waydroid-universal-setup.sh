@@ -36,7 +36,10 @@ step_start() {
 # Use the original stderr even when a probe uses redirection or captures output.
 trace_command() {
     if ((VERBOSE)) && [[ $ACTION != session ]]; then
-        (printf '+'; printf ' %q' "$@"; printf '\n') >&3 2>/dev/null || :
+        local args
+        printf -v args ' %q' "$@"
+        # Pipeline commands may trace concurrently; write each short line together.
+        (printf '+%s\n' "$args") 2>/dev/null >&3 || :
     fi
 }
 run() {
@@ -46,6 +49,10 @@ run() {
 fail() {
     if ((BASH_SUBSHELL == 0 && step_number > 0 && step_number <= ${#STAGES[@]})); then
         step failed 'see stderr'
+        # Completed provisioning still needs a receipt if Android isn't ready.
+        if [[ $ACTION == setup ]] && ((step_number > ${#STAGES[@]})); then
+            summarize_changes
+        fi
     fi
     printf 'waydroid-setup: %s\n' "$1" >&2
     if [[ -n $TRANSFER_STAGE ]]; then

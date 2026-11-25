@@ -785,6 +785,9 @@ print('fixture-shell-usable', flush=True)
         self.assertIn('sudo -n -- loginctl enable-linger tester', verbose.stderr)
         self.assertIn('systemctl --user show-environment', verbose.stderr)
         self.assertIn('waydroid status', verbose.stderr)
+        trace = verbose.stderr.splitlines()
+        self.assertIn('+ timeout 10 adb devices', trace)
+        self.assertTrue(all(line.startswith('+ ') for line in trace), verbose.stderr)
         self.assertIn('Summary: 1 changed (linger);', verbose.stdout)
         self.assertNotIn(secret, verbose.stdout + verbose.stderr)
 
@@ -933,6 +936,13 @@ print('fixture-shell-usable', flush=True)
                 self.assertIn('unattended first-time authorization', result.stderr)
                 self.assertIn('--status', result.stderr)
                 self.assertNotIn('ADB serial:', result.stdout)
+                changes = {'stopped': '1 changed (user service)',
+                           'gui': '2 changed (user service, graphical transfer)',
+                           'managed': '0 changed (none)'}
+                self.assertRegex(result.stdout.splitlines()[-2],
+                                 r'^\[8/8\] Android verification: failed \(see stderr\) [0-9]+s$')
+                self.assertTrue(result.stdout.splitlines()[-1].startswith(f'Summary: {changes[session]};'),
+                                result.stdout)
                 self.assertEqual((self.base / 'session').read_text(), 'managed')
                 setup_calls = self.calls()
                 self.assertEqual(setup_calls.splitlines().count('waydroid session stop'), int(session == 'gui'))

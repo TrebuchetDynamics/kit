@@ -58,8 +58,10 @@ Summary: 0 changed (none); 9 unchanged (packages, initialization, container drop
 ```
 
 The summary comes before the final `ADB serial:`, `Android:` and `ABI:` lines.
-A failed stage points to the existing error on stderr and does not print a ready
-report. Add `--verbose` to see external commands (including `sudo -n -- ...`)
+If provisioning completed but Android verification fails (for example, ADB
+authorization is pending), setup still reports what changed, without the ready
+report. A failed stage points to the existing error on stderr.
+Add `--verbose` to see external commands (including `sudo -n -- ...`)
 on stderr before they run. It does not trace environment contents, captured
 session data or terminal input; password entry still belongs to sudo.
 
