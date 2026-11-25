@@ -31,6 +31,7 @@ failed, and 2 for a usage error.
 """
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -39,23 +40,24 @@ from pathlib import Path
 CLASSES = ('merged', 'unmerged-clean', 'unmerged-dirty', 'detached', 'locked', 'prunable')
 
 
-def git(repo, *args, check=True):
-    done = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True)
+def git(repo, *args, check=True, literal=False):
+    done = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=not literal)
     if check and done.returncode:
-        raise RuntimeError(done.stderr.strip() or f'git {" ".join(args)} failed')
-    return done.stdout.strip()
+        raise RuntimeError(os.fsdecode(done.stderr).strip() or f'git {" ".join(args)} failed')
+    return os.fsdecode(done.stdout) if literal else done.stdout.strip()
 
 
 def worktrees(repo):
-    """Parse `git worktree list --porcelain` into records, canonical checkout first."""
+    """Parse `git worktree list --porcelain -z` into records, canonical checkout first."""
     records, current = [], {}
-    for line in git(repo, 'worktree', 'list', '--porcelain').splitlines():
-        if not line.strip():
+    # A newline can be part of a path, including the path the guard trusts.
+    for field in git(repo, 'worktree', 'list', '--porcelain', '-z', literal=True).split('\0'):
+        if not field:
             if current:
                 records.append(current)
             current = {}
             continue
-        key, _, value = line.partition(' ')
+        key, _, value = field.partition(' ')
         if key == 'worktree':
             current['path'] = value
         elif key == 'HEAD':
@@ -113,7 +115,8 @@ def classify(repo, record, base):
 
 
 def merge_in_progress(repo):
-    return (repo / git(repo, 'rev-parse', '--git-path', 'MERGE_HEAD')).exists()
+    path = git(repo, 'rev-parse', '--git-path', 'MERGE_HEAD', literal=True).removesuffix('\n')
+    return (repo / path).exists()
 
 
 def preflight(repo, base):

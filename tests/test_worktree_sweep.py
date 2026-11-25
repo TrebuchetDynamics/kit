@@ -16,7 +16,7 @@ ENV = {**os.environ, 'GIT_AUTHOR_NAME': 'fixture', 'GIT_AUTHOR_EMAIL': 'f@exampl
 
 
 def run(*args, cwd=None, check=True):
-    done = subprocess.run(args, cwd=cwd, env=ENV, capture_output=True, text=True)
+    done = subprocess.run(args, cwd=cwd, env=ENV, capture_output=True, text=True, timeout=30)
     if check and done.returncode:
         raise AssertionError(f'{" ".join(args)} failed: {done.stderr or done.stdout}')
     return done
@@ -161,6 +161,17 @@ class WorktreeSweepTests(unittest.TestCase):
         self.assertEqual(git(linked, 'rev-parse', 'HEAD'), before)
         self.assertEqual(git(linked, 'ls-files', '--unmerged'), '', done.stdout)
         self.assertIn(f'canonical checkout: {self.repo.resolve()}', done.stderr)
+
+    def test_canonical_checkout_path_may_contain_a_newline(self):
+        canonical = self.repo.with_name('repo\ncheckout')
+        self.repo.rename(canonical)
+        self.repo = canonical
+        self.worktree('ahead', commit='add ahead file')
+
+        done = self.sweep('--apply')
+
+        self.assertIn('Merged 1 into main', done.stdout)
+        self.assertEqual((self.repo / 'ahead.txt').read_text(), 'ahead\n')
 
     def test_a_conflict_aborts_that_merge_and_keeps_the_other_worktrees(self):
         self.worktree('clash', commit='change app')
