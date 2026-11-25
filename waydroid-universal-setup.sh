@@ -429,6 +429,15 @@ setup_failure() {
     fi
     fail "$reason during $setup_stage (exit $rc); host provisioning may be partial. No rollback attempted. Inspect package/device state and service journals; preserve data and keys, repair the cause, then retry setup (or --status if headless is running)." "$rc"
 }
+same_artifact() {
+    # Don't open a FIFO or device just to compare bytes. Bound regular-file
+    # comparisons too, in case a path changes or its filesystem stops responding.
+    [[ -f $2 ]] || return 1
+    local rc
+    if timeout --kill-after=2 10 cmp -s -- "$1" "$2"; then return 0; else rc=$?; fi
+    [[ $rc == 1 ]] || fail "Cannot compare $2 (exit $rc); check permissions and filesystem access, then retry setup." "$rc"
+    return 1
+}
 container_ready() {
     [[ $(timeout 10 systemctl is-enabled waydroid-container.service 2>/dev/null) == enabled ]] &&
         timeout 10 systemctl is-active --quiet waydroid-container.service
@@ -458,7 +467,7 @@ setup() {
 Restart=on-failure
 RestartSec=5
 EOF
-    cmp -s -- "$stage/container.conf" "$DROPIN" || artifact_changes[dropin]=changed
+    same_artifact "$stage/container.conf" "$DROPIN" || artifact_changes[dropin]=changed
     container_ready || container_needs_enable=1
     user=$(id -un)
     linger=$(timeout 10 loginctl show-user "$user" --property=Linger --value) &&
@@ -557,9 +566,14 @@ PY
     fi
     [[ $linger == yes ]] || root loginctl enable-linger "$user"
     setup_stage=user-service
-    if [[ $SELF != "$PAYLOAD" ]] && ! cmp -s -- "$SELF" "$PAYLOAD"; then
-        install -m 755 "$SELF" "$PAYLOAD"
-        artifact_changes[payload]=changed
+    if [[ $SELF != "$PAYLOAD" ]]; then
+        if ! same_artifact "$SELF" "$PAYLOAD"; then
+            install -m 755 "$SELF" "$PAYLOAD"
+            artifact_changes[payload]=changed
+        elif [[ ! -x $PAYLOAD ]]; then
+            # An identical copy restored without its mode still has to start.
+            chmod 755 "$PAYLOAD"
+        fi
     fi
     cat > "$stage/user.service" <<'EOF'
 # Managed by waydroid-universal-setup.sh
@@ -583,7 +597,7 @@ v = sys.argv[2].replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%').rep
 s = p.read_text().replace('[Service]\n', '[Service]\nEnvironment="XDG_DATA_HOME=' + v + '"\n')
 p.write_text(s)
 PY
-    if ! cmp -s -- "$stage/user.service" "$USER_UNITS/$UNIT"; then
+    if ! same_artifact "$stage/user.service" "$USER_UNITS/$UNIT"; then
         mkdir -p "$USER_UNITS"
         install -m 644 "$stage/user.service" "$USER_UNITS/$UNIT"
         timeout 15 systemctl --user daemon-reload

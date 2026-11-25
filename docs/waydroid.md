@@ -121,14 +121,16 @@ A different or missing session UID, ambiguous display, foreign loaded user unit,
 or colliding `wayland-kit` socket/lock refuses takeover. A running session is
 recognized as managed only with the current UID, `wayland-kit` display and an
 active owned `kit-waydroid.service`. Setup only writes the container drop-in,
-user unit and service executable when they are missing or their bytes differ. It
-runs `daemon-reload` for the corresponding manager only after changing a unit
-file or drop-in, and runs `enable --now` only for a unit that is not enabled or
-not active. A working managed session is not stopped or restarted on repeat, even
-when setup updates the service executable. The new copy takes effect at the
-next restart. To apply it now, run `systemctl --user restart kit-waydroid.service`
-when an interruption is acceptable. An unchanged repeat still verifies Android
-and prints the ADB serial, Android version and ABI.
+user unit and service executable when they are missing or their bytes differ. If
+the installed executable is identical but has lost its execute permission, setup
+restores that permission without recopying it. Setup runs `daemon-reload` for
+the corresponding manager only after changing a unit file or drop-in, and runs
+`enable --now` only for a unit that is not enabled or not active. A working
+managed session is not stopped or restarted on repeat, even when setup updates
+its executable. The new copy takes effect at the next restart. To apply it now,
+run `systemctl --user restart kit-waydroid.service` when an interruption is
+acceptable. An unchanged repeat still verifies Android and prints the ADB serial,
+Android version and ABI.
 
 `--check` reports a planned same-user graphical transfer without sudo, writes,
 stops or service changes. Classification uses non-activating system-bus queries,

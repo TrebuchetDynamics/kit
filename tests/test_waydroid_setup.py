@@ -255,7 +255,7 @@ class WaydroidSetupTests(unittest.TestCase):
         self.base = Path(self.tmp.name)
         self.bin = self.base / 'bin'
         self.bin.mkdir()
-        for name in ['bash', 'cat', 'cmp', 'python3', 'timeout', 'readlink', 'awk', 'tr', 'sed', 'grep', 'mkdir', 'flock', 'sleep', 'mktemp', 'rm']:
+        for name in ['bash', 'cat', 'chmod', 'cmp', 'python3', 'timeout', 'readlink', 'awk', 'tr', 'sed', 'grep', 'mkdir', 'flock', 'sleep', 'mktemp', 'rm']:
             (self.bin / name).symlink_to(shutil.which(name))
         for name in ['timeout', 'flock']:
             (self.bin / name).unlink()
@@ -751,6 +751,28 @@ print('fixture-shell-usable', flush=True)
         self.assertIn('systemctl --user restart kit-waydroid.service', result.stdout)
         for command in ['sudo ', 'daemon-reload', ' enable ', 'restart', 'session stop']:
             self.assertNotIn(command, self.calls())
+
+    def test_setup_replaces_fifo_payload_without_waiting_for_writer(self):
+        self.assert_ok(self.invoke())
+        self.payload.unlink()
+        os.mkfifo(self.payload)
+        result = subprocess.run([shutil.which('timeout'), '10', str(self.script)],
+                                env=self.env, cwd=self.base, text=True, capture_output=True, timeout=12)
+        self.assert_ok(result)
+        self.assertTrue(self.payload.is_file())
+        self.assertEqual(self.payload.read_bytes(), self.script.read_bytes())
+
+    def test_setup_restores_execute_bit_without_recopying_payload(self):
+        self.assert_ok(self.invoke())
+        self.payload.chmod(0o644)
+        mtime = self.payload.stat().st_mtime_ns
+        (self.base / 'calls').write_text('')
+        result = self.invoke()
+        self.assert_ok(result)
+        self.assertTrue(os.access(self.payload, os.X_OK))
+        self.assertEqual(self.payload.stat().st_mtime_ns, mtime)
+        self.assertNotIn('install ', self.calls())
+        self.assertNotIn('restart', result.stdout)
 
     def test_interrupted_init_preserves_valid_image_and_checks_false_success(self):
         self.state.mkdir(parents=True)
