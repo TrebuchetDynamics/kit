@@ -586,6 +586,33 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(receipts[1]['hosts'], [{'item': 'claude', 'status': 'ok', 'exit': 0}])
         self.assertNotIn('hosts', receipts[2])
 
+    def test_symlinked_owed_temp_is_refused_before_apply(self):
+        self.advance()
+        before = self.git(self.repo, 'rev-parse', 'HEAD')
+        state = self.home / 'maintenance/toolset-update'
+        state.mkdir(parents=True)
+        target = self.root / 'important-data'
+        target.write_text('keep me\n')
+        temporary = state / 'owed.tmp'
+        temporary.symlink_to(target)
+        prepare = self.mod.prepare
+        output = io.StringIO()
+        with patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(self.repo, self.profiles, upstream=str(self.remote))), \
+             patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                          'live_profiles', self.setup_stub.live_profiles), \
+             patch.object(self.mod, 'finalize_profiles') as finalize, \
+             contextlib.redirect_stdout(output):
+            self.assertEqual(self.mod.main(['--hermes-home', str(self.home)]), 1)
+        receipt = json.loads(output.getvalue())
+        self.assertEqual(receipt['status'], 'incomplete')
+        self.assertIn('Refusing symlink', receipt['error'])
+        self.assertIn(str(temporary), receipt['error'])
+        self.assertIn('rerun hermes kit update', receipt['action'])
+        self.assertEqual(target.read_text(), 'keep me\n')
+        self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), before)
+        self.assertEqual((self.home / 'skills/demo/SKILL.md').read_text(), 'old\n')
+        finalize.assert_not_called()
+
     def test_symlinked_restart_marker_is_refused(self):
         target = self.root / 'important-data'
         target.write_bytes(b'IMPORTANT USER DATA')

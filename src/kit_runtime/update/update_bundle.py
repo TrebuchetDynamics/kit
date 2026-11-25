@@ -2238,10 +2238,12 @@ def main(argv=None):
                 stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
                 if plan['writes']:
                     result['backup'] = str(state_dir / stamp)
+                owed_tmp = owed.with_suffix('.tmp')
+                if changed:
+                    # Refuse an unsafe marker path before applying changes we could not track.
+                    safe_path(owed_tmp)
                 apply(plan, state_dir / stamp)
                 if changed:
-                    owed_tmp = state_dir / 'owed.tmp'
-                    safe_path(owed_tmp)
                     owed_tmp.write_text(json.dumps({'started_ns': result['started_ns']}) + '\n')
                     owed_tmp.replace(owed)
                 before = config_snapshot(profiles)

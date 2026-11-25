@@ -627,11 +627,15 @@ the receipt to `requested`; if another restart loaded the update first it record
 next step and restarts nothing. Cron schedules persist (a job mid-run during a
 restart is marked `unknown` and not retried; its next tick runs normally).
 Otherwise it reports `not_running`, or `not_needed` for a no-op or incomplete
-activation. An update that applied a change but ended `incomplete` (or was killed
-after applying it) leaves `owed.json` in `maintenance/toolset-update`; the rerun
-treats the update as changed, so it restarts the gateway once and refreshes hosts,
-then removes the record. While a deferred or requested restart is outstanding, a later update
-reports `pending` and joins it instead of starting another one, so a burst of
+activation. The updater records applied code or skill changes in
+`maintenance/toolset-update/owed.json` before activating profiles. If activation
+is incomplete or the updater stops before handling the restart and host refresh,
+resolve any reported profile errors and rerun `hermes kit update`. The rerun
+still treats the update as changed. Once activation succeeds, it runs the
+best-effort host refresh and clears the record after requesting, joining or
+deferring the restart, or reporting `not_running`.
+While a deferred or requested restart is outstanding, a later update reports
+`pending` and joins it instead of starting another one, so a burst of
 updates restarts the gateway once; that restart loads the newest release, and its
 outcome reaches the latest receipt with `gateway_restart_covers`, the number of
 updates it covers. The waiter never restarts while an update is still applying
