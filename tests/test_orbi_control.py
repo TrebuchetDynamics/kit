@@ -4899,9 +4899,9 @@ class UpdateTests(unittest.TestCase):
         PauseUpdateTests.pause_rules(self, move=move, installed=installed,
                                     services={1: worker} if worker else {})
 
-    def test_update_locks_newest_release_and_keeps_scheduling_inactive(self):
+    def test_update_with_stop_locks_newest_release_and_keeps_scheduling_inactive(self):
         self.release_rules()
-        code, doc, err = self.h.run('update')
+        code, doc, err = self.h.run('update', options=['--stop'])
         self.assertEqual(code, 0, err)
         self.assertEqual(doc['action'], 'update')
         self.assertEqual(doc['status'], 'updated')
@@ -4934,7 +4934,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_update_reports_up_to_date_when_the_release_commit_did_not_move(self):
         self.release_rules(move=False)
-        code, doc, err = self.h.run('update')
+        code, doc, err = self.h.run('update', options=['--stop'])
         self.assertEqual(code, 0, err)
         self.assertEqual(doc['status'], 'up_to_date')
         self.assertEqual(doc['previous'], {'track': helper.PIN_TRACK, 'head': PIN})
@@ -5017,9 +5017,9 @@ class UpdateTests(unittest.TestCase):
                          [f'{self.prefix}@{i}.timer' for i in range(1, helper.MAX_INSTANCES + 1)])
         PauseUpdateTests.assert_safe_trace(self)
 
-    def test_update_defers_unit_install_for_a_deployment_without_units(self):
+    def test_update_with_stop_defers_unit_install_for_a_deployment_without_units(self):
         self.release_rules(installed=False)
-        code, doc, err = self.h.run('update')
+        code, doc, err = self.h.run('update', options=['--stop'])
         self.assertEqual(code, 0, err)
         self.assertEqual(doc['status'], 'updated')
         steps = {step['step']: step for step in doc['steps']}
@@ -5436,14 +5436,15 @@ class SchedulingUpdateTests(unittest.TestCase):
     test_revalidation_under_lock_precedes_disable = PauseUpdateTests.test_revalidation_under_lock_precedes_disable
     test_prerequisite_and_dirty_source_refusals_do_not_pause = PauseUpdateTests.test_prerequisite_and_dirty_source_refusals_do_not_pause
 
-    def active_rules(self, **kwargs):
+    def active_rules(self, *, initially_active=True, **kwargs):
         activated = self.h.root / 'activated'
         extra = [*kwargs.pop('extra', []),
             {'tool': 'systemctl', 'argv_contains': ['enable', '--now'],
              'write': {str(activated): '1'}},
             *[dict(r, if_exists=str(activated)) for r in self.h.scheduler_rules(
                 timers={1: 'active'}, enabled={1: True})]]
-        PauseUpdateTests.pause_rules(self, timers={1: 'active'}, enabled={1: True}, extra=extra, **kwargs)
+        PauseUpdateTests.pause_rules(self, timers={1: 'active'} if initially_active else None,
+                                     enabled={1: True} if initially_active else None, extra=extra, **kwargs)
 
     def test_plain_enabled_active_idle_updates_validates_and_restores_in_one_invocation(self):
         self.active_rules()
@@ -5481,7 +5482,7 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assertEqual(doc['activation'], 'started')
         self.assertEqual(self.now, 1)
 
-    def test_deadline_two_busy_retries_then_idle_restores_saved_intent(self):
+    def test_deadline_two_busy_retries_then_idle_restores_scheduling(self):
         self.active_rules(services={1: 'active'})
         before = snapshot(self.h.deploy)
         for attempt in range(2):
@@ -5509,20 +5510,47 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assertEqual(doc['activation'], 'started')
         self.assertEqual(doc['deployment']['deployed_commit'], PIN)
 
-    def test_independent_stop_invalidates_drain_intent_and_plain_retry_stays_stopped(self):
-        self.active_rules(services={1: 'active'})
-        code, doc, err = self.update()
-        self.assertEqual(code, 0, (doc, err))
-        self.assertEqual(doc['activation'], 'deferred')
-        code, doc, err = self.h.run('stop')
-        self.assertEqual(code, 0, (doc, err))
+    def test_plain_cli_update_restarts_scheduling_after_stop(self):
         self.active_rules()
-        self.h.clear_calls()
-        code, doc, err = self.update()
-        self.assertEqual(code, 0, (doc, err))
-        self.assertEqual(doc['activation'], 'held')
+        command = [sys.executable, '-B', str(HELPER)]
+        stop = subprocess.run([*command, 'stop', '--json'], cwd=self.h.repo, env=self.h.env,
+                              capture_output=True, text=True, timeout=45)
+        self.assertEqual(stop.returncode, 0, stop.stdout + stop.stderr)
+        stopped = json.loads(stop.stdout)
+        self.assertEqual(stopped['status'], 'stopped')
+        timer = f'{self.prefix}@1.timer'
+        self.assertIn(timer, stopped['disabled_timers'])
+        result = subprocess.run([*command, 'update', '--json'], cwd=self.h.repo, env=self.h.env,
+                                capture_output=True, text=True, timeout=45)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        doc = json.loads(result.stdout)
         self.assertEqual(doc['engine_update'], 'updated')
+        self.assertEqual(doc['activation'], 'started')
+        self.assertEqual(doc['scheduler_confirmation'], 'enabled_active')
+        self.assertTrue(doc['scheduler']['timers'][timer]['enabled'])
+        self.assertEqual(doc['scheduler']['timers'][timer]['active'], 'active')
+        self.assert_a_unchanged()
+
+    def test_plain_cli_update_restarts_scheduling_after_failed_sync(self):
+        self.active_rules(extra=[{'tool': 'orbi', 'argv_contains': ['sync-engine-source'], 'exit': 1}])
+        command = [sys.executable, '-B', str(HELPER), 'update']
+        failed = subprocess.run(command, cwd=self.h.repo, env=self.h.env,
+                                capture_output=True, text=True, timeout=45)
+        self.assertNotEqual(failed.returncode, 0, failed.stdout + failed.stderr)
+        self.assertIn('Error sync_engine_source_failed:', failed.stderr)
+        self.assertIn('Engine: sync_unverified', failed.stderr)
+        self.assertIn('after repairing the cause, run /orbi update --repo-dir', failed.stderr)
+        self.assertEqual(self.h.config()['engine_source_track'], 'release')
         self.assert_safe_trace()
+
+        self.active_rules()  # Restore sync; the timer stays paused until enabled.
+        result = subprocess.run([*command, '--json'], cwd=self.h.repo, env=self.h.env,
+                                capture_output=True, text=True, timeout=45)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        doc = json.loads(result.stdout)
+        self.assertEqual(doc['deployment']['pin'], 'sha:' + NEW_PIN)
+        self.assertEqual(doc['activation'], 'started')
+        self.assertEqual(doc['scheduler_confirmation'], 'enabled_active')
 
     def test_explicit_stop_retry_guidance_preserves_opt_out(self):
         self.active_rules(services={1: 'active'})
@@ -5534,7 +5562,10 @@ class SchedulingUpdateTests(unittest.TestCase):
         code, doc, err = self.h.run('update', options=['--stop'])
         self.assertEqual(code, 0, (doc, err))
         self.assertEqual(doc['activation'], 'held')
+        self.assertEqual(doc['activation_reason'], 'explicit --stop')
         self.assertEqual(doc['next_action'], 'Leave scheduling stopped.')
+        self.assertTrue(all(not timer['enabled'] and timer['active'] == 'inactive'
+                            for timer in doc['scheduler']['timers'].values()))
         self.assert_safe_trace()
 
     def test_drain_target_drift_refuses_without_source_sync_and_releases_lock(self):
@@ -5578,12 +5609,12 @@ class SchedulingUpdateTests(unittest.TestCase):
                     self.assertFalse(doc['scheduler']['timers'][f'{self.prefix}@2.timer']['enabled'])
                 self.assertFalse(any(set(c['argv']) & {'start', 'stop', 'restart', 'kill'} for c in self.h.calls()))
 
-    def test_idle_inactive_alone_and_preview_never_grant_consent(self):
-        self.pause_rules()
+    def test_plain_update_activates_initially_inactive_timers_but_preview_does_not(self):
+        self.active_rules(initially_active=False)
         code, doc, err = self.update()
         self.assertEqual(code, 0, (doc, err))
-        self.assertEqual(doc['activation'], 'held')
-        self.assert_safe_trace()
+        self.assertEqual(doc['activation'], 'started')
+        self.assertEqual(doc['scheduler_confirmation'], 'enabled_active')
         self.h = self.fresh('preview-active')
         self.active_rules(services={1: 'active'})
         before = snapshot(self.h.home)
@@ -5699,17 +5730,19 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assertIsNone(ctx.observation_deadline)
 
 
-    def test_unknown_maintenance_intent_holds_even_with_active_timers(self):
+    def test_update_removes_leftover_maintenance_file_without_reading_it(self):
         self.active_rules()
-        ctx = helper.Context(env=self.h.env)
-        target = helper.deployment_from(self.h.deploy / 'orbi.toml')
-        with helper.locked(ctx, target.config_path):
-            helper.write_scheduling_intent(ctx, target, 'unrecognized')
+        lock, = (self.h.home / '.cache/orbi-control').glob('*.lock')
+        legacy = lock.with_suffix('.maintenance.json')
+        legacy.write_bytes(b'\xff')
+        code, doc, err = self.update(dry_run=True)
+        self.assertEqual(code, 0, (doc, err))
+        self.assertEqual(legacy.read_bytes(), b'\xff')
+
         code, doc, err = self.update()
         self.assertEqual(code, 0, (doc, err))
-        self.assertEqual(doc['engine_update'], 'updated')
-        self.assertEqual(doc['activation'], 'held')
-        self.assert_safe_trace()
+        self.assertEqual(doc['activation'], 'started')
+        self.assertFalse(legacy.exists())
 
     def test_stop_post_validation_failure_text_preserves_pause_choice(self):
         self.pause_rules(extra=[{'tool': 'systemctl', 'argv_contains': ['list-jobs'],
