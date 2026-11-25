@@ -730,8 +730,9 @@ def restart_when_quiet(root, homes, folder, *, update_id, gateway, window=QUIET_
 
     Every step runs under the update lock: the waiter never restarts while an update
     is applying files, and updates that join this restart (``covers``) do so atomically.
-    Returns 'requested', 'reloaded' (another restart already loaded the updates) or
-    'deferred_expired' (still busy when the window ended; nothing was restarted).
+    Returns 'requested', 'reloaded' (another restart already loaded the updates),
+    'deferred_expired' (still busy when the window ended), or 'superseded' (a newer
+    update started its own restart).
     """
     started = clock()
     deferred_ns = time.time_ns()
@@ -740,6 +741,9 @@ def restart_when_quiet(root, homes, folder, *, update_id, gateway, window=QUIET_
         if lock is not None:
             with lock:
                 covers = _read_marker(folder).get('covers') or [update_id]
+                if update_id not in covers:
+                    # The marker now belongs to a newer restart. Leave its receipt alone.
+                    return 'superseded'
                 current = gateway_pid(root)
                 if current is not None and current != gateway:
                     _record_restart_outcome(folder, covers, 'reloaded')
@@ -754,7 +758,7 @@ def restart_when_quiet(root, homes, folder, *, update_id, gateway, window=QUIET_
                     return 'requested'
                 _write_marker(folder, {'mode': 'deferred', 'waiter_pid': os.getpid(), 'deferred_ns': deferred_ns,
                                        'window_s': window, 'chat_turns': turns, 'checked_ns': time.time_ns(),
-                                       'covers': covers})
+                                       'gateway_pid': gateway, 'covers': covers})
                 if clock() - started >= window:
                     hours = round(window / 3600, 1)
                     _record_restart_outcome(
@@ -918,6 +922,35 @@ def _waiter_command(root, update_id, gateway):
             '--restart-when-quiet', str(update_id), '--gateway-pid', str(gateway)]
 
 
+def _retire_legacy_waiter(root, marker):
+    """Stop a pre-identity waiter before it can mistake the replacement marker for its own."""
+    covers = marker.get('covers')
+    if not isinstance(covers, list) or not covers:
+        return
+    pid = int(marker['waiter_pid'])
+    argv = _process_argv(pid)
+    expected = [b'--hermes-home', os.fsencode(root), b'--restart-when-quiet',
+                str(covers[0]).encode(), b'--gateway-pid']
+    if not (argv and len(argv) == 9 and Path(os.fsdecode(argv[1])).name == 'update_bundle.py'
+            and argv[2:7] == expected):
+        return
+    # The update lock keeps this waiter out of the restart path. Use a process handle
+    # and recheck argv so a recycled waiter PID can't cause us to signal another process.
+    try:
+        fd = os.pidfd_open(pid)
+        try:
+            if _process_argv(pid) == argv:
+                signal.pidfd_send_signal(fd, signal.SIGTERM)
+        finally:
+            os.close(fd)
+    except ProcessLookupError:
+        pass  # The waiter already exited.
+    except (AttributeError, OSError) as error:
+        raise ValueError(f'Cannot safely retire legacy restart waiter {pid}: {error}. '
+                         'Let it exit or stop that waiter, then run `hermes gateway restart` once chat turns finish '
+                         'if the gateway still serves the previous release.') from error
+
+
 def start_quiet_restart(root, folder, update_id, gateway):
     """Start the detached waiter that restarts the gateway once it is quiet; returns its PID."""
     with (folder / 'run.log').open('ab') as stream:
@@ -927,7 +960,7 @@ def start_quiet_restart(root, folder, update_id, gateway):
                                    stdout=stream, stderr=stream, start_new_session=True)
     _write_marker(folder, {'mode': 'deferred', 'waiter_pid': process.pid, 'deferred_ns': time.time_ns(),
                            'window_s': QUIET_WINDOW_S, 'chat_turns': None, 'checked_ns': None,
-                           'covers': [update_id]})
+                           'gateway_pid': gateway, 'covers': [update_id]})
     return process.pid
 
 
@@ -1207,8 +1240,17 @@ def fleet_linked_profiles(root):
 
 
 def _pin_records(state, name):
-    folder = state / 'pinned'
-    return sorted(folder.glob(f'{name}-*/record.json')) if folder.is_dir() else []
+    records = []
+    for path in (state / 'pinned').glob(f'{name}-*/record.json'):
+        try:
+            if not path.is_file():
+                continue
+            record = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError, RecursionError):
+            continue
+        if isinstance(record, dict) and record.get('profile') == name:
+            records.append(path)
+    return sorted(records)
 
 
 def pin_profile(root, name, *, dry_run=False, upstream=UPSTREAM):
@@ -2292,13 +2334,18 @@ def main(argv=None):
                 # A plugin reload rewires handlers, but Telegram menus refresh only on reconnect.
                 if not ready or not (changed or missing or healed):
                     result['gateway_restart'] = 'not_needed'
-                elif (pending := pending_restart(state_dir)) is not None:
-                    # An outstanding restart (draining, or deferred to a quiet moment) loads this
-                    # update too; join it so its outcome reaches this receipt. We hold the update lock.
+                elif ((pending := pending_restart(state_dir)) is not None
+                      and (pending.get('mode') != 'deferred'
+                           or ((watched_pid := pending.get('gateway_pid')) is not None
+                               and gateway_pid(root) == watched_pid))):
+                    # A deferred waiter can only cover this update if it still watches
+                    # the running gateway. We hold the update lock while joining.
                     pending['covers'] = (pending.get('covers') or []) + [result['started_ns']]
                     _write_marker(state_dir, pending)
                     result['gateway_restart'] = 'pending'
                 elif gateway_running(root):
+                    if pending is not None and pending.get('gateway_pid') is None:
+                        _retire_legacy_waiter(root, pending)
                     # Restart only while no chat turn is in flight, so Hermes never has to
                     # force one; otherwise a detached waiter restarts at the first quiet moment.
                     turns = chat_turns(root, [home for _, home in profiles])
