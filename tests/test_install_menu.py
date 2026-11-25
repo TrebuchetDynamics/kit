@@ -970,6 +970,28 @@ esac
                 self.assertEqual(result.returncode, code, result.stdout + result.stderr)
         self.assertEqual(self.calls('systemctl --user try-restart'), [])
 
+    def test_interrupted_install_restarts_changed_consumer_on_rerun(self):
+        self.recording_services()
+        uv = (self.bin / 'uv').read_text()
+        self.fake('uv', LOGGING + 'kill -INT "$PPID"\n')
+        self.bolt.write_text(PI + '# previous release\n')
+        args = ('--only', 'pi-bolt,orbi')
+        interrupted = self.install(*args)
+        self.assertEqual(interrupted.returncode, 130, interrupted.stdout + interrupted.stderr)
+        self.assertIn('Installation interrupted; completed steps remain installed.', interrupted.stderr)
+        self.assertEqual(self.bolt.read_text(), PI)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [])
+
+        self.fake('uv', uv)
+        rerun = self.install(*args)
+        self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
+        self.assertIn('kit-bolt.service: restarted', rerun.stdout)
+        restart = 'systemctl --user try-restart kit-bolt.service'
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart])
+        third = self.install(*args)
+        self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart])
+
     def test_restart_failure_makes_install_fail(self):
         self.recording_services()
         original = (self.bin / 'systemctl').read_text()
@@ -977,7 +999,23 @@ esac
         self.bolt.write_text(PI + '# previous release\n')
         result = self.install('--only', 'pi-bolt')
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn('kit-bolt.service', result.stdout)
+        self.assertIn('service restart failed: kit-bolt.service', result.stdout)
+        self.assertIn('restart failed (exit 17)', result.stdout)
+        restart = 'systemctl --user try-restart kit-bolt.service'
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart])
+
+        self.fake('systemctl', original)
+        for args in (('--list',), ('--only', 'pi-bolt', '--dry-run'), ('--only', 'tx')):
+            skipped = self.install(*args)
+            self.assertEqual(skipped.returncode, 0, skipped.stdout + skipped.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart])
+        rerun = self.install('--only', 'pi-bolt')
+        self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
+        self.assertIn('kit-bolt.service: restarted', rerun.stdout)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart, restart])
+        third = self.install('--only', 'pi-bolt')
+        self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart, restart])
 
     def test_restart_timeout_does_not_drop_independent_changed_consumer(self):
         path = str(self.bolt)
@@ -1034,6 +1072,34 @@ esac
                 self.assertEqual(rows['pi']['change'], 'unchanged')
                 self.assertEqual(self.calls('systemctl --user try-restart'),
                                  ['systemctl --user try-restart kit-bolt.service'])
+
+    def test_pending_pi_settings_change_is_not_replayed_for_another_profile(self):
+        args = ('--only', 'pi')
+        initial = self.install(*args)
+        self.assertEqual(initial.returncode, 0, initial.stdout + initial.stderr)
+        settings = self.home / '.pi/agent/settings.json'
+        other = self.home / 'other-profile'
+        other.mkdir()
+        (other / 'settings.json').write_text(json.dumps({'packages': [NEW]}))
+        settings.parent.mkdir(parents=True)
+        settings.write_text(json.dumps({'packages': [{'source': NEW, 'skills': []}]}))
+        self.recording_services()
+        systemctl = (self.bin / 'systemctl').read_text()
+        self.fake('systemctl', systemctl + '\nif [[ "$*" == *try-restart* ]]; then exit 17; fi\n')
+        failed = self.install(*args)
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        restart = 'systemctl --user try-restart kit-bolt.service'
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart])
+
+        self.fake('systemctl', systemctl.replace('/.pi/agent', '/other-profile'))
+        unrelated = self.install(*args, env={'PI_CODING_AGENT_DIR': str(other)})
+        self.assertEqual(unrelated.returncode, 0, unrelated.stdout + unrelated.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart])
+
+        self.fake('systemctl', systemctl)
+        original = self.install(*args)
+        self.assertEqual(original.returncode, 0, original.stdout + original.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [restart, restart])
 
     def test_failed_payload_holds_shared_consumer_but_not_independent_success(self):
         self.recording_services()
@@ -2856,7 +2922,7 @@ def fixture_component():
     return 'fixture installed'
 def items(*args, **kwargs):
     return [Item('tx', 'fixture', steps=[Step('fixture component', run=fixture_component)])]
-def restart_services(output, observations=None):
+def restart_services(output, observations=None, settled=None):
     fixture_trace('restart')
     return 'fixture restarted'
 

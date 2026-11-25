@@ -1456,8 +1456,45 @@ def choose_text(all_items, chosen, read=input, write=print):
 
 
 # -- installing -------------------------------------------------------------------
-def restart_services(output, observations=None):
-    """Only successful changes with executable/config reference evidence may restart."""
+class RestartStateError(RuntimeError):
+    pass
+
+
+def read_pending_restarts(path):
+    try:
+        pending = json.loads(path.read_text(encoding='utf-8'))
+        if not isinstance(pending, dict) or any(
+                not isinstance(row, dict) or any(
+                    not isinstance(row.get(field), list) or
+                    any(not isinstance(value, str) for value in row[field])
+                    for field in ('changed_inputs', 'directories'))
+                for row in pending.values()):
+            raise ValueError('invalid pending restart record')
+        return pending
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise RestartStateError(f'cannot read {path}: {exc}') from exc
+
+
+def write_pending_restarts(path, pending):
+    try:
+        if not pending:
+            path.unlink(missing_ok=True)
+            return
+        descriptor, temporary = tempfile.mkstemp(prefix=path.name + '.', dir=path.parent)
+        try:
+            with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+                json.dump(pending, stream)
+            os.replace(temporary, path)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+    except OSError as exc:
+        raise RestartStateError(f'cannot save {path}: {exc}') from exc
+
+
+def restart_services(output, observations=None, settled=None):
+    """Restart proven consumers and mark changed items whose service decisions completed."""
     observations = observations or {}
     candidates = {key: row for key, row in observations.items()
                   if row['change'] in ('changed', 'unverified')}
@@ -1488,7 +1525,7 @@ def restart_services(output, observations=None):
     units = sorted({line.split()[0] for line in listed.stdout.splitlines() if line.split()
                     and len(line.split()) >= 3 and line.split()[2] == 'active'
                     and re.fullmatch(r'kit-[^/]+\.service', line.split()[0])})
-    failed, matched = [], set()
+    failed, matched, unsettled = [], set(), set()
     for unit in units:
         try:
             shown = subprocess.run([ctl, '--user', 'show', unit, '--property=ExecStart',
@@ -1540,6 +1577,7 @@ def restart_services(output, observations=None):
             elif row['change'] == 'changed':
                 affected.add(key)
         if blocked:
+            unsettled.update(affected | blocked)
             reasons.append(f'{unit}: held (incomplete/unverified {", ".join(sorted(blocked))}); repair those inputs before manual restart')
         elif affected:
             matched.update(affected)
@@ -1549,10 +1587,13 @@ def restart_services(output, observations=None):
                 code, _ = run_command(argv, output, timeout=30)
             except (OSError, subprocess.SubprocessError) as exc:
                 failed.append(unit)
+                unsettled.update(affected)
                 reasons.append(f'{unit}: restart failed ({exc})')
             else:
                 if code:
                     failed.append(unit)
+                    unsettled.update(affected)
+                    reasons.append(f'{unit}: restart failed (exit {code})')
                 else:
                     reasons.append(f'{unit}: restarted ({", ".join(sorted(affected))} changed)')
         else:
@@ -1561,6 +1602,9 @@ def restart_services(output, observations=None):
         if key not in matched and row['status'] != 'failed' and row['change'] == 'changed':
             reasons.append(f'{key}: no proven active consumer for {", ".join(row["changed_inputs"])}; '
                            'no restart requested; inspect unit executable/config references if a service uses these inputs')
+    if settled is not None:
+        settled.update(key for key, row in candidates.items()
+                       if key not in unsettled and row['change'] == 'changed' and row['status'] != 'failed')
     if failed:
         raise RuntimeError('service restart failed: ' + ', '.join(failed) + '; ' + '; '.join(reasons))
     return '; '.join(reasons) or 'no active supported consumers; no service restart requests'
@@ -1603,12 +1647,20 @@ def install(all_items, chosen, dry_run=False, output=None, mode='install', basel
             lock.truncate()
             lock.write(f'{os.getpid()}\n')
             lock.flush()
-        return _install(all_items, chosen, output=output, mode=mode, lock_fd=lock.fileno(), baseline=baseline)
+        state_path = binary_dir.with_name(binary_dir.name + '.kit-install-restarts.json')
+        try:
+            return _install(all_items, chosen, output=output, mode=mode, lock_fd=lock.fileno(),
+                            baseline=baseline, state_path=state_path)
+        except RestartStateError as exc:
+            output.line(f'  FAILED: pending service restarts: {exc}; repair the state file or its access and rerun ./install.sh with the same options', 'failed')
+            return 1
 
 
-def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock_fd=None, baseline=None):
+def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock_fd=None,
+             baseline=None, state_path=None):
     results = []
     baseline = dict(baseline or {})
+    pending = read_pending_restarts(state_path) if state_path else {}
     observations = {}
     native_decisions = []
     # Private machine-readable progress for update_bundle.py, separate from native output.
@@ -1622,6 +1674,10 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
             with Path(report).open('a') as stream:
                 stream.write(json.dumps({'item': key, 'status': status, 'exit': code, **fields}) + '\n')
 
+    def pending_key(key):
+        # Only Pi infers a consumer from the settings profile as well as paths.
+        return f'pi:{pi_settings_path().absolute()}' if key == 'pi' else key
+
     def observe(key, status, before, after):
         before = baseline.get(key, before)
         if key in observations:
@@ -1631,6 +1687,17 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
         change, paths = evidence_change(before, after)
         observations[key] = dict(status=status, before=before, after=after,
                                  change=change, changed_inputs=paths)
+        if state_path and change == 'changed':
+            # Save before the next component can interrupt or abort the run.
+            key = pending_key(key)
+            owed = pending.get(key, {})
+            changed_inputs = set(paths) | set(owed.get('changed_inputs', []))
+            directories = set(before.get('directories', [])) | set(after.get('directories', []))
+            directories = (directories & set(paths)) | set(owed.get('directories', []))
+            row = dict(changed_inputs=sorted(changed_inputs), directories=sorted(directories))
+            if row != owed:
+                pending[key] = row
+                write_pending_restarts(state_path, pending)
 
     total = len(chosen)
     current = 0
@@ -1736,6 +1803,9 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
         fields = {}
         if not dry_run:
             if item.key == 'hermes':
+                # A deferred nested installer can also save changes under this lock.
+                if state_path:
+                    pending = read_pending_restarts(state_path)
                 if native:
                     fields = {k: v for k, v in native.items() if k.startswith('gateway_restart') or k in ('activation', 'hosts')}
                     disposition = native.get('gateway_restart', 'unverified')
@@ -1785,12 +1855,31 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
         if dry_run:
             record('services', 'planned', 'check effective installed changes; restart only proven affected active consumers; Hermes owns gateway disposition')
         else:
+            service_observations = dict(observations)
+            if not os.environ.get('KIT_INSTALL_DEFER_SERVICES'):
+                for key, row in observations.items():
+                    owed = pending.get(pending_key(key))
+                    if not owed:
+                        continue
+                    # Carry forward only paths proven changed. The current refresh
+                    # still decides whether the payload is complete enough to use.
+                    change = row['change']
+                    if change == 'unchanged' and row['status'] == 'installed':
+                        change = 'changed'
+                    directories = set(row['before'].get('directories', [])) | set(owed['directories'])
+                    service_observations[key] = dict(
+                        row, change=change, before=dict(row['before'], directories=sorted(directories)),
+                        changed_inputs=sorted(set(row['changed_inputs']) | set(owed['changed_inputs'])))
+            settled = set()
             try:
-                detail = restart_services(output, observations)
+                detail = restart_services(output, service_observations, settled)
                 detail = '; '.join([detail, *native_decisions])
                 record('services', 'installed', detail, 0, decision=detail)
             except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
                 record('services', 'failed', str(exc), 1, reason=str(exc))
+            settled_keys = {pending_key(key) for key in settled}
+            if pending.keys() & settled_keys:
+                write_pending_restarts(state_path, {k: row for k, row in pending.items() if k not in settled_keys})
     output.line('\nSummary:', 'heading')
     for key, outcome, detail in results:
         output.line(f'  {key:<9} {outcome:<9} {detail}', outcome)
