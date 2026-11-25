@@ -5,14 +5,48 @@ export LC_ALL=C
 STATE=/var/lib/waydroid
 DROPIN=/etc/systemd/system/waydroid-container.service.d/kit-headless.conf
 UNIT=kit-waydroid.service
-SELF=$(readlink -f -- "${BASH_SOURCE[0]}")
 PAYLOAD="$HOME/.local/share/kit-waydroid/waydroid-universal-setup.sh"
 USER_UNITS="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 WAIT=180
 ACTION=setup
+VERBOSE=0
 TRANSFER_STAGE=''
 TRANSFER_STATE=''
+STAGES=(prerequisites sudo packages transfer initialization 'container service' 'user service' 'Android verification')
+step_number=0
+
+# Only fixed formats from the callers below; a progress write must not fail setup.
+# shellcheck disable=SC2059
+progress() { (printf "$@") || :; }
+begin_progress() {
+    step_number=1
+    step_started=$SECONDS
+}
+step() {
+    progress '[%d/%d] %s: %s (%s) %ds\n' "$step_number" "${#STAGES[@]}" "${STAGES[step_number-1]}" \
+        "$1" "$2" "$((SECONDS - step_started))"
+    step_number=$((step_number + 1))
+    step_started=$SECONDS
+}
+step_start() {
+    progress '%s: starting (%s)\n' "${STAGES[step_number-1]}" "$1"
+}
+
+# Explicit command tracing: never xtrace expansions, input, or environment data.
+# Use the original stderr even when a probe uses redirection or captures output.
+trace_command() {
+    if ((VERBOSE)) && [[ $ACTION != session ]]; then
+        (printf '+'; printf ' %q' "$@"; printf '\n') >&3 2>/dev/null || :
+    fi
+}
+run() {
+    trace_command "$@"
+    "$@" || return $?
+}
 fail() {
+    if ((BASH_SUBSHELL == 0 && step_number > 0 && step_number <= ${#STAGES[@]})); then
+        step failed 'see stderr'
+    fi
     printf 'waydroid-setup: %s\n' "$1" >&2
     if [[ -n $TRANSFER_STAGE ]]; then
         printf 'waydroid-setup: transfer stage=%s; %s. No GUI rollback attempted. Inspect waydroid status, systemctl --user status kit-waydroid.service, journalctl --user -u kit-waydroid.service and journalctl -u waydroid-container.service; repair the reported cause, then retry setup (or --status if headless is running).\n' "$TRANSFER_STAGE" "$TRANSFER_STATE" >&2
@@ -21,7 +55,7 @@ fail() {
 }
 usage() {
     cat <<'EOF'
-Usage: waydroid-universal-setup.sh [--check | --status | --stop] [--wait SECONDS]
+Usage: waydroid-universal-setup.sh [--check | --status | --stop] [--wait SECONDS] [--verbose]
   (no action)  Check prerequisites, ask for sudo if needed, transfer same-user GUI
                to managed headless (interrupts open GUI apps), and verify Android.
   --check      Read-only checks and planned same-user transfer; no sudo or writes.
@@ -29,7 +63,13 @@ Usage: waydroid-universal-setup.sh [--check | --status | --stop] [--wait SECONDS
   --status     Connect/query ADB as this user; wait for authorized Android boot.
   --stop       Disable this user's headless service; preserve Android data/keys.
   --wait       Per-stage session/device wait (default 180 seconds, max 3600).
+  --verbose    Print external commands before execution on stderr; sudo owns input.
   --help       Show this help. Operator/removal guide: docs/waydroid.md
+Setup and --check print eight numbered stage results with elapsed seconds.
+For example, run waydroid-universal-setup.sh:
+  First run:  [3/8] packages: changed (installed weston) 12s
+  Same command again when ready: [3/8] packages: unchanged (waydroid, weston, adb present) 0s
+  The ready repeat reports Summary: 0 changed (none).
 Setup installs missing Waydroid, Weston and ADB via APT, DNF or pacman.
 On Arch hosts (including Omarchy), pacman uses existing sync databases and maps
 ADB to android-tools. Setup never refreshes those databases or upgrades the system.
@@ -47,6 +87,7 @@ while (($#)); do
         --status) ACTION=status ;;
         --stop) ACTION=stop ;;
         --session) ACTION=session ;; # User service only; never a sudo target.
+        --verbose) VERBOSE=1 ;;
         --wait) shift; (($#)) || fail '--wait needs seconds'; WAIT=$1 ;;
         *) fail "Unknown option: $1 (use --help)" ;;
     esac
@@ -56,6 +97,8 @@ if ! [[ $WAIT =~ ^[0-9]{1,4}$ ]] || ((10#$WAIT == 0 || 10#$WAIT > 3600)); then
     fail '--wait must be 1..3600 seconds'
 fi
 WAIT=$((10#$WAIT))
+if ((VERBOSE)) && [[ $ACTION != session ]]; then exec 3>&2 || :; fi
+SELF=$(run readlink -f -- "${BASH_SOURCE[0]}")
 
 # Waydroid status reports DHCP leases; UNKNOWN is transient, not a serial.
 device_ip() {
@@ -64,8 +107,9 @@ device_ip() {
     # apart from the documented unprivileged ADB connection).
     session=$(manager_session) || return 1
     [[ -n $session ]] || return 1
-    status=$(timeout 10 waydroid status) || return 1
-    ip=$(awk -F': *|:\t' '/^IP address:/ {gsub(/[[:space:]]/, "", $2); print $2}' <<< "$status")
+    status=$(run timeout 10 waydroid status) || return 1
+    ip=$(run awk -F': *|:\t' '/^IP address:/ {gsub(/[[:space:]]/, "", $2); print $2}' <<< "$status")
+    trace_command python3 - '<captured IP omitted>'
     python3 - "$ip" <<'PY'
 import ipaddress, sys
 try:
@@ -78,23 +122,29 @@ PY
 }
 verify_device() {
     local end=$((SECONDS + WAIT)) ip='' serial='' state='' reason=ip version abi
+    local last_reason='' next_report=$SECONDS
+    if [[ $ACTION == setup ]]; then step_start 'waiting for Android boot'; fi
     while ((SECONDS < end)); do
         if ip=$(device_ip); then
             serial="$ip:5555"
-            timeout 10 adb connect "$serial" >/dev/null 2>&1 || true
-            state=$(timeout 10 adb devices | awk -v s="$serial" '$1 == s {print $2}') || state=''
+            run timeout 10 adb connect "$serial" >/dev/null 2>&1 || true
+            state=$(run timeout 10 adb devices | run awk -v s="$serial" '$1 == s {print $2}') || state=''
             case "$state" in
                 unauthorized) reason=authorization ;;
                 device)
                     reason=boot
-                    if [[ $(timeout 10 adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r') == 1 ]]; then
-                        version=$(timeout 10 adb -s "$serial" shell getprop ro.build.version.release | tr -d '\r') &&
-                        abi=$(timeout 10 adb -s "$serial" shell getprop ro.product.cpu.abi | tr -d '\r') ||
+                    if [[ $(run timeout 10 adb -s "$serial" shell getprop sys.boot_completed | run tr -d '\r') == 1 ]]; then
+                        version=$(run timeout 10 adb -s "$serial" shell getprop ro.build.version.release | run tr -d '\r') &&
+                        abi=$(run timeout 10 adb -s "$serial" shell getprop ro.product.cpu.abi | run tr -d '\r') ||
                             fail 'Android properties unavailable; check adb devices and adb shell getprop, then retry --status.'
                         [[ -n $version && -n $abi ]] || fail 'Android properties empty; inspect adb shell getprop and retry --status.'
                         # ADB can take minutes; do not publish readiness for a
                         # different owner/session that appeared during that wait.
-                        if [[ $ACTION == setup ]]; then confirm_managed; fi
+                        if [[ $ACTION == setup ]]; then
+                            confirm_managed
+                            step unchanged 'Android ready'
+                            summarize_changes
+                        fi
                         printf 'ADB serial: %s\nAndroid: %s\nABI: %s\n' "$serial" "$version" "$abi"
                         return
                     fi ;;
@@ -103,7 +153,12 @@ verify_device() {
         else
             reason=ip
         fi
-        sleep 1
+        if [[ $ACTION == setup && $reason != "$last_reason" ]] && ((SECONDS >= next_report)); then
+            progress 'Android boot wait: %s\n' "$reason"
+            last_reason=$reason
+            next_report=$((SECONDS + 15))
+        fi
+        run sleep 1
     done
     case "$reason" in
         ip) fail 'No container IP after wait. Inspect waydroid status and journalctl -u waydroid-container; repair DHCP/waydroid0 networking, then retry --status.' ;;
@@ -125,15 +180,15 @@ run_session() {
     until [[ -S ${XDG_RUNTIME_DIR:?}/$WAYLAND_DISPLAY ]]; do
         kill -0 "$weston_pid" 2>/dev/null || fail 'Headless Weston exited; inspect user service journal.'
         ((SECONDS < end)) || fail 'Headless Weston socket timeout; inspect user service journal.'
-        sleep 1
+        run sleep 1
     done
     waydroid session start &
     session_pid=$!
     while kill -0 "$weston_pid" 2>/dev/null && kill -0 "$session_pid" 2>/dev/null; do
         if ip=$(device_ip); then
-            timeout 10 adb connect "$ip:5555" >/dev/null 2>&1 || true
+            run timeout 10 adb connect "$ip:5555" >/dev/null 2>&1 || true
         fi
-        sleep 5
+        run sleep 5
     done
     fail 'Waydroid session or Weston exited; systemd will retry. Inspect user service journal.'
 }
@@ -141,7 +196,7 @@ run_session() {
 # Config, image headers and generated LXC state, not `waydroid init` exit status.
 # Do not reinitialize a damaged existing device: upstream init can remove overlays.
 image_state() {
-    python3 - "$STATE" "${XDG_DATA_HOME:-$HOME/.local/share}/waydroid/data" <<'PY'
+    run python3 - "$STATE" "${XDG_DATA_HOME:-$HOME/.local/share}/waydroid/data" <<'PY'
 import configparser, os, pathlib, sys
 p = pathlib.Path(sys.argv[1])
 user_data = pathlib.Path(sys.argv[2])
@@ -188,8 +243,9 @@ PY
 # and return an empty a{ss} to prove release; never auto-activate a lost manager.
 manager_session() {
     local reply
-    reply=$(timeout 10 busctl --system --auto-start=no --timeout=10 --json=short call \
+    reply=$(run timeout 10 busctl --system --auto-start=no --timeout=10 --json=short call \
         id.waydro.Container /ContainerManager id.waydro.ContainerManager GetSession) || return 1
+    trace_command python3 - '<captured session reply omitted>'
     python3 - "$reply" <<'PYBUS'
 import json, sys
 try:
@@ -217,14 +273,14 @@ classify_session() {
     SESSION_KIND=stopped
     SESSION_ID=''
     local fragment active=false unit_state manager_owner owner display pid
-    fragment=$(timeout 10 systemctl --user show "$UNIT" --property=FragmentPath --value) || fail 'Cannot inspect user unit ownership; repair user systemd before setup.'
+    fragment=$(run timeout 10 systemctl --user show "$UNIT" --property=FragmentPath --value) || fail 'Cannot inspect user unit ownership; repair user systemd before setup.'
     if [[ -n $fragment && $fragment != "$USER_UNITS/$UNIT" ]]; then
         fail "Foreign loaded $UNIT ($fragment); resolve the unit conflict before setup."
     fi
     if [[ -n $fragment || -e $USER_UNITS/$UNIT ]]; then
-        [[ -f $USER_UNITS/$UNIT ]] && grep -qx '# Managed by waydroid-universal-setup.sh' "$USER_UNITS/$UNIT" || fail "Foreign $USER_UNITS/$UNIT; preserve it and resolve the name conflict."
+        [[ -f $USER_UNITS/$UNIT ]] && run grep -qx '# Managed by waydroid-universal-setup.sh' "$USER_UNITS/$UNIT" || fail "Foreign $USER_UNITS/$UNIT; preserve it and resolve the name conflict."
     fi
-    unit_state=$(timeout 10 systemctl --user show "$UNIT" --property=ActiveState --value) || fail 'Cannot inspect user service state; repair user systemd before setup.'
+    unit_state=$(run timeout 10 systemctl --user show "$UNIT" --property=ActiveState --value) || fail 'Cannot inspect user service state; repair user systemd before setup.'
     case "$unit_state" in
         active|reloading) active=true ;;
         inactive|failed) ;;
@@ -233,7 +289,7 @@ classify_session() {
     # `waydroid status` uses an auto-activating D-Bus proxy, even in --check.
     # Probe ownership without activation, then read the manager directly. Upstream
     # cannot have an initialized session without both its config and rootfs.
-    manager_owner=$(timeout 10 busctl --system --auto-start=no --timeout=10 call \
+    manager_owner=$(run timeout 10 busctl --system --auto-start=no --timeout=10 call \
         org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus \
         NameHasOwner s id.waydro.Container) || fail 'Cannot inspect system bus ownership; repair D-Bus before setup.'
     case "$manager_owner" in
@@ -246,7 +302,7 @@ classify_session() {
     esac
     if [[ -n $SESSION_ID ]]; then
         IFS='|' read -r owner display pid <<< "$SESSION_ID"
-        [[ $owner == "$(id -u)" ]] || fail "Foreign or ambiguous Waydroid session (uid=${owner:-missing}); coordinate with its operator before setup."
+        [[ $owner == "$(run id -u)" ]] || fail "Foreign or ambiguous Waydroid session (uid=${owner:-missing}); coordinate with its operator before setup."
         if [[ $display == wayland-kit ]]; then
             [[ $active == true && $fragment == "$USER_UNITS/$UNIT" ]] || fail 'Conflicting wayland-kit display without an owned active user service; resolve it before setup.'
             SESSION_KIND=managed
@@ -276,7 +332,7 @@ transfer_session() {
     TRANSFER_STATE='GUI stop attempted; headless not started'
     trap 'fail "Setup command failed (exit $?)."' ERR
     printf 'Transferring this user to managed headless: open GUI apps will be interrupted.\n'
-    timeout 30 waydroid session stop || fail 'Graphical transfer stop failed or timed out; release is unconfirmed.'
+    run timeout 30 waydroid session stop || fail 'Graphical transfer stop failed or timed out; release is unconfirmed.'
     TRANSFER_STAGE=release
     end=$((SECONDS + WAIT))
     while :; do
@@ -284,7 +340,7 @@ transfer_session() {
         if [[ -z $observed ]]; then break; fi
         [[ $observed == "$expected_id" ]] || fail 'Graphical transfer owner changed during release; refusing competing headless startup.'
         ((SECONDS < end)) || fail 'Graphical transfer release timeout; manager still reports a session.'
-        sleep 1
+        run sleep 1
     done
     TRANSFER_STATE='GUI stopped and release confirmed; headless not started'
     TRANSFER_STAGE=provision
@@ -296,51 +352,50 @@ confirm_managed() {
     while :; do
         observed=$(manager_session) || fail 'Managed startup GetSession failed; inspect the container manager.'
         if [[ -n $observed ]]; then
-            [[ $observed == "$(id -u)|wayland-kit|"* ]] || fail 'Managed startup has a foreign or unexpected session UID/display.'
+            [[ $observed == "$(run id -u)|wayland-kit|"* ]] || fail 'Managed startup has a foreign or unexpected session UID/display.'
             classify_session
             [[ $SESSION_KIND == managed ]] || fail 'Managed startup unit ownership not confirmed.'
             return
         fi
         ((SECONDS < end)) || fail 'Managed headless startup timeout; user service has not registered its session.'
-        sleep 1
+        run sleep 1
     done
 }
 
-PACKAGES=()
-MANAGER=''
 preflight() {
-    PACKAGES=()
-    MANAGER=''
-    [[ $(uname -s) == Linux ]] || fail 'Native Waydroid requires Linux; no VM/emulator fallback.'
-    [[ $(id -u) != 0 ]] || fail 'Run as the testing user, not root; setup requests sudo when needed.'
+    [[ $(run uname -s) == Linux ]] || fail 'Native Waydroid requires Linux; no VM/emulator fallback.'
+    [[ $(run id -u) != 0 ]] || fail 'Run as the testing user, not root; setup requests sudo when needed.'
     local tool
     for tool in timeout python3 systemctl loginctl sudo flock busctl; do
         command -v "$tool" >/dev/null || fail "Missing prerequisite: $tool. Install it before setup."
     done
     [[ -d /run/systemd/system ]] || fail 'Missing systemd system manager. Boot with systemd before setup.'
-    timeout 10 systemctl show --property=Version --value >/dev/null || fail 'System manager unavailable; repair systemd first.'
-    timeout 10 systemctl --user show-environment >/dev/null || fail 'Missing user systemd/D-Bus session. Log in through PAM and retry as the testing user.'
+    run timeout 10 systemctl show --property=Version --value >/dev/null || fail 'System manager unavailable; repair systemd first.'
+    run timeout 10 systemctl --user show-environment >/dev/null || fail 'Missing user systemd/D-Bus session. Log in through PAM and retry as the testing user.'
     [[ -d ${XDG_RUNTIME_DIR:-/nonexistent} ]] || fail 'Missing XDG_RUNTIME_DIR. Log in through PAM before setup.'
     # Probe available driver, not distro identity; do not modprobe during preflight.
-    if ! timeout 10 modinfo binder_linux >/dev/null 2>&1 && [[ ! -d /sys/module/binder_linux && ! -c /dev/binder && ! -c /dev/binderfs/binder-control ]]; then
+    if ! run timeout 10 modinfo binder_linux >/dev/null 2>&1 && [[ ! -d /sys/module/binder_linux && ! -c /dev/binder && ! -c /dev/binderfs/binder-control ]]; then
         fail 'Missing Android Binder kernel support. Install/boot a kernel with CONFIG_ANDROID_BINDER_IPC (binder_linux), then retry; no fallback.'
     fi
-    python3 - <<'PY' || fail 'Missing memfd/ashmem support. Boot a Waydroid-capable kernel before setup.'
+    run python3 - <<'PY' || fail 'Missing memfd/ashmem support. Boot a Waydroid-capable kernel before setup.'
 import os
 if not os.path.exists('/dev/ashmem'):
     fd = os.memfd_create('waydroid-preflight'); os.close(fd)
 PY
     [[ -d /sys/fs/cgroup && -e /proc/self/ns/net && -e /proc/self/ns/mnt ]] || fail 'Missing cgroups or kernel namespaces; enable native container support before setup.'
-    local arch
-    arch=$(uname -m)
-    [[ $arch == x86_64 || $arch == aarch64 ]] || fail "No configured official native image architecture for $arch; use a Waydroid-supported native architecture."
-    if [[ -f $DROPIN ]] && ! grep -qx "# kit-waydroid user=$(id -u)" "$DROPIN"; then
+    ARCH=$(run uname -m)
+    [[ $ARCH == x86_64 || $ARCH == aarch64 ]] || fail "No configured official native image architecture for $ARCH; use a Waydroid-supported native architecture."
+    if [[ -f $DROPIN ]] && ! run grep -qx "# kit-waydroid user=$(run id -u)" "$DROPIN"; then
         fail "Container already has a foreign $DROPIN; keep its ownership and resolve with the operator."
     fi
     INIT_STATE=$(image_state) || fail 'Cannot safely read existing initialization; repair config permissions/contents before setup.'
     [[ $INIT_STATE != damaged ]] || fail 'Existing Android state has incomplete images/config. Preserve data and restore known-good images/config from backup; do not force-init.'
     classify_session
-    local missing=()
+}
+inspect_packages() {
+    PACKAGES=()
+    MANAGER=''
+    local tool missing=()
     for tool in waydroid weston adb; do
         command -v "$tool" >/dev/null || missing+=("$tool")
     done
@@ -349,7 +404,7 @@ PY
             MANAGER=apt-get
             PACKAGES=("${missing[@]}")
             for tool in "${PACKAGES[@]}"; do
-                if ! timeout 30 apt-cache show "$tool" >/dev/null 2>&1; then
+                if ! run timeout 30 apt-cache show "$tool" >/dev/null 2>&1; then
                     if [[ $tool == waydroid ]]; then
                         fail 'Missing package waydroid in configured APT repositories. Recent Ubuntu releases provide it in universe. See the official Waydroid installation instructions: https://docs.waydro.id/usage/install-on-desktops — then retry setup.'
                     fi
@@ -366,7 +421,7 @@ PY
                 # Mapping is not proof of availability. Normal setup resolves once,
                 # after sudo under setup.lock, without relying on the user's cache.
                 if [[ $ACTION == check ]]; then
-                    if evidence=$(timeout 30 dnf --cacheonly list --available "$candidate" 2>&1); then
+                    if evidence=$(run timeout 30 dnf --cacheonly list --available "$candidate" 2>&1); then
                         printf 'Missing binary: %s; DNF candidate: %s; available in cached metadata only (fresh availability unverified).\n' "$tool" "$candidate"
                     else
                         rc=$?
@@ -382,7 +437,7 @@ PY
                 candidate=$tool
                 [[ $tool != adb ]] || candidate=android-tools
                 PACKAGES+=("$candidate")
-                if evidence=$(timeout 30 pacman -Si "$candidate" 2>&1); then
+                if evidence=$(run timeout 30 pacman -Si "$candidate" 2>&1); then
                     if [[ $ACTION == check ]]; then
                         printf 'Missing binary: %s; pacman candidate: %s; available in the local sync database.\n' "$tool" "$candidate"
                     fi
@@ -399,18 +454,15 @@ PY
     fi
     if command -v weston >/dev/null; then
         local help
-        help=$(timeout 10 weston --help)
+        help=$(run timeout 10 weston --help)
         [[ $help == *headless* && $help == *--use-pixman* ]] || fail 'Weston lacks headless/pixman backend options. Install a Weston build with headless support.'
-    fi
-    if [[ ${1:-} != quiet ]]; then
-        printf 'Prerequisite inspection (%s); initialization: %s; missing packages: %s\n' "$arch" "$INIT_STATE" "${PACKAGES[*]:-none}"
     fi
 }
 
 # Never ask for a second password after admission, including during long downloads.
 root() {
     local rc
-    if timeout --foreground --kill-after=5 1800 sudo -n -- "$@"; then return; else rc=$?; fi
+    if run timeout --foreground --kill-after=5 1800 sudo -n -- "$@"; then return; else rc=$?; fi
     printf 'waydroid-setup: Privileged step failed during %s: %s (exit %s). Sudo is noninteractive; inspect the diagnostic above and repair authorization or the command before retrying setup.\n' "$setup_stage" "$1" "$rc" >&2
     return "$rc"
 }
@@ -427,14 +479,14 @@ sudo_failure() {
 sudo_admission() {
     local rc
     # Cached/passwordless access works even without a controlling terminal.
-    if timeout --foreground --kill-after=5 10 sudo -n -v 2>/dev/null; then return; else rc=$?; fi
+    if run timeout --foreground --kill-after=5 10 sudo -n -v 2>/dev/null; then return; else rc=$?; fi
     [[ $rc == 1 ]] || sudo_failure "$rc"
     if ! ( : </dev/tty ) 2>/dev/null; then
         fail 'Sudo authorization needs interaction but no controlling terminal is available; no host provisioning performed. Log in normally and retry setup in the same terminal (do not pipe credentials).'
     fi
     # Keep sudo in the terminal's foreground job; sudo alone handles password input
     # and echo restoration. The script never reads, stores or forwards a password.
-    if timeout --foreground --kill-after=5 300 sudo -v; then return; else rc=$?; fi
+    if run timeout --foreground --kill-after=5 300 sudo -v; then return; else rc=$?; fi
     sudo_failure "$rc"
 }
 setup_cleanup() {
@@ -444,7 +496,7 @@ setup_cleanup() {
         kill "$keepalive" 2>/dev/null || true
         wait "$keepalive" 2>/dev/null || true
     fi
-    [[ -z $stage ]] || rm -rf -- "$stage"
+    [[ -z $stage ]] || run rm -rf -- "$stage"
     exec 9>&-
     exit "$rc"
 }
@@ -460,48 +512,80 @@ same_artifact() {
     # comparisons too, in case a path changes or its filesystem stops responding.
     [[ -f $2 ]] || return 1
     local rc
-    if timeout --kill-after=2 10 cmp -s -- "$1" "$2"; then return 0; else rc=$?; fi
+    if run timeout --kill-after=2 10 cmp -s -- "$1" "$2"; then return 0; else rc=$?; fi
     [[ $rc == 1 ]] || fail "Cannot compare $2 (exit $rc); check permissions and filesystem access, then retry setup." "$rc"
     return 1
 }
 container_ready() {
-    [[ $(timeout 10 systemctl is-enabled waydroid-container.service 2>/dev/null) == enabled ]] &&
-        timeout 10 systemctl is-active --quiet waydroid-container.service
+    [[ $(run timeout 10 systemctl is-enabled waydroid-container.service 2>/dev/null) == enabled ]] &&
+        run timeout 10 systemctl is-active --quiet waydroid-container.service
+}
+step_artifacts() {
+    local unchanged_detail=$1 artifact changed=''
+    shift
+    for artifact; do
+        if [[ ${artifact_changes[$artifact]:-} == changed ]]; then
+            changed+="${changed:+, }$artifact"
+        fi
+    done
+    if [[ -n $changed ]]; then step changed "$changed"; else step unchanged "$unchanged_detail"; fi
+}
+summarize_changes() {
+    local artifact changed='' unchanged='' changed_count=0 unchanged_count=0
+    for artifact in packages initialization 'container drop-in' 'container service' linger \
+        'service executable' 'user unit' 'user service' 'graphical transfer'; do
+        if [[ ${artifact_changes[$artifact]:-} == changed ]]; then
+            changed+="${changed:+, }$artifact"
+            changed_count=$((changed_count + 1))
+        else
+            unchanged+="${unchanged:+, }$artifact"
+            unchanged_count=$((unchanged_count + 1))
+        fi
+    done
+    progress 'Summary: %d changed (%s); %d unchanged (%s)\n' \
+        "$changed_count" "${changed:-none}" "$unchanged_count" "${unchanged:-none}"
 }
 setup() {
+    begin_progress
     keepalive='' stage='' setup_stage=admission
     trap setup_cleanup EXIT
     trap 'sudo_failure 130' INT
     trap 'sudo_failure 143' TERM
     trap 'setup_failure $? "Setup failed"' ERR
     command -v cmp >/dev/null || fail 'Missing prerequisite: cmp (diffutils). Install it before setup.'
-    preflight quiet
+    preflight
+    inspect_packages
     local expected_kind=$SESSION_KIND expected_id=$SESSION_ID
     # All read-only admission checks precede files, package installs and sudo.
-    mkdir -p "$HOME/.local/share/kit-waydroid"
+    run mkdir -p "$HOME/.local/share/kit-waydroid"
     exec 9>>"$HOME/.local/share/kit-waydroid/setup.lock"
-    flock -n 9 || fail 'Another setup is running for this user; wait for it to finish.'
+    run flock -n 9 || fail 'Another setup is running for this user; wait for it to finish.'
     # Admission is only a snapshot. A peer may finish between it and this lock;
     # never force that newly initialized device through init using stale state.
     preflight
-    local -A artifact_changes=([dropin]=unchanged [user_unit]=unchanged [payload]=unchanged)
-    local container_needs_enable=0 needs_sudo=0 linger user
-    stage=$(mktemp -d)
-    cat > "$stage/container.conf" <<EOF
-# kit-waydroid user=$(id -u)
+    inspect_packages
+    local -A artifact_changes=()
+    local dropin_needs_install=0 container_needs_enable=0 needs_sudo=0 linger user
+    stage=$(run mktemp -d)
+    run cat > "$stage/container.conf" <<EOF
+# kit-waydroid user=$(run id -u)
 [Service]
 Restart=on-failure
 RestartSec=5
 EOF
-    same_artifact "$stage/container.conf" "$DROPIN" || artifact_changes[dropin]=changed
+    same_artifact "$stage/container.conf" "$DROPIN" || dropin_needs_install=1
     container_ready || container_needs_enable=1
-    user=$(id -un)
-    linger=$(timeout 10 loginctl show-user "$user" --property=Linger --value) &&
+    user=$(run id -un)
+    linger=$(run timeout 10 loginctl show-user "$user" --property=Linger --value) &&
         [[ $linger == yes || $linger == no ]] || fail 'Cannot inspect user linger; repair systemd-logind and retry setup.'
-    if ((${#PACKAGES[@]} || container_needs_enable)) ||
-        [[ $INIT_STATE != complete || ${artifact_changes[dropin]} == changed || $linger == no ]]; then
+    step unchanged "$ARCH; initialization: $INIT_STATE"
+    if ((${#PACKAGES[@]} || container_needs_enable || dropin_needs_install)) ||
+        [[ $INIT_STATE != complete || $linger == no ]]; then
         needs_sudo=1
         sudo_admission
+        step unchanged 'authorized'
+    else
+        step skipped 'no privileged changes needed'
     fi
     setup_stage=packages
     trap 'setup_failure 130 "Setup interrupted"' INT
@@ -512,13 +596,16 @@ EOF
         (child=''
          trap 'trap - TERM; kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; exit' TERM
          while :; do
+             trace_command sleep 60
              sleep 60 & child=$!; wait "$child" || exit
+             trace_command timeout --kill-after=5 10 sudo -n -v
              timeout --kill-after=5 10 sudo -n -v & child=$!; wait "$child" || exit
          done
         ) </dev/null >/dev/null 2>&1 9>&- &
         keepalive=$!
     fi
     if ((${#PACKAGES[@]})); then
+        step_start "installing ${PACKAGES[*]}"
         if [[ $MANAGER == dnf ]]; then
             # One fresh resolution/install transaction; keep DNF's diagnostics
             # (no match, repo/network/access errors) rather than guessing absence.
@@ -542,11 +629,23 @@ EOF
         command -v "$tool" >/dev/null || fail "Package install did not provide $tool; inspect package logs."
     done
     local help
-    help=$(timeout 10 weston --help)
+    help=$(run timeout 10 weston --help)
     [[ $help == *headless* && $help == *--use-pixman* ]] || fail 'Installed Weston lacks headless/pixman support; no device services configured.'
-    [[ $(timeout 10 systemctl show waydroid-container.service --property=LoadState --value) == loaded ]] || fail 'Missing waydroid-container.service; install the distro systemd integration.'
+    [[ $(run timeout 10 systemctl show waydroid-container.service --property=LoadState --value) == loaded ]] || fail 'Missing waydroid-container.service; install the distro systemd integration.'
+    if ((${#PACKAGES[@]})); then
+        artifact_changes[packages]=changed
+        step changed "installed ${PACKAGES[*]}"
+    else
+        step unchanged 'waydroid, weston, adb present'
+    fi
     setup_stage=transfer
     transfer_session "$expected_kind" "$expected_id"
+    if [[ -n $TRANSFER_STAGE ]]; then
+        artifact_changes['graphical transfer']=changed
+        step changed 'graphical session released'
+    else
+        step skipped 'no graphical session to transfer'
+    fi
     setup_stage=initialization
     if [[ $INIT_STATE != complete ]]; then
         # Configure fresh software rendering BEFORE init generates base properties.
@@ -579,36 +678,54 @@ os.replace(path, p)
 PY
         # Upstream checks download hashes and retains valid image timestamps.
         # Never force, delete data/overlays, or reset keys.
+        step_start 'running waydroid init'
         root waydroid init -c https://ota.waydro.id/system -v https://ota.waydro.id/vendor
         [[ $(image_state) == complete ]] || fail 'Waydroid initialization incomplete despite init returning. Inspect waydroid log and retry setup; keep downloaded images/data.'
+        artifact_changes[initialization]=changed
+        step changed 'images and configuration ready'
+    else
+        step unchanged 'already initialized'
     fi
     setup_stage=container-service
-    if [[ ${artifact_changes[dropin]} == changed ]]; then
+    if ((dropin_needs_install)); then
         [[ -d ${DROPIN%/*} ]] || root install -d -m 755 "${DROPIN%/*}"
         root install -m 644 "$stage/container.conf" "$DROPIN"
         root systemctl daemon-reload
+        artifact_changes['container drop-in']=changed
     fi
     # Package installation or initialization may have enabled/started it already.
     if ((container_needs_enable || ${#PACKAGES[@]})) || [[ $INIT_STATE != complete ]]; then
-        container_ready || root systemctl enable --now waydroid-container.service
+        if ! container_ready; then
+            root systemctl enable --now waydroid-container.service
+            artifact_changes['container service']=changed
+        elif ((container_needs_enable)); then
+            artifact_changes['container service']=changed
+        fi
     fi
-    [[ $linger == yes ]] || root loginctl enable-linger "$user"
+    if [[ $linger != yes ]]; then
+        root loginctl enable-linger "$user"
+        artifact_changes[linger]=changed
+    fi
+    step_artifacts 'drop-in current; enabled and running; linger enabled' 'container drop-in' 'container service' linger
     setup_stage=user-service
+    local payload_updated=0
     if [[ $SELF != "$PAYLOAD" ]]; then
         # Keep an independent copy. Some install implementations refuse a FIFO
         # destination, and chmod must not follow a link to another executable.
         if [[ -L $PAYLOAD || ( -e $PAYLOAD && ! -f $PAYLOAD ) ]]; then
-            timeout --kill-after=2 10 rm -f -- "$PAYLOAD"
+            run timeout --kill-after=2 10 rm -f -- "$PAYLOAD"
         fi
         if ! same_artifact "$SELF" "$PAYLOAD"; then
-            timeout --kill-after=2 10 install -T -m 755 -- "$SELF" "$PAYLOAD"
-            artifact_changes[payload]=changed
+            run timeout --kill-after=2 10 install -T -m 755 -- "$SELF" "$PAYLOAD"
+            artifact_changes['service executable']=changed
+            payload_updated=1
         elif [[ ! -x $PAYLOAD ]]; then
             # An identical copy restored without its mode still has to start.
-            chmod 755 "$PAYLOAD"
+            run chmod 755 "$PAYLOAD"
+            artifact_changes['service executable']=changed
         fi
     fi
-    cat > "$stage/user.service" <<'EOF'
+    run cat > "$stage/user.service" <<'EOF'
 # Managed by waydroid-universal-setup.sh
 [Unit]
 Description=Kit headless Waydroid and unprivileged ADB reconnect
@@ -623,7 +740,7 @@ TimeoutStopSec=20
 WantedBy=default.target
 EOF
     # The user's Android data location must survive a login-less reboot too.
-    python3 - "$stage/user.service" "${XDG_DATA_HOME:-$HOME/.local/share}" <<'PY'
+    run python3 - "$stage/user.service" "${XDG_DATA_HOME:-$HOME/.local/share}" <<'PY'
 import pathlib, sys
 p = pathlib.Path(sys.argv[1])
 v = sys.argv[2].replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%').replace('\n', '\\n').replace('\r', '\\r')
@@ -631,10 +748,10 @@ s = p.read_text().replace('[Service]\n', '[Service]\nEnvironment="XDG_DATA_HOME=
 p.write_text(s)
 PY
     if ! same_artifact "$stage/user.service" "$USER_UNITS/$UNIT"; then
-        mkdir -p "$USER_UNITS"
-        install -m 644 "$stage/user.service" "$USER_UNITS/$UNIT"
-        timeout 15 systemctl --user daemon-reload
-        artifact_changes[user_unit]=changed
+        run mkdir -p "$USER_UNITS"
+        run install -m 644 "$stage/user.service" "$USER_UNITS/$UNIT"
+        run timeout 15 systemctl --user daemon-reload
+        artifact_changes['user unit']=changed
     fi
     # Last competing-owner/socket check before activating the managed service.
     [[ -z $TRANSFER_STAGE ]] || TRANSFER_STAGE=start
@@ -643,25 +760,31 @@ PY
     observed=$(manager_session) || fail 'Cannot verify manager before managed startup; inspect container journal and retry setup.'
     if [[ $SESSION_KIND == managed ]]; then
         [[ $observed == "$SESSION_ID" ]] || fail 'Managed session identity changed before start; inspect ownership and retry setup.'
-        if [[ ${artifact_changes[payload]} == changed ]]; then
+        if ((payload_updated)); then
             printf 'The new payload takes effect at the next service restart. To apply it now: systemctl --user restart %s\n' "$UNIT"
         fi
     else
         [[ -z $observed && $SESSION_KIND == stopped ]] || fail 'Competing session appeared before managed start; inspect ownership and retry setup.'
     fi
-    if [[ $SESSION_KIND != managed || $(timeout 10 systemctl --user is-enabled "$UNIT") != enabled ]]; then
+    if [[ $SESSION_KIND != managed || $(run timeout 10 systemctl --user is-enabled "$UNIT") != enabled ]]; then
         [[ -z $TRANSFER_STAGE ]] || TRANSFER_STATE='GUI stopped; managed headless startup requested'
-        timeout 30 systemctl --user enable --now "$UNIT" || fail 'Managed headless service activation failed; inspect user service journal and retry setup.'
+        run timeout 30 systemctl --user enable --now "$UNIT" || fail 'Managed headless service activation failed; inspect user service journal and retry setup.'
+        artifact_changes['user service']=changed
     fi
     setup_stage=verification
     confirm_managed
+    step_artifacts 'unit and executable current; managed session running' 'service executable' 'user unit' 'user service'
     [[ -z $TRANSFER_STAGE ]] || { TRANSFER_STAGE=adb; TRANSFER_STATE='GUI stopped; managed headless session confirmed'; }
     verify_device
 }
 
 case "$ACTION" in
     check)
+        begin_progress
         preflight
+        step unchanged "$ARCH; host and ownership checks passed"
+        step skipped 'read-only check'
+        inspect_packages
         if [[ $SESSION_KIND == graphical ]]; then
             printf 'Planned same-user graphical transfer: open GUI apps will be interrupted; stop, confirm release, start managed headless, verify Android.\n'
         fi
@@ -669,10 +792,24 @@ case "$ACTION" in
             fail "Missing DNF dependencies: ${PACKAGES[*]}; --check cannot verify fresh availability without modifying the cache. After inspecting diagnostics, run ordinary setup for authorized fresh resolution/install."
         elif [[ $MANAGER == pacman ]]; then
             fail "Missing pacman dependencies: ${PACKAGES[*]}; run ordinary setup to install from the local sync database. If a package is missing from that database, run sudo pacman -Syu first."
-        fi ;;
+        fi
+        if ((${#PACKAGES[@]})); then
+            step skipped "install needed: ${PACKAGES[*]}"
+        else
+            step unchanged 'waydroid, weston, adb present'
+        fi
+        if [[ $SESSION_KIND == graphical ]]; then
+            step skipped 'read-only; transfer planned'
+        else
+            step skipped 'no graphical session to transfer'
+        fi
+        step unchanged "initialization: $INIT_STATE"
+        step skipped 'read-only check'
+        step skipped 'read-only check'
+        step skipped 'read-only check' ;;
 
     status) verify_device ;;
-    stop) timeout 30 systemctl --user disable --now "$UNIT"; printf 'Headless session disabled; Android data, images and ADB keys preserved. See docs/waydroid.md for host opt-out.\n' ;;
+    stop) run timeout 30 systemctl --user disable --now "$UNIT"; printf 'Headless session disabled; Android data, images and ADB keys preserved. See docs/waydroid.md for host opt-out.\n' ;;
     session) run_session ;;
     setup) setup ;;
 esac
