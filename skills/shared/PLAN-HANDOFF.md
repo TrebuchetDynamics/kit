@@ -362,7 +362,8 @@ timeout). No unique match, a scan cap, or a failed read leaves creation unknown,
 not absent. Recovery reads do not validate/repair foreign changes, dispatch the
 next issue, or repeat a mutation. On Ctrl-C (exit 130) or an unexpected error,
 the helper prints the in-memory receipt without a recovery read, so an in-flight
-create remains `unknown` and `unverified_write` is `true`. Success JSON/exit 0
+create has `creation: "unknown"`, an in-flight `ai-ready` POST has
+`readiness: "unknown"`, and both have `unverified_write: true`. Success JSON/exit 0
 and the local preview format are unchanged.
 
 For safe recovery, preserve the diagnostic/receipt and transient input. Read back

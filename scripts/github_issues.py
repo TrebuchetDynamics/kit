@@ -180,6 +180,8 @@ class PublicationProgress:
             row['unverified_write'] = True
         if phase == 'create':
             row['creation'] = 'unknown'
+        if phase == 'ready_post':
+            row['readiness'] = 'unknown'
 
     def observe(self, spec, issue):
         row = self.rows[spec['key']]

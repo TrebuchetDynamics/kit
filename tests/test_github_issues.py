@@ -148,6 +148,29 @@ class PublicationTests(unittest.TestCase):
         self.assertIsNone(rows['b']['number'])
         self.assertEqual([event[:2] for event in api.events], [('POST', 'issues')] * 2)
 
+    def test_cli_interrupted_ready_post_reports_unknown_readiness(self):
+        api = FakeGitHub()
+        api.label_names.update(publisher.LABELS)
+        original = api.api
+
+        def interrupt(path, method='GET', data=None, **kwargs):
+            result = original(path, method, data, **kwargs)
+            if (method, path) == ('POST', 'issues/1/labels'):
+                raise KeyboardInterrupt
+            return result
+
+        api.api = interrupt
+        status, stdout, stderr = self.apply_cli(api, {'issues': [task('a')]})
+        self.assertEqual((status, stdout), (130, ''))
+        self.assertEqual(publisher.labels(api.issues[1]), {'ai-planning', 'ai-ready'})
+        row = self.partial_receipt(stderr)['a']
+        self.assertEqual(row['creation'], 'saved')
+        self.assertEqual(row['attempted_phase'], 'ready_post')
+        self.assertEqual(row['last_verified']['labels'], ['ai-planning'])
+        self.assertEqual(row['readiness'], 'unknown')
+        self.assertTrue(row['unverified_write'])
+        self.assertEqual(api.events[-1][:2], ('POST', 'issues/1/labels'))
+
     def test_cli_malformed_create_payload_reports_in_memory_receipt(self):
         api = FakeGitHub()
         api.label_names.update(publisher.LABELS)
