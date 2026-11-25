@@ -2050,6 +2050,57 @@ class PinProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'No saved link'):
             self.unpin()
 
+    def pin_work_eu(self):
+        checkout = self.root/'checkout-eu'
+        self.git(self.root, 'clone', str(self.remote), str(checkout))
+        self.profiles.append(('work-eu', self.home/'profiles/work-eu'))
+        plugin = self.plugin('work-eu')
+        plugin.parent.mkdir(parents=True)
+        plugin.symlink_to(checkout)
+        return Path(self.pin('work-eu')['backup']), checkout
+
+    def test_unpin_restores_only_the_exact_profiles_saved_link(self):
+        work_backup = Path(self.pin()['backup'])
+        eu_backup, eu_checkout = self.pin_work_eu()
+
+        result = self.unpin()
+
+        self.assertEqual(self.plugin().readlink(), self.repo)
+        self.assertEqual(Path(result['clone_kept_at']).parent, work_backup)
+        self.assertEqual((eu_backup/'link').readlink(), eu_checkout)
+        self.assertFalse(self.plugin('work-eu').is_symlink())
+        self.unpin('work-eu')
+        self.assertEqual(self.plugin('work-eu').readlink(), eu_checkout)
+
+    def test_unpin_refuses_plain_clone_when_only_prefixed_profile_is_pinned(self):
+        plugin = self.plugin()
+        plugin.unlink()
+        self.git(self.root, 'clone', str(self.remote), str(plugin))
+        eu_backup, eu_checkout = self.pin_work_eu()
+        before = sorted(self.home.rglob('*'))
+
+        with self.assertRaisesRegex(ValueError, 'No saved link for work; nothing to restore'):
+            self.unpin()
+
+        self.assertEqual(sorted(self.home.rglob('*')), before)
+        self.assertTrue((plugin/'.git').is_dir())
+        self.assertEqual((eu_backup/'link').readlink(), eu_checkout)
+
+    def test_unpin_ignores_invalid_pin_records(self):
+        backup = Path(self.pin()['backup'])
+        record = backup/'record.json'
+        for contents in (b'{', b'\xff', b'[]', b'{}'):
+            with self.subTest(contents=contents):
+                record.write_bytes(contents)
+                with self.assertRaisesRegex(ValueError, 'No saved link for work'):
+                    self.unpin(dry_run=True)
+        record.unlink()
+        record.mkdir()  # A matching path that cannot be read as a file.
+        with self.assertRaisesRegex(ValueError, 'No saved link for work'):
+            self.unpin()
+        self.assertTrue((self.plugin()/'.git').is_dir())
+        self.assertEqual((backup/'link').readlink(), self.repo)
+
     def test_unlinked_profile_and_cli_refusal(self):
         self.pin()
         self.assertEqual(self.pin()['status'], 'not_linked')

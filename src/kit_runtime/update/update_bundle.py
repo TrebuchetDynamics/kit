@@ -1207,8 +1207,15 @@ def fleet_linked_profiles(root):
 
 
 def _pin_records(state, name):
-    folder = state / 'pinned'
-    return sorted(folder.glob(f'{name}-*/record.json')) if folder.is_dir() else []
+    records = []
+    for path in (state / 'pinned').glob(f'{name}-*/record.json'):
+        try:
+            record = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if isinstance(record, dict) and record.get('profile') == name:
+            records.append(path)
+    return sorted(records)
 
 
 def pin_profile(root, name, *, dry_run=False, upstream=UPSTREAM):
