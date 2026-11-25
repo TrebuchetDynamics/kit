@@ -128,27 +128,11 @@ discovery as start/status. Missing, conflicting or duplicate configs refuse; no
 registry, remembered global target or fuzzy selection is used.
 
 The helper validates ownership, clean source, saved harness/provider and prerequisites,
-then revalidates under the deployment lock. It disables only verified owned timers,
-including inactive enabled and surplus instances. Complete loaded/installed instance
-and pending-job inventory is required, not only the normal five-slot status scan.
-Unknown or foreign evidence refuses safely.
-
-After disabled/inactive timer readback, the helper observes drain for **at most 15
-seconds**, using a monotonic deadline, bounded subprocess timeouts and at most 16
-observations. Verified idle proceeds immediately. Workers finish naturally; there
-is no worker stop/restart, background continuation or automatic retry after an error.
-Before source mutation it rechecks repository/config/source ownership, cleanliness,
-inactivity and pending starts.
-
-If busy beyond the budget, source and pin remain untouched and the lock is released.
-The JSON receipt retains `engine_update: deferred`, `scheduler_confirmation:
-timers_disabled`, pending units and the exact fully bound `resume_command`.
-Operator text leads with the target and says the update was not applied, then gives
-one next action: **Run `/orbi update` again here.** This shortened
-`human_resume_command` is supplied only when the current checkout safely selects
-that same deployment. Outside that context, retain necessary selectors and literal
-paths. `--stop` remains in both retry forms when requested. Exit 0 and disabled
-timers are not an applied engine update. Do not suggest start while deferred.
+then revalidates under the deployment lock. It uses the same
+[quiesce sequence as stop](#stop-status-and-drain), without waiting for workers to
+finish naturally. Before source mutation it rechecks repository/config/source
+ownership, cleanliness and scheduler inactivity. Failed quiesce is nonzero,
+blocks engine sync and reports completed scheduler steps and repair guidance.
 
 Plain update is a scheduling request, not a waiver of independent operator pauses,
 cutover requirements or human-only gates. The skill must resolve those gates before
@@ -322,7 +306,7 @@ Ownership, file identities, source and inactive/no-worker evidence are rechecked
 under lock. Unknown activity or unreadable timer enablement is not permission to
 repair. Setup refuses enabled (including runtime-enabled) or active target timers
 as well as active/unknown worker states; separately
-authorized stop/drain and readable inactive evidence are required first.
+authorized stop and readable inactive evidence are required first.
 
 Files use same-directory atomic publication: complete bytes or absence, not
 truncated native config/provider/env. Existing modes and unrelated env entries
@@ -510,7 +494,7 @@ Use disposable fake hosts only; do not contact the named repositories' real host
   and zero observed running services: report “scheduling is active, but no worker was
   observed within the scan.” Use `status`, not setup, to inspect; this is not stopped or
   a request to install extra instances. A valid existing start skips setup and retains
-  saved selection, subject to its existing authority/gates. Offer stop/drain only if
+  saved selection, subject to its existing authority/gates. Offer stop only if
   deliberately re-preparing or pausing, preserve workers, and verify inactivity before
   setup. Missing reads or out-of-scan activity remain unknown, not zero.
 
@@ -537,7 +521,7 @@ These are alternatives, not a sequence to run blindly: only public setup with
 `--prepare-only` stays non-activating. If it already prepared the target, omit the bootstrap/harness
 selectors on start. Replace placeholder IDs/paths with published catalog evidence;
 optional `--pi-thinking LEVEL` must also match supported reasoning. Planned,
-prepared, activated and live-qualified are distinct; stop reports drain, not a kill.
+prepared, activated and live-qualified are distinct; stop reports verified inactivity, not delivery completion.
 Use context-free `/orbi help` for the loaded helper path, defaults and recovery table.
 
 `start` requires an owner scheduling request. Existing explicit pauses, cutover
@@ -655,17 +639,23 @@ live qualification.
 
 ## Stop, status and drain
 
-`stop` enumerates this deployment's owned timer instances across slots
-1 through `max(5, max_concurrency)`, including observed out-of-config instances
-within that bound, and runs only `systemctl --user disable --now <timer>`.
-It never runs `stop`, `kill` or `restart` on a service. A pre-existing invocation
-may finish; later issue phases may wait for a start. Re-read the service states within
-the same bound and report `draining`
-while any is active or activating, `stopped` only when all service states were
-observed as inactive or failed. Failed, empty or unknown state reads leave drain
-unverified: report `scheduler_unavailable`, preserving any disabled-timer evidence.
-Drain does not promise that an issue reaches merge: report remaining review and
-merge work.
+`stop` and `update` quiesce under the deployment config lock. They scan slots
+1 through `max(5, max_concurrency)` and include discovered surplus instances:
+
+1. Disable owned timers with `systemctl --user disable --now <timer>` and verify
+   that they are disabled and inactive or failed.
+2. Cancel queued starts for owned units only, after rechecking job identity.
+3. Stop owned non-idle workers with `systemctl --user stop <service>`.
+4. Verify that every observed worker is inactive or failed and no target job remains.
+   `stop` then reports `stopped`; `update` can proceed to source sync.
+
+Unreadable state or unverified ownership refuses with `scheduler_unavailable`
+or `unit_conflict`. Receipts name completed disables (`disabled_timers`) and
+successful service stop operations (`stopped_services`). A failed mutation or
+readback is nonzero and retains partial evidence. There is no direct kill, restart,
+background continuation or automatic retry. Interrupting a worker does not cancel
+its issue or remove its attempt files, worktrees or recovery inputs. It does not
+imply review or merge completed.
 
 `status` is read-only. Its `doctor.state=failed` retains the upstream diagnostic
 outcome; it is not itself a Kit scheduling gate. A protection-only diagnostic is
@@ -910,14 +900,15 @@ retry an unchanged timeout. Typical repairs:
 - `filesystem_error`: inspect local permissions/files privately and repair the
   cause; the failure step may have partially mutated even though publication is atomic.
 - `setup_busy`: cite observed timer/worker state and inspect with `status`.
-  Offer authorized stop/drain only when deliberately re-preparing or pausing.
+  Offer authorized stop only when deliberately re-preparing or pausing.
   Verify inactivity before setup; do not kill workers or stop scheduling just
   to make a preview pass. An existing valid start skips setup.
 - `update_busy`: work appeared during the update after initial idle confirmation.
   Inspect pending work, partial steps and source state before a deliberate retry;
-  never kill workers or disable an unrelated deployment. Workers/pending starts
-  observed before synchronization normally return `draining` with the exact plain
-  resume command, not `update_busy`.
+  never kill workers or disable an unrelated deployment.
+- A failed `stop_service` step or failed quiesce readback blocks engine sync.
+  Inspect `disabled_timers`, `stopped_services`, the failed step and `/orbi status`;
+  repair the user service manager or ownership evidence before deliberately retrying.
 - `source_dirty`: preserve the tracked checkout changes in a separate operation
   and decide deliberately; update never discards them or rewrites origin.
 - `sync_engine_source_failed` or `command_timeout` during `update`: the pin or
@@ -1006,10 +997,10 @@ The public CLI receipt fixture in `tests/test_orbi_control.py` uses disposable
 homes, a prepared target, an unrelated deployment and fake external tools. The
 same CLI requests against the base and current helper each use **one helper
 invocation**. These fixtures establish helper receipts, not model calls or host
-round trips. Routine previews return `planned`. Both update modes
-pause owned timers and return `draining` when workers remain, with the exact plain
-resume command; a later deliberate plain invocation after drain updates and restores
-eligible scheduling. Explicit `--stop` leaves stopped.
+round trips. Routine previews return `planned`. Active-worker fixtures verify timer disable
+before worker stop and require inactive readback before engine sync. A failed
+worker stop retains disabled timers and blocks sync. Explicit `--stop` leaves
+scheduling stopped.
 Dirty-source refusal returns `source_dirty`, `mutated: false` and a preservation
 repair action before any pause. No implicit retry follows.
 

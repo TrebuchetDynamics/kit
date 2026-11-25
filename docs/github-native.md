@@ -225,9 +225,9 @@ approval for already-authorized activation whose gates are evidenced. If genuine
 and no explicit config was supplied, start first uses the same setup preparation,
 validates non-activating, then rebinds/revalidates under the activation lock. Existing
 valid/active targets skip preparation and reject bootstrap/harness selectors; partial,
-foreign or missing explicit configs require deliberate recovery, never silent resume. Stop disables only
-owned timers and reports draining until active workers finish; missing evidence
-is unavailable, not stopped. Linux supports lifecycle changes; macOS supports read-only status/version. `help` prints the action reference read-only and needs no repository.
+foreign or missing explicit configs require deliberate recovery, never silent resume. Stop and update disable
+owned timers, cancel verified queued starts and stop owned workers through systemd.
+Missing evidence is unavailable, not stopped. Linux supports lifecycle changes; macOS supports read-only status/version. `help` prints the action reference read-only and needs no repository.
 
 On Linux, status names the state it observed: `absent` when no deployment owns
 the repository, and `unavailable` when scheduler evidence cannot be verified. With
@@ -260,15 +260,14 @@ for serialization, legacy/unknown reporting and repair boundaries. Native Pi-Bol
 extensions, streaming/recovery and installed worker/reviewer compatibility remain
 live-unverified; static routing does not qualify delivery or release pauses.
 
-`update` is the deliberate release channel: it pauses owned timers under lock by
-default, defers while workers or pending starts remain with an exact plain resume
-command, then writes upstream's `release` track, lets `sync-engine-source` resolve
-the newest official semver release and locks it as `sha:<commit>`. Explicit
-`update --stop` is compatible. Both validate non-activating and defer unit refresh
-to the next authorized start, never enabling timers or interrupting services.
-Tracked checkout changes refuse as `source_dirty` before pausing. Uncertain
-ownership/scheduler evidence holds; partial failures retain confirmed disables and
-failed steps without claiming stopped. Update preserves origin, provider, harness
+`update` is the deliberate release channel: under lock it quiesces the deployment,
+then lets `sync-engine-source` resolve the newest official semver release and pins
+it as `sha:<commit>`. After non-activating validation, it restores eligible
+scheduling through the existing start gates. `update --stop` leaves scheduling
+stopped and defers unit refresh to the next authorized start. Tracked checkout
+changes refuse as `source_dirty` before quiescing. Uncertain ownership or scheduler
+evidence blocks sync; partial failures retain completed operations and failed steps
+without claiming stopped. Update preserves origin, provider, harness
 and slots; rollback is a deliberate owner edit of `engine_source_track`.
 It never refreshes Kit itself: that stays `/update-kit`.
 
@@ -284,17 +283,18 @@ validation and activation checks. `/orbi setup --dry-run` previews the start rou
 add `--prepare-only` to opt out of activation. Public `setup --resume-setup` requires
 explicit `--prepare-only`; otherwise reject before mutation with corrected
 `setup --prepare-only --resume-setup` and the original arguments.
-Use `/orbi status` to inspect and `/orbi stop` for authorized no-kill drain.
+Use `/orbi status` to inspect and `/orbi stop` for an authorized worker interruption.
 Context-free `/orbi help` reports the loaded helper path/default policy, parseable
 examples and recovery guidance, not the installed selected harness.
 
 Each helper mutation reports its own outcome: direct helper `setup` (public
 `setup --prepare-only`) says `prepared` (staging, not scheduler activation),
 helper `start` (public default setup or start) says `started` or `already-running`, `update` says
-`updated` or `up_to_date`, and `stop` says `draining` or `stopped`; `--dry-run`
-says `planned` for all four. Thus `stop`
-can report `draining` while a subsequent status still reports `running`: an active
-worker is preserved, not killed, and status does not remember a global pause.
+`updated` or `up_to_date`, and `stop` says `stopped` after verified inactivity;
+`--dry-run` says `planned` for all four. Stop and update name the disabled timers
+and stopped workers and preserve attempt files, worktrees and recovery inputs.
+Update syncs only after quiescing and restores eligible scheduling unless `--stop`
+is used. The read-only `status` still describes current activity, not intent.
 Start also retains `preparation.state` (`skipped`, `planned`, `prepared`, `failed`).
 Preparation failure never activates; later failure preserves successful preparation,
 actual/possible mutation evidence and the original failed operation. Activation

@@ -205,8 +205,8 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `setup` | Start by default: map to `start`, preparing/validating if absent, then activate only with resolved gates. Explicit invocation expresses scheduling intent. |
 | `setup --prepare-only` | Prepare source/configuration without scheduling or timer activation (direct helper `setup`). |
 | `start` | Prepare if absent, then activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
-| `update` | Pause owned timers, defer while workers finish, then advance to the newest official release and leave scheduling stopped. `update --stop` is a compatible spelling; unit refresh waits for the next authorized start. It is not `/update-kit`. |
-| `stop` | Disable owned timers without killing active workers; report draining while they finish. |
+| `update` | Disable owned timers, cancel queued starts and stop owned workers, then update the engine and restore eligible scheduling. `update --stop` updates and leaves scheduling stopped. It is not `/update-kit`. |
+| `stop` | Disable owned timers, cancel queued starts and stop owned workers through systemd. Report `stopped` after verified inactivity. |
 
 Linux supports lifecycle changes. macOS supports status, version and help only.
 Never run bare `orbi` to inspect: it runs a Runner tick, not status.
@@ -218,10 +218,9 @@ Pause scheduling and update in one command (no extra stop command or prompt):
 /orbi update
 ```
 
-Active workers finish naturally. A `draining` receipt names pending units and the
-exact command to retry after drain; no background update or restart follows.
-Explicit `--stop` remains compatible with the same behavior. Neither spelling enables
-timers, interrupts services or runs activating unit installation.
+Update interrupts owned workers without waiting for them to finish naturally.
+It syncs only after verifying inactivity and preserves recovery inputs and
+independent pauses. Use `--stop` to leave scheduling stopped after the update.
 
 The upstream CLI remains available for diagnostics:
 
