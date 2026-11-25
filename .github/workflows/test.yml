@@ -5,8 +5,13 @@ name: test
     branches: [main]
     tags: ['**']
 jobs:
-  test:
+  shard:
+    name: shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,10 +24,21 @@ jobs:
           git config --global user.email ci@example.invalid
           python -m pip install -r requirements-test.txt
       - uses: actions/setup-node@v4
+        if: matrix.shard == 1
         with: { node-version: '22' }
       - name: Plugin syntax
+        if: matrix.shard == 1
         run: python -m py_compile __init__.py
       - name: Pi command adapter offline tests
+        if: matrix.shard == 1
         run: node --test tests/portable_pi.test.mjs
-      - name: Full offline Python suite
-        run: python scripts/check.py
+      - name: Offline Python suite shard
+        run: python scripts/check.py --shard ${{ matrix.shard }}/4
+  # Branch protection requires the `test` check: it passes only when every shard passed.
+  test:
+    needs: shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All shards passed
+        run: test "${{ needs.shard.result }}" = success

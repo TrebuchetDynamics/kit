@@ -10,12 +10,13 @@ Every registered worktree is classified before anything is merged:
     unmerged-dirty commits are not on the base branch and the tree has changes
     detached       no branch is checked out, so it is a release or review checkout
     locked         Git holds a worktree lock
+    prunable       stale registration; the prune command is reported, not run
 
 `--apply` merges the `unmerged-clean` ones one at a time with a merge commit, never a
 rebase, a force, a stash or a reset. A conflict aborts that merge and the sweep
-continues with the next worktree. `unmerged-dirty`, `detached` and `locked` worktrees
-are reported and left exactly as they are: this tool never commits, discards or moves
-another writer's uncommitted work.
+continues with the next worktree. `unmerged-dirty`, `detached`, `locked` and `prunable`
+worktrees are reported and left exactly as they are: this tool never commits, discards
+or moves another writer's uncommitted work.
 
 Worktrees are merged oldest commit first, so work that others build on lands early. A
 worktree whose Git metadata changed within `--idle-minutes` (default 5) is treated as
@@ -32,6 +33,7 @@ failed, and 2 for a usage error.
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -78,6 +80,10 @@ def classify(repo, record, base):
              'head': record.get('head', ''), 'ahead': 0, 'behind': 0,
              'modified': 0, 'untracked': 0, 'state': '', 'note': ''}
     entry['idle_minutes'] = None
+    if 'prunable' in flags or not path.exists():
+        entry['state'] = 'prunable'
+        entry['note'] = f'stale registration; cleanup command: git -C {shlex.quote(str(repo))} worktree prune'
+        return entry
     for candidate in (path / '.git', path):
         # A linked worktree's .git is a file; its Git directory holds the index and refs.
         target = candidate

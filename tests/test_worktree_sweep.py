@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -133,6 +134,36 @@ class WorktreeSweepTests(unittest.TestCase):
         self.assertEqual(states, {'finished': 'merged', 'ahead': 'unmerged-clean',
                                   'ahead-dirty': 'unmerged-dirty', 'held': 'locked'})
         self.assertEqual(git(self.repo, 'rev-parse', 'HEAD'), before)
+
+    def test_inventory_reports_missing_worktrees_as_prunable(self):
+        stale = self.worktree('stale')
+        detached = self.worktree('stale-detached')
+        git(detached, 'checkout', '--detach')
+        shutil.rmtree(stale)
+        shutil.rmtree(detached)
+        self.worktree('finished')
+
+        entries = self.inventory()
+
+        self.assertEqual(entries['finished']['state'], 'merged')
+        for path in (stale, detached):
+            with self.subTest(worktree=path.name):
+                self.assertEqual(entries[path.name]['state'], 'prunable')
+                self.assertIn(f'git -C {self.repo} worktree prune', entries[path.name]['note'])
+
+    def test_apply_and_remove_leave_prunable_registration_alone(self):
+        stale = self.worktree('stale', commit='not yet merged')
+        shutil.rmtree(stale)
+        finished = self.worktree('finished')
+        helper, marker = self.recording_closeout()
+        registrations = git(self.repo, 'worktree', 'list', '--porcelain')
+
+        entry = self.inventory('--apply', '--remove', '--closeout', helper)['stale']
+
+        self.assertEqual(entry['state'], 'prunable')
+        self.assertEqual(git(self.repo, 'rev-parse', 'HEAD'), self.base)
+        self.assertEqual(marker.read_text().splitlines(), [str(finished)])
+        self.assertEqual(git(self.repo, 'worktree', 'list', '--porcelain'), registrations)
 
     def test_apply_merges_only_finished_clean_work_and_leaves_the_rest(self):
         self.worktree('finished')
