@@ -4289,6 +4289,21 @@ def fleet_inventory(ctx, managers, *, known_units=()):
 
 
 def fleet_check_permissions(ctx, units, jobs):
+    user_timers = [unit for unit in units if unit.manager.flags == ('--user',) and unit.triggers]
+    if user_timers:
+        # Bus access allows the caller to start/stop in their own manager,
+        # but enable/disable also need writable unit-file configuration.
+        manager = user_timers[0].manager
+        paths = set(shlex.split(manager.call(ctx, 'show', '-p', 'UnitPath', '--value')))
+        config = config_home(ctx) / 'systemd/user'
+        runtime = Path(f'/run/user/{manager.uid}/systemd/user')
+        for directory in {runtime if unit.enabled == 'enabled-runtime' else config for unit in user_timers}:
+            if str(directory) not in paths:
+                fleet_refuse(f'{manager.name}: cannot verify enablement directory {directory} in the manager unit path')
+            links = checked_path(directory / 'timers.target.wants', 'user manager enablement directory')
+            parent = next(path for path in (links, *links.parents) if path.exists())
+            if not parent.is_dir() or not os.access(parent, os.W_OK | os.X_OK):
+                fleet_refuse(f'{manager.name}: enablement directory is not writable: {parent}')
     systems = [unit for unit in units if unit.manager.name == 'system']
     if not systems or os.geteuid() == 0:
         return

@@ -1572,8 +1572,11 @@ elif verb == 'cancel':
     assert args == ['42']
     (path.parent / 'cancelled').touch()
 elif verb == 'show':
-    for k, v in units[args[-1]].items():
-        print(f'{k}={v}')
+    if args == ['-p', 'UnitPath', '--value']:
+        print(path.parent / ('.unknown-config' if os.environ.get('UNKNOWN_UNIT_PATH') else '.config') / 'systemd/user')
+    else:
+        for k, v in units[args[-1]].items():
+            print(f'{k}={v}')
 elif verb in ('disable', 'stop', 'start', 'enable'):
     unit = units[args[-1]]
     if ((verb == 'enable' and os.environ.get('FAIL_START') == args[-1]) or
@@ -1656,6 +1659,17 @@ else:
         result = self.install('--only', 'orbi', env={'FAIL_PREFLIGHT': config})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn(config + ' preflight_deployment: orbi check failed', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+        self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
+                             for verb in ('stop', 'disable', 'cancel', 'start', 'enable')))
+
+    def test_orbi_holds_before_downtime_for_unverified_user_enablement_path(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi', env={'UNKNOWN_UNIT_PATH': '1'})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('user: cannot verify enablement directory', result.stdout)
         self.assertEqual(state.read_bytes(), original)
         self.assertEqual(self.calls('orbi sync-engine-source'), [])
         self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
