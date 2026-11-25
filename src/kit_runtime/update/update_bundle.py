@@ -8,6 +8,7 @@ import json
 import os
 import re
 from pathlib import Path
+import shlex
 import shutil
 import signal
 import subprocess
@@ -972,7 +973,6 @@ def native_call(action, home, stage, revision, python):
     if python is None:
         # Full-suite installation may run under system Python rather than Hermes' venv.
         launcher = Path(shutil.which('hermes')).resolve()
-        import shlex
         text = launcher.read_text()
         words = shlex.split(text.split('\n', 1)[1], comments=True) if text.startswith(('#!/bin/sh', '#!/usr/bin/env sh')) else []
         if (len(words) > 2 and words[0] == 'exec' and '-c' in words
@@ -2090,13 +2090,15 @@ def main(argv=None):
     live_profiles = _KIT_COMPAT.peer(globals(), 'setup_bundle').live_profiles
     root = root_home(args.hermes_home)
     state_dir = root / 'maintenance/toolset-update'
+    scoped_receipt = state_dir / 'scoped.json'
     try:
         recovery_receipt = state_dir / 'recovery.json'
         safe_path(recovery_receipt)
         prior = json.loads(recovery_receipt.read_text()) if recovery_receipt.exists() else None
-        # Incomplete native publication is resolved under the transaction lock;
-        # its journal records interrupted publication phases.
-        if not prior or prior.get('status') != 'incomplete':
+        # A scoped publication may leave an invalid plugin slot. Give its
+        # locked journal check precedence over early profile admission.
+        inspect_scoped = not args.dry_run and (scoped_receipt.exists() or scoped_receipt.is_symlink())
+        if not inspect_scoped and (not prior or prior.get('status') != 'incomplete'):
             try:
                 profiles = live_profiles(root)
             except (ValueError, OSError):
@@ -2145,6 +2147,20 @@ def main(argv=None):
         except (ValueError, OSError) as error:
             profile_error = error
         try:
+            safe_path(scoped_receipt)
+            if scoped_receipt.exists():
+                scoped = json.loads(scoped_receipt.read_text())
+                if scoped.get('status') == 'incomplete' and any(
+                        scoped['profiles'].get(name, {}).get('phase') is not None for name in scoped['selected']):
+                    command = ['python3', 'scripts/update_bundle.py', '--hermes-home', str(root)]
+                    for name in scoped['selected']:
+                        command.extend(['--profile', name])
+                    command.extend(['--source', scoped['source'], '--revision', scoped['revision']])
+                    print(json.dumps({'status': 'incomplete',
+                                      'action': f'Resume the original scoped deployment first: {shlex.join(command)} '
+                                                '--native-python <original Hermes Python path>. '
+                                                'Then retry hermes kit update.'}, indent=2))
+                    return 1
             # Re-read after lock contention before deciding whether the journal may
             # account for an incomplete native publication's dangling shared links.
             safe_path(recovery_receipt)
