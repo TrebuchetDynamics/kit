@@ -921,6 +921,35 @@ def _waiter_command(root, update_id, gateway):
             '--restart-when-quiet', str(update_id), '--gateway-pid', str(gateway)]
 
 
+def _retire_legacy_waiter(root, marker):
+    """Stop a pre-identity waiter before it can mistake the replacement marker for its own."""
+    covers = marker.get('covers')
+    if not isinstance(covers, list) or not covers:
+        return
+    pid = int(marker['waiter_pid'])
+    argv = _process_argv(pid)
+    expected = [b'--hermes-home', os.fsencode(root), b'--restart-when-quiet',
+                str(covers[0]).encode(), b'--gateway-pid']
+    if not (argv and len(argv) == 9 and Path(os.fsdecode(argv[1])).name == 'update_bundle.py'
+            and argv[2:7] == expected):
+        return
+    # The update lock keeps this waiter out of the restart path. Use a process handle
+    # and recheck argv so a recycled waiter PID can't cause us to signal another process.
+    try:
+        fd = os.pidfd_open(pid)
+        try:
+            if _process_argv(pid) == argv:
+                signal.pidfd_send_signal(fd, signal.SIGTERM)
+        finally:
+            os.close(fd)
+    except ProcessLookupError:
+        pass  # The waiter already exited.
+    except (AttributeError, OSError) as error:
+        raise ValueError(f'Cannot safely retire legacy restart waiter {pid}: {error}. '
+                         'Let it exit or stop that waiter, then run `hermes gateway restart` once chat turns finish '
+                         'if the gateway still serves the previous release.') from error
+
+
 def start_quiet_restart(root, folder, update_id, gateway):
     """Start the detached waiter that restarts the gateway once it is quiet; returns its PID."""
     with (folder / 'run.log').open('ab') as stream:
@@ -2269,6 +2298,8 @@ def main(argv=None):
                     _write_marker(state_dir, pending)
                     result['gateway_restart'] = 'pending'
                 elif gateway_running(root):
+                    if pending is not None and pending.get('gateway_pid') is None:
+                        _retire_legacy_waiter(root, pending)
                     # Restart only while no chat turn is in flight, so Hermes never has to
                     # force one; otherwise a detached waiter restarts at the first quiet moment.
                     turns = chat_turns(root, [home for _, home in profiles])

@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -78,6 +79,8 @@ class QuietRestartTests(unittest.TestCase):
         pids = iter(gateway_pids or [])
         def sleep(seconds):
             clock['now'] += seconds
+            if clock['now'] > window + seconds:
+                self.fail('Waiter did not exit by the end of its window')
         with patch.object(self.mod, 'chat_turns', side_effect=lambda *_: next(sequence)), \
              patch.object(self.mod, 'gateway_pid', side_effect=lambda *_: next(pids, 100)), \
              patch.object(self.mod, 'request_gateway_restart', return_value=4242) as restart:
@@ -120,7 +123,8 @@ class QuietRestartTests(unittest.TestCase):
         self.receipt(started_ns=999, gateway_restart='requested')
         marker = {'pid': 4242, 'requested_ns': 999, 'gateway_pid': 200, 'covers': [999]}
         self.mod._write_marker(self.state, marker)
-        _, restart, latest = self.wait([], gateway_pids=[200])
+        outcome, restart, latest = self.wait([], gateway_pids=[200])
+        self.assertEqual(outcome, 'superseded')
         restart.assert_not_called()
         self.assertEqual(latest['gateway_restart'], 'requested')
         self.assertEqual(self.mod._read_marker(self.state), marker)
@@ -232,14 +236,17 @@ class UpdateDefersRestartTests(unittest.TestCase):
         waiter.assert_called_once()
 
     def test_update_does_not_join_a_waiter_for_a_replaced_or_unknown_gateway(self):
-        sleeper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '--restart-when-quiet'])
-        self.addCleanup(sleeper.wait)
-        self.addCleanup(sleeper.kill)
+        script = self.root / 'update_bundle.py'
+        script.write_text('import time; time.sleep(60)\n')
         state = self.home / 'maintenance/toolset-update'
         state.mkdir(parents=True)
         (self.home / 'gateway.pid').write_text(json.dumps({'pid': 200}))
         for watched_pid, turns, expected in ((100, 0, 'requested'), (None, 2, 'deferred')):
             with self.subTest(watched_pid=watched_pid):
+                sleeper = subprocess.Popen([sys.executable, str(script), '--hermes-home', str(self.home),
+                                            '--restart-when-quiet', '777', '--gateway-pid', '100'])
+                self.addCleanup(sleeper.wait, timeout=5)
+                self.addCleanup(sleeper.kill)
                 marker = {'mode': 'deferred', 'waiter_pid': sleeper.pid, 'covers': [777]}
                 if watched_pid is not None:
                     marker['gateway_pid'] = watched_pid
@@ -254,9 +261,12 @@ class UpdateDefersRestartTests(unittest.TestCase):
                     restart.assert_called_once()
                     waiter.assert_not_called()
                     self.assertEqual(self.mod._read_marker(state)['covers'], [receipt['started_ns']])
+                    self.assertIsNone(sleeper.poll())  # Identity-aware waiters exit under their own lock check.
                 else:
                     restart.assert_not_called()
                     waiter.assert_called_once_with(self.home, state, receipt['started_ns'], 200)
+                    # Legacy code does not check ownership before reading a new marker's covers.
+                    self.assertEqual(sleeper.wait(timeout=2), -signal.SIGTERM)
 
     def test_burst_of_updates_while_busy_restarts_once_and_lists_every_update(self):
         sleeper = [sys.executable, '-c', 'import time; time.sleep(60)', '--restart-when-quiet']
@@ -282,11 +292,13 @@ class UpdateDefersRestartTests(unittest.TestCase):
         self.assertEqual(marker['gateway_pid'], 100)
         self.assertEqual(marker['covers'], [r['started_ns'] for r in receipts])
         subprocess.run(['kill', str(spawned[0])])
+        def unexpected_sleep(_):
+            self.fail('A quiet gateway should not require another poll')
         with patch.object(self.mod, 'chat_turns', return_value=0), \
              patch.object(self.mod, 'gateway_pid', return_value=100), \
              patch.object(self.mod, 'request_gateway_restart', return_value=4242) as restart:
             outcome = self.mod.restart_when_quiet(self.home, [self.home], state, update_id=receipts[0]['started_ns'],
-                                                  gateway=100, window=100, poll=10, sleep=lambda _: None,
+                                                  gateway=100, window=100, poll=10, sleep=unexpected_sleep,
                                                   clock=lambda: 0.0)
         latest = json.loads((state / 'latest.json').read_text())
         self.assertEqual(outcome, 'requested')
