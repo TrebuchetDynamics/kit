@@ -1041,6 +1041,27 @@ esac
         self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
         self.assertEqual(self.calls('systemctl --user try-restart'), [restart, restart])
 
+    def test_interrupted_restart_pass_keeps_successful_units_completed(self):
+        self.fake('systemctl', LOGGING + r'''
+case "$*" in
+  *list-units*) printf '%s\n' 'kit-bolt.service loaded active running Bolt' 'kit-other.service loaded active running Other' ;;
+  *show*) printf 'ExecStart={ path=%s ; }\n' "$FAKE_HOME/.local/bin/pi-bolt" ;;
+  *try-restart*kit-other.service) if [[ -n "$INTERRUPT_RESTART" ]]; then kill -INT "$PPID"; fi ;;
+esac
+''')
+        self.bolt.write_text(PI + '# previous release\n')
+        args = ('--only', 'pi-bolt')
+        interrupted = self.install(*args, env={'INTERRUPT_RESTART': '1'})
+        self.assertEqual(interrupted.returncode, 130, interrupted.stdout + interrupted.stderr)
+        bolt = 'systemctl --user try-restart kit-bolt.service'
+        other = 'systemctl --user try-restart kit-other.service'
+        self.assertEqual(self.calls('systemctl --user try-restart'), [bolt, other])
+
+        for _ in range(2):
+            result = self.install(*args)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('systemctl --user try-restart'), [bolt, other, other])
+
     def test_retry_keeps_owed_restart_when_unit_references_are_temporarily_unavailable(self):
         self.fake('systemctl', LOGGING + r'''
 case "$*" in

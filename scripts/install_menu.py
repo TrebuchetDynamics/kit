@@ -2169,17 +2169,19 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                 record('services', 'installed', detail, 0, decision=detail)
             except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
                 record('services', 'failed', str(exc), 1, reason=str(exc))
-            remaining = dict(pending)
-            for key, row in service_observations.items():
-                if 'restarted_units' not in row:
-                    continue
-                state_key = pending_key(key)
-                if key in settled:
-                    del remaining[state_key]
-                else:
-                    remaining[state_key] = dict(pending[state_key], restarted_units=sorted(row['restarted_units']))
-            if remaining != pending:
-                write_pending_restarts(state_path, remaining)
+            finally:
+                # Retain successful restarts even if a later unit interrupted the pass.
+                remaining = dict(pending)
+                for key, row in service_observations.items():
+                    if 'restarted_units' not in row:
+                        continue
+                    state_key = pending_key(key)
+                    if key in settled:
+                        del remaining[state_key]
+                    else:
+                        remaining[state_key] = dict(pending[state_key], restarted_units=sorted(row['restarted_units']))
+                if remaining != pending:
+                    write_pending_restarts(state_path, remaining)
     output.line('\nSummary:', 'heading')
     for key, outcome, detail in results:
         output.line(f'  {key:<9} {outcome:<9} {detail}', outcome)

@@ -187,8 +187,8 @@ Hosts without Linux user systemd report restarts unavailable. Restart failures m
 The installer saves observed changes beside its lock before moving on to the next component. If it is
 interrupted or a restart fails, fix the reported problem and rerun with the same selection. The installer
 rechecks the affected consumers even if the refreshed payload is now unchanged. Unverified unit
-references leave restart work pending. After a service pass, the installer records which units
-restarted successfully so retries can skip them for the same payload. Once the restart work is
+references leave restart work pending. The installer records successful restarts even if a later
+restart is interrupted, so retries can skip those units for the same payload. Once the restart work is
 complete, an unchanged repeat requests no restart. A failed payload holds its consumer while
 independent successful changes remain eligible.
 
