@@ -52,7 +52,7 @@ class CycleGuidanceTests(unittest.TestCase):
                             'not itself evidence of owner approval',
                             'Do not change a running contract',
                             'Approval is never completion evidence',
-                            'Orbi remains paused'):
+                            'explicit Orbi lifecycle command'):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, policy)
 

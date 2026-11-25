@@ -25,8 +25,7 @@ continue, but required unavailable gates still hold dependent publication.
 Read-only and restricted planning never fetch or sync Git. Only standalone writable
 Plan With Me / Plan For Me use the shared
 [planner freshness exception](../skills/shared/COMMON-CONTRACT.md#standalone-planner-freshness).
-None of this activates Orbi or
-qualifies live delivery; its existing pause and live-qualification limits remain.
+None of this activates Orbi or qualifies live delivery.
 
 ## Support boundary
 
@@ -40,7 +39,8 @@ the same handoff contract. Orbi is the separate delivery project, not a renamed
 Kit executor. Retained fix/apply modes preserve their accepted scope and shared
 ownership/review/PR gates; planning stops after publication. Hermes terminal
 maintenance commands and marketplace names are not support for the removed runner.
-Orbi stays paused until its separate qualification gates pass.
+Explicit commands authorize [activation](#kit-lifecycle-skill); live qualification
+requires separate evidence.
 
 Owner questions and external inputs are tracked in GitHub Issues. The former
 `BLOCKERS.md` repository ledger is removed and deprecated: do not create, read or
@@ -139,17 +139,17 @@ Do not use this helper to overwrite an existing edited issue.
    removed CLI to inspect state. Do not stop unrelated gateways.
 2. Report actual host inventory separately; source changes alone do not prove host
    service removal. Ordinary Kit/Pi/Hermes/Claude/Codex functionality remains.
-   **Orbi remains paused and live-unqualified.** Removal does not authorize enabling it.
+   Removing the old executor neither activates Orbi nor qualifies its delivery.
 3. Reconcile unfinished local tasks against open/closed issues, PRs and merged
    evidence, following [Plan Handoff](../skills/shared/PLAN-HANDOFF.md).
    Preserve legacy IDs and immutable sources. Never redispatch completed or owned
    work. Do not synchronize two queues or prune worktrees as part of migration.
-4. Pilot one repository only after ownership is settled. Verify actual issue pickup,
-   PR creation, independent review, required CI, merge and failed-run recovery.
+4. To qualify live delivery, verify actual issue pickup, PR creation, independent
+   review, required CI, merge and failed-run recovery in a single-repository pilot.
    Offline contract tests and `doctor` alone do not qualify that loop.
-5. Expand only after the pilot passes. Give each repository a distinct deployment,
-   non-overlapping task pool and measured resource budget. Leave the remaining
-   fleet paused until its migration and capacity checks are complete.
+5. For fleet evaluation, use distinct deployments, non-overlapping task pools and
+   measured resource budgets. Pilot and capacity evidence qualify the rollout; they
+   are not extra activation approvals.
 
 ## One repository per deployment
 
@@ -184,8 +184,8 @@ max_concurrency = 1
 `source_repos` contains exactly one repository. Each additional repository gets
 its own deployment/configuration/checkout and unique `unit_name`. Use supported
 `orbi setup` / `orbi install-units`, not hand-written unit-name substitutes.
-Setup can enable timers: inspect its options and keep dispatch disabled until
-cutover checks pass. Respect this repository's worktree placement: all new task
+Upstream setup can enable timers. Use Kit’s `setup --prepare-only` when activation
+is not intended. Respect this repository's worktree placement: all new task
 worktrees must be under the canonical repository's `.worktrees/`. Verify the
 selected Orbi release meets that rule before enabling it; `workspace_root` alone
 must not be assumed to control task-worktree placement.
@@ -216,12 +216,13 @@ and verification evidence without full status, bootstrap or network probes. Miss
 deployment is unconfigured; unverifiable metadata is unknown, never the global CLI.
 Bare invocation reads status; `--repo-dir` selects the
 canonical repository and `--config` selects its existing native configuration.
-Public `setup` starts by default, mapping to helper `start`; explicit invocation
-expresses scheduling intent, not a waiver of existing pauses and cutover gates.
-`setup --prepare-only` prepares without activating scheduling (direct helper `setup`
-remains non-activating). Missing/failed gates hold with the specific blocker and
-next safe check/repair; never silently fall back to preparation or ask for a second
-approval for already-authorized activation whose gates are evidenced. If genuinely absent
+Explicit `/orbi start`, plain `/orbi update`, and `install.sh` with Orbi selected
+authorize activation. Verify unit and file ownership, the release pin and a passing
+`orbi check`. Neither a cutover record nor separate human approval is required.
+Public `setup` maps to helper `start`. `setup --prepare-only` prepares without activating scheduling
+(direct helper `setup` remains non-activating). Failed or unknown technical
+checks hold activation with the specific blocker and repair, not a silent fallback to
+preparation. If genuinely absent
 and no explicit config was supplied, start first uses the same setup preparation,
 validates non-activating, then rebinds/revalidates under the activation lock. Existing
 valid/active targets skip preparation and reject bootstrap/harness selectors; partial,
@@ -305,7 +306,7 @@ The [lifecycle reference](../skills/orbi/references/lifecycle.md) owns prerequis
 retention, pinned-source and deployment-local uv isolation details. Native units
 still depend on a compatible shared bootstrap: this is not a self-contained
 executable per deployment. Installing the skill or passing offline checks does
-not prove live isolation or release the pilot gates.
+not prove live isolation or qualify the pilot.
 
 ## Qualify the model provider
 
@@ -389,8 +390,8 @@ that basis. Normal setup-as-start and start use the same activation path, includ
 preparation and the first tick, when scheduling is authorized and other prerequisites
 pass. Do not add a protection probe to the shared preflight.
 
-Authentication, repository access, deployment ownership, explicit pauses and all
-other startup gates still apply. Prepare-only and dry-run never activate. Helper
+Authentication, repository access, deployment ownership and the other technical
+activation checks still apply. Prepare-only and dry-run never activate. Helper
 status preserves `doctor.state=failed` as a diagnostic outcome, not itself a Kit
 scheduling gate; distinguish protection diagnostics from other failed prerequisites.
 Successful startup does not imply successful merge or live qualification. Ordinary
@@ -438,10 +439,10 @@ GitHub and matching Orbi run diagnostics. Exercise failure recovery without losi
 the original PR/worktree or duplicating work. Preserve any repository-required
 human acceptance and never mark it from an automated review.
 
-If qualification fails, disable that deployment's timers and preserve its issues,
-PRs and recovery state. Report the exact missing input or failed gate. Do not
-reinstall or resume the removed executor. Keep the replacement paused until
-ownership and qualification are reconciled. Installing a CLI or passing offline tests is not live delivery.
+If qualification fails, record the exact missing input or failed check and preserve
+issues, PRs and recovery state. To pause a failed pilot, use the explicit `stop`
+command. Do not reinstall or resume the removed executor. Installing a CLI or
+passing offline tests is not live delivery.
 
 ## Remaining requirements after executor removal
 
@@ -455,7 +456,7 @@ without recreating the executor, duplicating finished work or losing source proo
 
 
 These sources establish prior intent/evidence only. Preserve their still-applicable
-human/live gates and unresolved proof, while the new pilot and fleet stay paused.
+human/live acceptance requirements and unresolved proof.
 
 ## Upstream contracts
 

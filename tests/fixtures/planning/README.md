@@ -65,7 +65,7 @@ Normally give one useful progress update and a compact final receipt: issue link
 (or explicitly UNSAVED proposed deltas here), ready/waiting/proposed state, native
 dependencies, actual checks and unmet gates. Extra updates need a material blocker
 or long-running work, not a message quota. No supplied evidence proves current
-Orbi pickup or timers; Kit remains paused and live-unqualified.
+Orbi pickup, timers or live delivery qualification.
 
 `test_planning_decision_closure.py` checks these paired inputs and expected-outcome
 coverage. This is static instruction/fixture evidence, not model adherence or live

@@ -13,7 +13,7 @@ class UnblockSkillTests(unittest.TestCase):
                          'does not invoke recovery', 'Standing policy:',
                          'Observe the expected transition', 'do not claim success',
                          'do not loop unchanged retries', 'Do not create backlog work',
-                         'Orbi remains paused and live-unqualified'):
+                         'This invocation does not authorize enabling Orbi'):
             self.assertIn(contract, text)
 
     def test_waits_are_not_successful_recovery(self):
@@ -51,7 +51,7 @@ class UnblockSkillTests(unittest.TestCase):
         for contract in ('deliberate-stop', 'pending service jobs',
                          'Observe an existing restart', 'explicit user authorization',
                          'actual executable release', 'attempts/recovery state',
-                         'Orbi remains paused'):
+                         'An Unblock invocation does not enable a deployment'):
             self.assertIn(contract, text)
         self.assertIn('No Hermes runtime', (ROOT / 'adapters/skills/unblock/SKILL.md').read_text())
 

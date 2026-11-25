@@ -11,7 +11,7 @@ recovery labels without asking again for routine decisions. It considers every
 confirming the plan is complete or the blocker is repaired (both when both labels
 apply). It verifies whether work resumed. Read-only requests, explicit pauses,
 existing PR ownership and human gates remain binding; the skill does not grant
-GitHub access or enable paused Orbi.
+GitHub access or activate Orbi.
 
 When requirements change, [hand the retained work back on the same issue](../skills/unblock/SKILL.md#changed-requirements-hand-back-on-the-same-issue).
 Name the commit, the missing behavior, and how to verify it. A handoff is not
@@ -125,8 +125,7 @@ is limited, so some commands must be typed directly.
 | `/beautify-github-readme` | `/beautify_github_readme` | [Audit README reader paths and publish verified issues](../skills/beautify-github-readme/SKILL.md); explicit redesign/hero and audit-only requests keep their scope. Use `no-dispatch` to withhold readiness, or `read-only` for an inline report without writes. |
 
 For the Orbi first-deployment journey, `/orbi help` gives context-free examples and
-recovery. Only after explicit scheduling authority and resolved pauses/gates, use
-`/orbi setup --dry-run --pi-providers /path/to/models.json --pi-provider
+recovery. Use `/orbi setup --dry-run --pi-providers /path/to/models.json --pi-provider
 PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID` to preview, then remove
 `--dry-run` to prepare/validate and activate. New preparation defaults to installed
 Pi-Bolt; `--harness pi` selects stock Pi. Existing valid targets skip preparation;
@@ -134,8 +133,8 @@ omit selectors to preserve their saved routing. Missing explicit `--config` and
 partial targets require deliberate repair, not automatic setup/resume. An absent
 preview defers staging-dependent checks; planned, prepared, activated and
 live-qualified remain distinct. Public setup expresses scheduling intent and starts
-by default, subject to the same gates as start; missing gates name the blocker, not
-a silent prepare-only result. Use `setup --prepare-only` for non-activating preparation
+by default, subject to the same technical checks as start. A failed check reports
+the blocker, not a silent prepare-only result. Use `setup --prepare-only` for non-activating preparation
 (direct Python helper `setup` stays unchanged). Public `--resume-setup` requires
 `setup --prepare-only --resume-setup`; otherwise reject before mutation and show
 that corrected command with the original arguments. Status inspects
@@ -292,7 +291,7 @@ Retained authorized implementation never uses the removed executor.
 The [Hermes adapter](../skills/autoresearch/SKILL.md) connects research to docs-sync:
 findings update existing documents, matching issues are reused, and accepted gaps
 become complete issues with outcome, scope, acceptance, verification and native
-dependencies. Publication does not create a timer or enable paused Orbi. Read-only
+dependencies. Publication does not create a timer or activate Orbi. Read-only
 and planning-only requests remain scoped.
 Upstream flags and analytical methods are retained; host-specific tools, generic
 confirmation prompts, experimental Git handling and documentation handoffs follow
@@ -680,8 +679,8 @@ is a replacement implementation coordinator.
 ### Parallel workers
 
 Dispatch every delegated worker in a fresh context with explicit scope, completion
-criteria and write authority. Orbi remains paused pending live qualification;
-do not start it or a second implementer for an already-owned issue.
+criteria and write authority. Do not activate Orbi as part of delegation or start
+a second implementer for an already-owned issue.
 
 ### Delivery batches and partial completion
 
@@ -775,7 +774,7 @@ or permission to resume a schedule.
 ## Scheduling behavior
 
 Existing job IDs, settings, schedules,
-pause state and recovery evidence remain intact. Orbi remains paused and live-unqualified.
+pause state and recovery evidence remain intact.
 Setup confirmation, actual execution and message delivery require separate evidence;
 a changed prompt or installed skill proves none of them.
 
@@ -785,4 +784,3 @@ The TUI, web UI and Paseo executor plugin are removed. Their
 [prior interface and qualification requirements](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/workflows.md#tui-confirmation-layout-and-refresh)
 remain immutable evidence. Physical-client, transport and model qualification
 are not satisfied by removal and must be reconciled if needed by the successor.
-Orbi remains paused and live-unqualified; see [cutover](github-native.md).

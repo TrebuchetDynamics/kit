@@ -18,9 +18,8 @@
   only target timers and requests one first tick only when no worker runs.
 - `update` pauses owned timers under lock, defers while workers drain, then
   advances to the newest official release through `sync-engine-source`, locks
-  the resolved commit as `sha:<commit>` and validates non-activating. Scheduling
-  resumes eligible scheduling after validation. `--stop` is the compatibility
-  opt-out: update and leave stopped. Independent pauses remain in force.
+  the resolved commit as `sha:<commit>` and validates non-activating. It restores
+  eligible scheduling after validation. `--stop` updates and leaves stopped.
   It never selects a provider or harness.
 - `stop` disables only target-owned timer instances (including installed
   surplus instances); it never stops, kills or restarts a service and reports
@@ -2851,7 +2850,7 @@ def update_plan_steps(*, stop=False):
          'reason': 'leave stopped' if stop else 'only with eligible scheduling and successful validation'},
         {'step': 'observe_scheduler', 'status': 'conditional'},
         {'step': 'activate_deployment', 'status': 'deferred' if stop else 'conditional',
-         'reason': 'leave stopped' if stop else 'after validation and existing start gates; preserve independent pauses'},
+         'reason': 'leave stopped' if stop else 'after technical validation for eligible scheduling'},
     ]
 
 
@@ -3245,7 +3244,7 @@ def command_update(ctx, args):
                 'scheduler_confirmation': 'enabled_active' if eligible else 'stopped',
                 'activation': activation, 'activation_reason': activation_reason,
                 'next_action': ('None.' if eligible else 'Leave scheduling stopped.' if args.stop else
-                                'Resolve independent pauses/start gates, then run ' +
+                                'To activate scheduling, run ' +
                                 start_command),
                 'steps': steps, 'activated': eligible,
                 'warnings': []}
@@ -3308,7 +3307,7 @@ def render(ctx, document, json_mode):
         elif document.get('dry_run'):
             ctx.out.write('Engine unchanged (preview). Pause, bounded drain, then conditional sync/validation.\n')
             ctx.out.write('Scheduling: ' + ('leave stopped.' if document['activation'] == 'none' else
-                                          'conditional activation after validation and existing start gates.') + '\n')
+                                          'conditional activation after technical validation for eligible scheduling.') + '\n')
             ctx.out.write('Next: Run the requested update without --dry-run when ready.\n')
         else:
             ctx.out.write(f"Engine {document['engine_update']}: {document['deployment']['deployed_commit']}\n")
@@ -4789,10 +4788,11 @@ def command_help(ctx, args):
             'authorized start prepares, validates non-activating, then activates in one invocation; '
             'no separate setup or repeated approval. An existing valid target skips preparation and '
             'retains its provider/harness. Missing explicit configs, partial and foreign targets are not absent.',
-            'Start requires explicit scheduling authority and resolved explicit pauses, cutover '
-            'and human-only gates. Kit remains paused and live-unqualified; help grants no waiver.',
-            'Public skill syntax: /orbi setup starts by default (maps to helper start); its explicit '
-            'invocation expresses scheduling intent, not a gate waiver. /orbi setup --prepare-only '
+            'Explicit /orbi start, plain /orbi update, and install.sh with Orbi selected authorize activation. '
+            'Require verified unit and file ownership, a validated release pin and a passing orbi check. '
+            'For existing-target start, if not already validated, run orbi check --config PATH '
+            'with that deployment’s environment. No separate approval is required.',
+            'Public skill syntax: /orbi setup starts by default (maps to helper start). /orbi setup --prepare-only '
             'maps to non-activating helper setup. The skill consumes --prepare-only; it is not a Python flag. '
             'Public setup --resume-setup requires --prepare-only; otherwise reject before invocation and '
             'show setup --prepare-only --resume-setup with the original arguments. '
@@ -4813,8 +4813,8 @@ def command_help(ctx, args):
             'Update authorizes a maintenance pause and eligible scheduling after validation; --stop leaves stopped. '
             'Bind the unique matching deployment, disable verified owned timers, observe drain for at most 15 seconds, '
             'then sync-engine-source, pin sha:<commit> and check once idle. If still busy, rerun /orbi update '
-            'from the same checkout; no separate status, stop or start command. Independent pauses and all start '
-            'gates remain. No service interruption, worker restart or background continuation.',
+            'from the same checkout; no separate status, stop or start command for eligible scheduling. '
+            'No service interruption, worker restart or background continuation.',
         ],
         'examples': [
             {'command': '/orbi status all --json',
@@ -4828,7 +4828,7 @@ def command_help(ctx, args):
                         'Replace paths/IDs with verified published metadata.'},
             {'command': '/orbi setup --harness pi --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
-             'outcome': 'With scheduling authority and resolved gates: prepare a new stock Pi target, then activate.'},
+             'outcome': 'Prepare a new stock Pi target, then activate if technical checks pass.'},
             {'command': '/orbi setup --prepare-only --dry-run --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
              'outcome': 'Preview preparation only; remove --dry-run to prepare without scheduling.'},
@@ -4839,7 +4839,7 @@ def command_help(ctx, args):
                         'never activate.'},
             {'command': '/orbi start --pi-providers /path/to/models.json '
                         '--pi-provider PUBLISHED_PROVIDER_ID --pi-model PUBLISHED_MODEL_ID',
-             'outcome': 'Only with scheduling authority: prepare absent target with Pi-Bolt, then activate. '
+             'outcome': 'Prepare absent target with Pi-Bolt, then activate if technical checks pass. '
                         'Omit selectors on subsequent starts.'},
             {'command': '/orbi start --dry-run',
              'outcome': 'Preview existing activation, or absent preparation using donor metadata; '
@@ -4867,21 +4867,17 @@ def command_help(ctx, args):
                              'local provider permits public setup --prepare-only --resume-setup --config PATH '
                              '(direct helper setup --resume-setup) with complete matching '
                              'selectors. Start never performs legacy repair or changes a saved harness.',
-            'activation': 'Before actual start, separate the owner scheduling request from deployment-specific '
-                          'gate evidence. Name the specific missing evidence, applicable cutover checklist and '
-                          'existing record if found; otherwise say no record was found in the inspected sources. '
-                          'Name the next safe read-only check or exact owner repair and held operation. '
+            'activation': 'Name the failed technical check and the next safe read-only check or exact repair. '
                           'GitHub unprotected main is an observed branch state; protection/rules HTTP 403 means '
                           'access denied for that endpoint and unknown details, not absent rules. Both can coexist; '
                           'they are informational, not scheduling blockers. Branch protection is not a Kit '
                           'setup/start prerequisite. Do not require a protection read/repair, PR-only mode, special '
                           'opt-in, no-base-write engine proof, paid GitHub plan, engine release or second approval '
-                          'on that basis. Authentication, repository access, ownership, explicit pauses and other '
-                          'gates still apply. Status doctor.state=failed is diagnostic, not itself a scheduling gate. '
+                          'on that basis. Authentication, repository access and ownership still apply. '
+                          'Status doctor.state=failed is diagnostic, not itself a scheduling gate. '
                           'Existing protections, CI, review and merge requirements remain unchanged; startup is '
-                          'not successful merge or live qualification. A preview is '
-                          'not approval. Do not demand a generic cutover record, invent approval or reconfirm '
-                          'settled owner intent. See skills/orbi/references/lifecycle.md#activation-evidence.',
+                          'not successful merge or live qualification. A preview is not approval. '
+                          'See skills/orbi/references/lifecycle.md#activation-evidence.',
             'setup_busy': 'Preparation requires verified inactivity. Cite observed timer/worker state from '
                           'status or the error scheduler evidence. Offer authorized stop/drain only when '
                           'deliberately re-preparing or pausing; do not stop workers to pass a preview. '
@@ -4945,8 +4941,7 @@ def command_help(ctx, args):
             'Not /unblock, /git-commit-push, /plan-with-me, /plan-for-me.',
             'Local visibility only: no cross-machine lock or capacity guarantee.',
             'Next steps: use status to inspect; public setup --prepare-only (helper setup) to prepare; '
-            'public setup or start only after an '
-            'owner scheduling request and resolved pauses, cutover and human-only gates; update pauses owned '
+            'explicit public setup or start authorizes activation after technical checks; update pauses owned '
             'timers, observes a bounded drain, then restores eligible scheduling (--stop leaves stopped); '
             'stop disables owned timers while preserving active workers.',
         ],
@@ -4994,10 +4989,8 @@ ACTIONS = {
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json',
                     '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--harness'],
-        'when': 'Run after an owner scheduling request; prepare only if genuinely absent with no explicit '
-                '--config, then activate in one invocation after resolution of explicit pauses, cutover '
-                'requirements and human-only gates. Missing/unknown gate evidence needs a specific '
-                'check and next safe action, not repeated owner consent.',
+        'when': 'An explicit start authorizes activation after technical checks. Prepare only if genuinely absent '
+                'with no explicit --config. On failure report the specific check and next safe action.',
     },
     'update': {
         'handler': command_update,
@@ -5007,9 +5000,9 @@ ACTIONS = {
         'applies': ['--repo-dir', '--config', '--dry-run', '--json', '--stop'],
         'when': 'Run for a prepared deployment: pause owned timers under lock, defer while workers or '
                 'pending starts remain, then lock the newest official release as sha:<commit> after '
-                'fresh idle evidence. Plain update restores eligible configured scheduling through existing start gates '
-                'after engine validation. Explicit --stop leaves stopped and invalidates restart intent. '
-                'Independent pauses remain; no worker interruption, restart or background continuation.',
+                'fresh idle evidence. Plain update authorizes restoring eligible configured scheduling after '
+                'engine validation. Explicit --stop leaves stopped and invalidates restart intent. '
+                'No worker interruption, restart or background continuation.',
     },
     'stop': {
         'handler': command_stop,

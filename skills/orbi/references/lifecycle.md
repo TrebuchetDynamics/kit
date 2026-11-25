@@ -150,21 +150,21 @@ that same deployment. Outside that context, retain necessary selectors and liter
 paths. `--stop` remains in both retry forms when requested. Exit 0 and disabled
 timers are not an applied engine update. Do not suggest start while deferred.
 
-Plain update is a scheduling request, not a waiver of independent operator pauses,
-cutover requirements or human-only gates. The skill must resolve those gates before
-invoking an activating update. Under lock the helper records minimal maintenance
-intent in the existing lock cache, bound to verified deployment file identities.
-Only prior configured enabled/active scheduling or matching maintenance intent is
-eligible. An inactive timer alone is not consent. Explicit `stop` and `update --stop`
-invalidate that intent, including across deliberate retries. Changed/unknown bindings
-hold activation. Each invocation resolves the target and scheduler afresh.
+Plain `/orbi update` is authorization for maintenance and to restore eligible
+scheduling after validation; it needs no separate approval. Under lock the helper
+records maintenance intent bound to verified deployment file identities. It restores
+prior configured enabled/active scheduling or a matching maintenance intent.
+An inactive timer alone is not evidence of prior scheduling. Explicit `stop` and
+`update --stop` invalidate maintenance intent, including across deliberate retries.
+Changed or unknown bindings prevent restoration. Each invocation resolves the
+scheduler and target afresh.
 
 Once sync/pin/check succeeds (including already-current releases), plain update uses
 start's shared lock-aware existing-target checks and setup/install/enable actions.
 It does not prepare a new deployment or explicitly start/restart a worker service.
 It verifies configured timers **enabled and active**, separately from running services,
 and reports engine and activation results separately. No separate start is needed
-on eligible success. Independent pauses and unresolved start checks hold activation.
+on eligible success. Failed or unknown technical checks hold activation.
 `update --stop` is the compatibility opt-out: update, skip activating unit refresh,
 and leave stopped. It is not equivalent to plain update.
 
@@ -193,7 +193,7 @@ one exact commit instead of tracking a moving tag;
 4. validates with non-activating `orbi check`;
 5. rechecks the paused scheduler and pending starts;
 6. restores eligible scheduling for plain update through shared existing-target start
-actions, or defers activating unit refresh for explicit `--stop`/independent pauses;
+actions, or defers activating unit refresh when scheduling is not eligible or `--stop` is set;
 7. verifies and reports engine and scheduling results separately, with partial evidence
 if activation or readback fails.
 
@@ -430,36 +430,16 @@ transport or an owner-required repair.
 
 ## Activation evidence
 
-The owner's request to start scheduling and the evidence that permits that operation
-are different inputs. Preserve already-settled intent; do not ask the owner to approve
-the same start again. Read the bound deployment's status, repository instructions,
-applicable [cutover checklist](../../../docs/github-native.md#cutover), and any existing
-issue/PR or qualification record relevant to that repository and requested stage.
-Collect evidence read-only. Do not change labels, protections, units or credentials
-while deciding whether activation is allowed. Help itself performs none of these reads.
-
-Before an actual start, give a short evidence report:
-
-- **Request and target:** name the owner request, repository/deployment and operation
-  (for example first pilot versus rollout); do not infer authority from a successful preview.
-- **Observed:** cite the helper status/preview and relevant checklist or existing record
-  by path/URL and the specific evidence it supplies. Reuse applicable evidence, not stale
-  or unrelated approvals. If no record was found in the inspected sources, say so and
-  name those sources; absence of a record is not itself a new activation gate.
-- **Missing or unknown:** name each applicable check that is unresolved, not just
-  “cutover required.” Depending on the requested stage, this can be unsettled legacy
-  pool ownership, release/worktree-placement compatibility, unreadable scheduler state,
-  required CI/review evidence, pilot delivery/recovery proof before expansion, or fleet
-  capacity evidence. Apply the existing checklist, not a new gate or mandatory receipt.
-  Do not demand rollout qualification as a prerequisite to an otherwise authorized pilot.
-- **Next safe action:** name the read-only check that can resolve each unknown, or the
-  exact external input/owner-controlled repair needed, and which operation stays held.
-  Do not ask for a generic “cutover record,” manufacture approval, or reconfirm settled
-  owner intent. Keep explicit pauses and human-only gates until their actual requirements
-  are satisfied. [#12](https://github.com/TrebuchetDynamics/kit/issues/12),
-  [#13](https://github.com/TrebuchetDynamics/kit/issues/13) and
-  [#20](https://github.com/TrebuchetDynamics/kit/issues/20) retain live qualification/rollout
-  ownership; this guidance does not release them.
+Explicit `/orbi start`, plain `/orbi update`, and `install.sh` with Orbi selected
+authorize activation. Require verified unit and file ownership, a validated release
+pin and a passing `orbi check`. The helper runs the check during absent-target
+preparation and release update; the Orbi installer runs it during fleet refresh.
+Existing-target `start` skips preparation: if the selected configuration and pin
+have not been validated, run the non-activating `orbi check --config PATH` with that
+deployment's environment before starting. Report the specific failed or unknown
+technical check and the next safe read-only check or repair. A cutover or
+human-approval record is not required. A preview neither authorizes activation nor
+passes staged checks. Report live delivery only from live evidence.
 
 Branch protection is not a Kit setup/start prerequisite. If GitHub reports
 **unprotected main**, report that observed branch state; it is not an access error.
@@ -473,8 +453,7 @@ prerequisites pass, use normal setup/start, including preparation and the first 
 Do not add a protection probe to that path.
 
 Failure of authentication, repository access or deployment ownership validation is
-still a specific refusal, not a protection-only diagnostic. Preserve every other
-startup gate, explicit pause and human-only requirement. Prepare-only and dry-run
+still a specific refusal, not a protection-only diagnostic. Prepare-only and dry-run
 never activate. Existing protections, CI, review and merge requirements remain
 unchanged; never bypass them or use an administrator override. Startup is neither
 successful merge nor live qualification. See [protection diagnostics](../../../docs/github-native.md#read-protection-diagnostics-safely).
@@ -489,39 +468,35 @@ Use disposable fake hosts only; do not contact the named repositories' real host
   that authorized implicit-target start will prepare, validate, then activate in one
   invocation. Offer `start --dry-run` only as a write-free preview, with staged checks
   deferred. Scheduler activity and rule details are unknown; the branch response is
-  separately unprotected. Cite the applicable cutover checklist and any found record;
-  if none was found, say so. Name the unresolved ownership/pause/qualification checks
-  applicable to this stage, not a blanket missing approval. Next: restore readable
-  scheduler evidence and resolve the actual ownership/pause checks. The unprotected
-  branch and protection-only 403 are informational, not reasons to hold activation.
-  Hold only on the other unresolved applicable checks; no redundant setup or consent loop.
+  separately unprotected. If a required scheduler read fails, verify the systemd
+  user session. The unprotected branch and protection-only 403 are informational,
+  not reasons to hold activation. No redundant setup or consent loop.
 - **fecim-lattice-tools:** given a previously prepared Pi-Bolt slot with saved
   `openai-codex/gpt-6.2-sol`, validated config and no enabled timers or inference:
   preparation is not activation or live qualification, and this is not evidence of
   model failure. New public `/orbi setup` expresses scheduling intent and delegates
   to existing-target `start`, skips preparation and retains that exact saved selection;
-  omit provider/model/harness selectors. Once applicable pause/cutover/CI/human
-  gates are evidenced, invoke once without another approval prompt. If a gate is
-  missing, name that blocker and the read-only check or owner repair; do not silently
-  prepare or claim started. `/orbi setup --dry-run` previews this start route;
+  omit provider/model/harness selectors. Once technical checks pass, invoke once.
+  If a check fails, name the blocker and the read-only check or repair; do not
+  silently prepare or claim started. `/orbi setup --dry-run` previews this start route;
   `/orbi setup --prepare-only --dry-run` previews non-activating preparation instead.
   This walkthrough does not inspect or change the reported deployment.
 - **SalmaListApi:** given a setup preview returning `setup_busy`, one active/owned timer
   and zero observed running services: report “scheduling is active, but no worker was
   observed within the scan.” Use `status`, not setup, to inspect; this is not stopped or
   a request to install extra instances. A valid existing start skips setup and retains
-  saved selection, subject to its existing authority/gates. Offer stop/drain only if
+  saved selection after technical checks. Offer stop/drain only if
   deliberately re-preparing or pausing, preserve workers, and verify inactivity before
   setup. Missing reads or out-of-scan activity remain unknown, not zero.
 
 ## Start
 
 Public `/orbi setup` delegates to this exact helper start path, not another
-activation implementation. `--prepare-only` deliberately opts out. Gate failure
-holds activation with the specific blocker/repair, never a silent preparation-only
-success. Resolved, already-authorized activation needs no second approval.
+activation implementation. `--prepare-only` deliberately opts out. A failed
+technical check holds activation with a specific blocker and repair, never a silent
+preparation-only success. The explicit command is the authorization.
 
-After explicit scheduling authority and resolved gates, a first deployment can use:
+For a first deployment, use the applicable command:
 
 ```text
 /orbi status
@@ -539,10 +514,6 @@ selectors on start. Replace placeholder IDs/paths with published catalog evidenc
 optional `--pi-thinking LEVEL` must also match supported reasoning. Planned,
 prepared, activated and live-qualified are distinct; stop reports drain, not a kill.
 Use context-free `/orbi help` for the loaded helper path, defaults and recovery table.
-
-`start` requires an owner scheduling request. Existing explicit pauses, cutover
-requirements and human-only gates must first be resolved for that operation. The
-skill and offline checks do not release the paused/live-unqualified contract.
 
 If no deployment exists and no explicit `--config` was supplied, start composes the
 same non-activating new-deployment preparation as `setup`: installed Pi-Bolt by
@@ -729,8 +700,7 @@ owner before any retry, preserving both candidates. Follow
 invoke it, write labels, launch workers, repair branches or settle planning
 choices. Detail gaps mean the diagnosis may be incomplete, not permission to
 retry. An idle service snapshot plus ready issues calls for inspecting scheduler
-and ownership evidence and existing pauses; only separately authorized `start`
-can activate scheduling. No status result releases a live gate.
+and ownership evidence, not automatic activation. Status grants no activation authority.
 
 `deployment.state=transitional` means activating/reloading services without an
 observed active service. It is neither verified idle nor issue pickup. Existing
@@ -1019,4 +989,4 @@ polling and validation/paraphrase passes. This is an instruction/dispatch
 contract with synthetic boundary evidence, **not a measured live round-trip or
 latency saving**. Live qualification must record actual provider requests,
 host tools, prompt bytes, mandatory continuations and worker inference separately
-for the same authorized success/failure fixtures, without releasing live gates.
+for the same authorized success/failure fixtures.

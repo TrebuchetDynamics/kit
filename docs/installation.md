@@ -2,7 +2,7 @@
 
 > **GitHub-native delivery:** GitHub Issues own executable work; Orbi owns delivery.
 > Preserve existing task data, attempts, worktrees and
-> recovery evidence. Orbi remains paused and live-unqualified; see
+> recovery evidence. For activation and live qualification, see
 > [setup and migration](github-native.md).
 
 Source: [setup orchestrator](../scripts/setup_bundle.py), [source installer](../install-plugins.sh),
@@ -66,8 +66,8 @@ not promise a single immutable revision across nested updates. Installer output
 owns component outcomes; nonzero/partial failure propagates and successful host
 items remain installed, not rolled back. Repair the reported cause and retry only
 compatible selected failures. Reload/reopen the current agent session for discovery;
-package refresh does not reload a running agent. Installation, activation and live
-qualification remain separate, and Orbi stays paused.
+package refresh does not reload a running agent. The installer can activate Orbi
+when that component is selected; it does not qualify live delivery.
 
 ## Full suite from a checkout
 
@@ -1008,5 +1008,4 @@ original-task recovery.
 
 Kit does not schedule or revive the removed executor. Preserve existing per-profile
 jobs and their paused state. Native Hermes maintenance helpers do not authorize
-new delivery services or imply a live repair completed. Orbi remains paused until
-separately qualified under [the cutover gates](github-native.md).
+new delivery services or imply a live repair completed.

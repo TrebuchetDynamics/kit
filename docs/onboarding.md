@@ -112,8 +112,8 @@ acceptance, checks and verified native dependencies. Inspect issue bodies and
 readiness directly. For a no-dispatch exercise, request `ai-planning` explicitly;
 publication may otherwise be consumed by an existing deployment. The final response
 names changed paths, issue URLs and observed readiness, not presumed execution.
-Retained fix/apply modes keep their own scope and PR/review gates. Orbi remains paused
-and live-unqualified; this exercise does not enable it.
+Retained fix/apply modes keep their own scope and PR/review gates. This exercise does not
+activate Orbi or qualify live delivery.
 
 These are operator-run live checks, not recorded model or Telegram test results.
 

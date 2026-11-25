@@ -1326,6 +1326,7 @@ class FirstDeploymentTests(unittest.TestCase):
         self.assertNotEqual(code, 0, (doc, err))
         self.assertEqual(doc['action'], 'start')
         self.assertEqual(doc['error']['code'], 'validation_failed')
+        self.assertIn('orbi check failed with exit 1', doc['error']['message'])
         self.assertTrue(doc['error']['mutated'])
         self.assertEqual(doc['preparation']['state'], 'failed')
         self.assertEqual(doc['preparation']['steps'][-1]['step'], 'validate_non_activating')
@@ -5522,6 +5523,9 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assertEqual(code, 0, (doc, err))
         self.assertEqual(doc['activation'], 'held')
         self.assertEqual(doc['engine_update'], 'updated')
+        self.assertEqual(shlex.split(doc['next_action']),
+                         ['To', 'activate', 'scheduling,', 'run', '/orbi', 'start',
+                          '--repo-dir', str(self.h.repo), '--config', str(self.h.deploy / 'orbi.toml')])
         self.assert_safe_trace()
 
     def test_explicit_stop_retry_guidance_preserves_opt_out(self):
@@ -5923,7 +5927,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertLess(text.getvalue().index('Quickstart:'), text.getvalue().index('Options:'))
         self.assertLess(text.getvalue().index('Examples:'), text.getvalue().index('Limits and next steps:'))
         for term in ('Pi-Bolt', '--harness pi', 'configured slots', 'running-process',
-                     'live-qualified', 'explicit pauses', 'Loaded helper:',
+                     'live-qualified', 'authorize activation', 'Loaded helper:',
                      'no explicit --config', 'one invocation', 'no worker was observed',
                      'outside the scan is unknown'):
             self.assertIn(term, text.getvalue())
@@ -5932,12 +5936,18 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertIn('/orbi setup --prepare-only', text.getvalue())
         self.assertIn('setup --prepare-only --resume-setup', doc['recovery']['partial_setup'])
         activation = doc['recovery']['activation']
-        for term in ('specific missing evidence', 'checklist', 'existing record',
-                     'no record was found', 'unprotected main', 'HTTP 403',
-                     'read-only', 'not approval', 'settled owner intent',
+        for term in ('failed technical check', 'read-only check or exact repair',
+                     'unprotected main', 'HTTP 403',
                      'informational, not scheduling blockers', 'PR-only',
-                     'repository access', 'ownership', 'explicit pauses'):
+                     'repository access', 'ownership', 'live qualification'):
             self.assertIn(term, activation)
+        for term in ('/orbi start', 'plain /orbi update', 'install.sh with Orbi selected',
+                     'verified unit and file ownership', 'a validated release pin',
+                     'a passing orbi check'):
+            self.assertIn(term, ' '.join(doc['quickstart']))
+        for term in ('cutover checklist', 'resolved gates', 'existing record',
+                     'human-only gates', 'resolved explicit pauses'):
+            self.assertNotIn(term, text.getvalue())
         busy = doc['recovery']['setup_busy']
         for term in ('observed timer/worker state', 'status', 'only when',
                      're-preparing or pausing'):
@@ -6042,7 +6052,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                      '`setup --prepare-only --resume-setup`',
                      'Remove only `--prepare-only`',
                      'Do not silently fall back to preparation',
-                     'explicit invocation expresses scheduling intent'):
+                     'Public `setup` has the same authority as `start`'):
             self.assertIn(rule, skill)
         for path in ('adapters/skills/orbi/SKILL.md',):
             adapter = (ROOT / path).read_text()
@@ -6171,7 +6181,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
         self.assertIn("helper's `help`", skill)
         self.assertIn('observed output', skill)
         self.assertIn('macOS', skill)
-        self.assertIn('explicit pauses, cutover requirements and human-only gates', skill)
+        self.assertIn('do not ask for a cutover record or separate approval', ' '.join(skill.split()))
         router = (ROOT / 'skills/ask-kit/SKILL.md').read_text()
         self.assertIn('`/orbi`', router)
         reference = (ROOT / 'skills/orbi/references/lifecycle.md').read_text()

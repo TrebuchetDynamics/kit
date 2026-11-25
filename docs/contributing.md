@@ -16,7 +16,7 @@ local task records are preserved migration evidence, not a second queue.
 
 Select work within accepted scope, establish actual workspace/process ownership
 and preserve unrelated changes. Use an isolated worktree when concurrent writing
-needs it. Retained fix/apply modes keep their own scope and ownership/review/PR gates. Orbi remains paused pending live qualification.
+needs it. Retained fix/apply modes keep their own scope and ownership/review/PR gates.
 
 Make a scoped change, run affected acceptance checks and independent review, and
 commit only attributable verified work. Use the issue/PR's actual evidence for

@@ -15,12 +15,12 @@ gates. This skill is a lifecycle client with read-only local host inventory, not
 
 | Owner intent / observed state | Meaning and next safe action |
 | --- | --- |
-| Setup (default) or start; genuinely absent deployment, no explicit config | Once scheduling authority and applicable gates are resolved, `start` prepares, validates non-activating, then activates in **one invocation**. No separate setup or repeated approval is needed. |
+| Setup (default) or start; genuinely absent deployment, no explicit config | `start` prepares, validates non-activating, then activates in **one invocation** if technical checks pass. No separate setup or repeated approval is needed. |
 | Preview setup/default start | `setup --dry-run` maps to `start --dry-run`: write-free preview of preparation then activation. Staging-dependent validation and activation checks remain deferred; success is not authorization. |
 | Setup (default) or start; valid existing target | Skip setup; retain saved provider/harness/pin and omit bootstrap selectors. A missing explicit config, partial or foreign target is **not absent**: inspect and repair deliberately. |
 | Enabled/active owned timer; no observed running workers | Scheduling is active, but no worker was observed. Do not call it stopped or say setup is needed. Missing evidence or activity outside the scan is unknown, not zero. |
 | `setup_busy` | Cite observed timer/worker state and use `status` to inspect. Offer authorized stop/drain only when deliberately re-preparing or pausing, not just to make a preview pass. |
-| Setup (default) or start; gate evidence missing/unknown | Preserve the settled owner request. Name the exact missing check, applicable checklist or located record (or say no record was found), and the next safe read-only evidence check or owner action. Do not request a generic cutover record or invent approval. |
+| Activation check fails or cannot be verified | Name the failed technical check and give the next read-only check or exact repair. Do not report a prepared deployment as started. |
 
 ## Common path
 
@@ -68,32 +68,27 @@ concrete unmet need, not a fixed sequence of model turns.
    ambiguous, ask one focused question before mutation. Never run bare `orbi`
    (the Runner's one-tick entry), guess a typo alias or silently select an action.
 2. **Authorize.** Preserve read-only/no-write restrictions and literal `--dry-run`.
-   Preparation, activation and live delivery are distinct. Orbi remains paused
-   and live-unqualified: default `setup` and `start` need an owner scheduling request
-   and resolved explicit pauses, cutover requirements and human-only gates for that deployment.
-   Public setup starts by default: explicit invocation expresses scheduling intent,
-   not a waiver of deployment gates. `setup --prepare-only` prepares without activation.
-   Once authorized activation gates are evidenced, do not ask for a second approval.
-   Missing, unknown or failed start gates hold activation. Use the
-   [activation evidence guidance](references/lifecycle.md#activation-evidence)
-   and [offline examples](references/lifecycle.md#offline-guidance-examples) to name the
-   precise blocker and repair/read-only next action. Evidence collection is read-only;
-   a preview does not clear a pause. Do not silently fall back to preparation or
-   report a prepared run as started.
+   Explicit `/orbi start`, plain `/orbi update`, and `install.sh` with Orbi selected
+   authorize activation. Require verified unit and file ownership, a validated
+   release pin and a passing `orbi check`; do not ask for a cutover record or
+   separate approval. Public `setup` has the same authority as `start` because it
+   maps to it. `setup --prepare-only` and dry-run never activate.
+   Use [activation evidence](references/lifecycle.md#activation-evidence) for
+   the existing-target check and [offline examples](references/lifecycle.md#offline-guidance-examples)
+   for precise refusals. Do not silently fall back to preparation. Activation does
+   not qualify live delivery.
 
    Branch protection is not a Kit setup/start prerequisite: known unprotected branches
    and protection/rules HTTP 403 are informational, not scheduling blockers.
    A protection-specific 403 leaves details unknown, not absent rules or failed
    repository access. Do not require PR-only mode, special opt-in, a protection change,
    paid GitHub plan, engine release/proof or second approval on that basis.
-   Authentication, repository access, ownership and all other applicable gates still apply.
-   Plain `update` requests maintenance and eligible scheduling after engine validation,
-   without another confirmation. Preserve independent pauses, cutover and human-only
-   gates before invoking it; when unresolved, name the exact missing evidence instead
-   of invoking an activating update. `update --stop` is the compatibility opt-out:
-   pause/update and leave stopped. Workers finish naturally.
+   Authentication, repository access, ownership and other technical checks still apply.
+   Plain `update` requests maintenance and restoration of eligible scheduling after
+   engine validation. `update --stop` is the compatibility opt-out: pause/update and
+   leave stopped. Workers finish naturally.
    Stop disables only owned timers; `draining` is not `stopped`. Never kill/restart workers.
-   Other mutations likewise require accepted scope. Installation and offline checks grant none.
+   Other mutations require their own accepted scope. Offline checks grant none.
 3. **Invoke once.** Preserve literal argument values, quoting, paths, provider/model
    IDs, `--config`, `--repo-dir` and all restrictions. Build argv, never interpolate
    user text as shell code; shell-only hosts must safely quote every argv element.
@@ -210,7 +205,7 @@ For host/fixture measurement limits, use the reference's
 | "One more model should route or rephrase this." | Interpret once; the helper owns checks, and its safe receipt is the answer. Host-mandated continuations only relay it. |
 | "I remember help, so I can compose the table." | Run the helper's `help`; report observed output. |
 | "Start needs setup first; update needs a separate stop command." | Absent start composes preparation internally. Update pauses owned timers by default and defers until drained; it never authorizes service interruption or restart. |
-| "Passing checks releases the pause." | Owner scheduling authority and live gates remain separate. |
+| "A passing preview authorizes activation." | Only an explicit activating command authorizes it; previews perform no activation. |
 | "The command failed, so nothing changed and retry is safe." | Preserve mutation/activation evidence and repair deliberately; failure can be partially applied. |
 | "The queue is empty because the status read failed." | Failed reads are unavailable; partial reads disclose gaps. Zero verified ready is not zero pending. |
 | "Activating plus an open PR proves progress." | Activating is transitional, not pickup. An open PR is not successful delivery; preserve existing ownership and recovery inputs. |
@@ -221,7 +216,7 @@ For host/fixture measurement limits, use the reference's
 - A guessed alias, shell interpolation, changed literal selectors or removed dry-run.
 - Prepare-only/dry-run enables timers, status writes, or stop/update kills/restarts a service.
 - Update syncs before fresh idle/no-pending-start evidence, activates before engine
-  validation or despite an independent pause, or reports stopped from missing evidence.
+  validation or with unverified scheduler eligibility, or reports stopped from missing evidence.
 - Missing ownership/authorization, silently changed pin/provider/harness/origin,
   or an automatic install/login/repair/retry after a refusal.
 - An empty queue or stopped state inferred from unavailable evidence, or secrets

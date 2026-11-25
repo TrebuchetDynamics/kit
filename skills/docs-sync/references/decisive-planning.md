@@ -13,4 +13,4 @@ never invent completion or transfer a historical claim to a new worker.
 
 The [prior contract](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/skills/docs-sync/references/decisive-planning.md)
 retains format-specific requirements and unresolved proof for migration. It is not
-a supported command recipe. Orbi remains paused and live-unqualified.
+a supported command recipe or proof of live delivery.

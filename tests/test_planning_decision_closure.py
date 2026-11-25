@@ -147,7 +147,7 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                      'issue links', 'ready/waiting/proposed', 'native dependencies',
                      'actual checks and unmet gates', 'generic possible consumer',
                      'observed deployment', 'pickup or timers require current evidence',
-                     'Kit remains paused and live-unqualified'):
+                     'Publication does not activate Orbi or qualify live delivery'):
             with self.subTest(rule=rule):
                 self.assertIn(rule, receipt)
 
