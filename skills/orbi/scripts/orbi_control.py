@@ -2127,7 +2127,8 @@ def require_setup_transport(repo, target):
 
 
 def require_setup_idle(ctx, target, *, action='setup'):
-    snapshot = scheduler_snapshot(ctx, target)
+    snapshot = scheduler_snapshot(
+        ctx, target, indices=range(1, max(MAX_INSTANCES, target.max_concurrency) + 1))
     if snapshot.get('state') != 'ok':
         raise ControlError('scheduler_unavailable', f'{action} cannot verify inactive/no-worker evidence',
                            fix='restore read-only systemd user-session evidence; do not repair while '
@@ -2710,7 +2711,7 @@ def disable_owned_timers(ctx, target, snapshot, disabled, steps, current):
 
 def pending_services(ctx, target):
     pending = []
-    for index in range(1, MAX_INSTANCES + 1):
+    for index in range(1, max(MAX_INSTANCES, target.max_concurrency) + 1):
         service = f'{target.prefix}@{index}.service'
         state = systemctl_state(ctx, service)
         if state not in INACTIVE_STATES:
@@ -2728,7 +2729,8 @@ def command_stop(ctx, args):
         target = select_target(ctx, repo, args.config, require=True)
         validate_target(target, repo)
         require_unit_ownership(ctx, target)
-        snapshot = scheduler_snapshot(ctx, target)
+        snapshot = scheduler_snapshot(
+            ctx, target, indices=range(1, max(MAX_INSTANCES, target.max_concurrency) + 1))
         if snapshot['state'] != 'ok':
             raise ControlError('scheduler_unavailable',
                                f"cannot read the target scheduler: {snapshot.get('reason')}",
@@ -2756,7 +2758,8 @@ def command_stop(ctx, args):
             validate_target(target, repo)
             require_unit_ownership(ctx, target)
             current = {'step': 'observe_scheduler', 'mutation': 'none'}
-            snapshot = scheduler_snapshot(ctx, target)
+            snapshot = scheduler_snapshot(
+                ctx, target, indices=range(1, max(MAX_INSTANCES, target.max_concurrency) + 1))
             if snapshot['state'] != 'ok':
                 raise ControlError('scheduler_unavailable',
                                    f"cannot read the target scheduler: {snapshot.get('reason')}",

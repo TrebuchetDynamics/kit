@@ -647,9 +647,10 @@ live qualification.
 
 ## Stop, status and drain
 
-`stop` enumerates this deployment's owned timer instances, including observed
-out-of-config instances within the five-instance observation bound, and runs only
-`systemctl --user disable --now <timer>`. It never runs `stop`, `kill` or
+`stop` enumerates this deployment's owned timer instances across slots
+1 through `max(5, max_concurrency)`, including observed out-of-config instances
+within that bound, and runs only `systemctl --user disable --now <timer>`.
+It never runs `stop`, `kill` or
 `restart` on a service. A pre-existing invocation may finish; later issue
 phases may wait for a start. Re-read the service states and report `draining`
 while any is active or activating, `stopped` only when all service states were
