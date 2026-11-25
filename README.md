@@ -205,13 +205,13 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `setup` | Start by default: map to `start`, preparing/validating if absent, then activate only with resolved gates. Explicit invocation expresses scheduling intent. |
 | `setup --prepare-only` | Prepare source/configuration without scheduling or timer activation (direct helper `setup`). |
 | `start` | Prepare if absent, then activate scheduling only with explicit authorization and resolved pauses, cutover and human-only gates. |
-| `update` | Pause owned timers, defer while workers finish, then advance to the newest official release and leave scheduling stopped. `update --stop` is a compatible spelling; unit refresh waits for the next authorized start. It is not `/update-kit`. |
+| `update` | Pause owned timers, defer while workers finish, then validate the newest official release and start scheduling, even after an earlier `stop`. Use `update --stop` to update and leave scheduling stopped. It is not `/update-kit`. |
 | `stop` | Disable owned timers without killing active workers; report draining while they finish. |
 
 Linux supports lifecycle changes. macOS supports status, version and help only.
 Never run bare `orbi` to inspect: it runs a Runner tick, not status.
 
-Pause scheduling and update in one command (no extra stop command or prompt):
+Update the release and start scheduling in one command (no separate stop or start):
 
 ```text
 /orbi update --dry-run
@@ -220,8 +220,8 @@ Pause scheduling and update in one command (no extra stop command or prompt):
 
 Active workers finish naturally. A `draining` receipt names pending units and the
 exact command to retry after drain; no background update or restart follows.
-Explicit `--stop` remains compatible with the same behavior. Neither spelling enables
-timers, interrupts services or runs activating unit installation.
+Plain update enables configured timers only after validation and existing start
+checks. `--stop` skips activating unit refresh. Neither mode interrupts workers.
 
 The upstream CLI remains available for diagnostics:
 

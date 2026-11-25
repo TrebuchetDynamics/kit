@@ -260,12 +260,13 @@ for serialization, legacy/unknown reporting and repair boundaries. Native Pi-Bol
 extensions, streaming/recovery and installed worker/reviewer compatibility remain
 live-unverified; static routing does not qualify delivery or release pauses.
 
-`update` is the deliberate release channel: it pauses owned timers under lock by
-default, defers while workers or pending starts remain with an exact plain resume
-command, then writes upstream's `release` track, lets `sync-engine-source` resolve
-the newest official semver release and locks it as `sha:<commit>`. Explicit
-`update --stop` is compatible. Both validate non-activating and defer unit refresh
-to the next authorized start, never enabling timers or interrupting services.
+`update` pauses owned timers under lock and defers while workers or pending starts
+remain, returning the exact command to retry. Once idle, it writes upstream's
+`release` track, lets `sync-engine-source` resolve the newest official semver release
+and locks it as `sha:<commit>`. After validation, plain update starts configured
+scheduling through the existing start checks, even after a prior `/orbi stop`.
+Use `update --stop` to leave scheduling stopped and defer activating unit refresh.
+Neither mode interrupts workers.
 Tracked checkout changes refuse as `source_dirty` before pausing. Uncertain
 ownership/scheduler evidence holds; partial failures retain confirmed disables and
 failed steps without claiming stopped. Update preserves origin, provider, harness

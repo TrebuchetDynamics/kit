@@ -87,11 +87,10 @@ concrete unmet need, not a fixed sequence of model turns.
    repository access. Do not require PR-only mode, special opt-in, a protection change,
    paid GitHub plan, engine release/proof or second approval on that basis.
    Authentication, repository access, ownership and all other applicable gates still apply.
-   Plain `update` requests maintenance and eligible scheduling after engine validation,
-   without another confirmation. Preserve independent pauses, cutover and human-only
-   gates before invoking it; when unresolved, name the exact missing evidence instead
-   of invoking an activating update. `update --stop` is the compatibility opt-out:
-   pause/update and leave stopped. Workers finish naturally.
+   Plain `update` requests scheduling after engine validation, even after an earlier
+   `stop`. Resolve separate authorization, cutover and human-only gates before
+   invoking it; when unresolved, name the exact missing evidence. Use `update --stop`
+   to update and leave scheduling stopped. Workers finish naturally.
    Stop disables only owned timers; `draining` is not `stopped`. Never kill/restart workers.
    Other mutations likewise require accepted scope. Installation and offline checks grant none.
 3. **Invoke once.** Preserve literal argument values, quoting, paths, provider/model
@@ -221,7 +220,7 @@ For host/fixture measurement limits, use the reference's
 - A guessed alias, shell interpolation, changed literal selectors or removed dry-run.
 - Prepare-only/dry-run enables timers, status writes, or stop/update kills/restarts a service.
 - Update syncs before fresh idle/no-pending-start evidence, activates before engine
-  validation or despite an independent pause, or reports stopped from missing evidence.
+  validation or despite an unresolved start gate, or reports stopped from missing evidence.
 - Missing ownership/authorization, silently changed pin/provider/harness/origin,
   or an automatic install/login/repair/retry after a refusal.
 - An empty queue or stopped state inferred from unavailable evidence, or secrets
