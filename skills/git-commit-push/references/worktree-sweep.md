@@ -34,10 +34,12 @@ references; reading shared delivery rules does not authorize a sweep.
 
 ## Procedure
 
-1. **Inventory read-only.** Run `worktree_sweep.py <repo>` and read the table. It lists
-   every registered worktree, its branch, how far ahead of the base it is, how many dirty
-   paths it holds and how long its Git metadata has been quiet.
-   **Pass when:** every worktree has a state and no file has changed.
+1. **Inventory read-only.** Pass the canonical checkout (the first worktree in
+   `git worktree list --porcelain`) as `<repo>` to `worktree_sweep.py <repo>`.
+   The sweep refuses linked checkouts and names the canonical path to use instead.
+   The table lists each linked worktree, its branch, how far ahead of the base it is,
+   how many dirty paths it holds and how long its Git metadata has been quiet.
+   **Pass when:** each linked worktree has a state and no file has changed.
 2. **Triage.** Count the states. Recent activity (default 5 minutes) means another
    session may still be writing, so the sweep reports it as `skipped` instead of merging;
    verify actual ownership before applying; age alone proves no release. A dirty
