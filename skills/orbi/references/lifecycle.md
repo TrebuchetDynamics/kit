@@ -107,6 +107,14 @@ unavailable.
   `sha:ce97e015ca433a9312e5bdf69353be58ab394fd9`. Setup never upgrades it; only
   the deliberate `update` below advances a deployment past that pin.
 
+## Suite installer refresh
+
+Selecting Orbi in `install.sh` is a separate, host-wide Linux maintenance action,
+not repeated `/orbi update`. It stops through the verified systemd managers without
+a natural drain, then uses the same release sync/pin/check transaction. The explicit
+installation command authorizes restarting verified scheduling, even if paused.
+`--skip orbi` leaves the fleet alone. See [installer coverage, receipt and recovery](../../../docs/installation.md#orbi-cli).
+
 ## Release update
 
 ```text
