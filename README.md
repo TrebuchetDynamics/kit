@@ -343,9 +343,12 @@ See [Orbi installation and deployment refresh](docs/installation.md#orbi-cli).
 Pi-Bolt is included by default; use `./install.sh --only pi-bolt` or `--skip pi-bolt`.
 It installs the upstream native Pi build through the
 [official installer](https://pi-bolt.opensec.in/install.sh) and links `pi-bolt` in the
-Kit binary directory. Every install and `./install.sh update` refresh it with the
-upstream installer rather than keeping an existing build. The upstream run is
-non-interactive and installs no optional extensions. See [Pi-Bolt installation](docs/installation.md#pi-bolt-native-executable).
+Kit binary directory. Every install and `./install.sh update` checks upstream release
+metadata first: a healthy build matching the requested version, platform/variant,
+install root, channel and selected link is reported current without downloading
+or reinstalling the native payload. A failed release check preserves the installation
+and reports a retry action; absent, stale or unproven builds use the official
+installer. That run is non-interactive and installs no optional extensions. See [Pi-Bolt installation](docs/installation.md#pi-bolt-native-executable).
 
 Every install refreshes the installed Pi package with `pi-bolt update`, and so does
 `./install.sh update`: a complete-looking skill folder set is not proof of current

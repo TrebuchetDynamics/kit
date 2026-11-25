@@ -3585,7 +3585,9 @@ class InstallerFleetTests(unittest.TestCase):
         service.write_text(f'[Service]\nWorkingDirectory={target}\n'
                            f'Environment="ORBI_CONFIG={config}"\nExecStart={bootstrap}\n')
         timer.write_text('[Timer]\nUnit=project-delivery@%i.service\n[Install]\nWantedBy=timers.target\n')
-        for path in (service, timer):
+        dormant = self.h.unit_dir / 'dormant@.timer'
+        dormant.write_text('[Timer]\nUnit=project-delivery@1.service\n[Install]\nWantedBy=timers.target\n')
+        for path in (service, timer, dormant):
             path.chmod(0o644)
         properties = dict(LoadState='loaded', ActiveState='inactive', NeedDaemonReload='no',
                           CanStart='yes', CanStop='yes', KillMode='control-group', SendSIGKILL='yes',
@@ -3599,7 +3601,7 @@ class InstallerFleetTests(unittest.TestCase):
         rules = [
             {'tool': 'systemctl', 'argv_contains': ['--user', 'list-units'], 'stdout': ''},
             {'tool': 'systemctl', 'argv_contains': ['--user', 'list-unit-files'],
-             'stdout': f'{service.name} static -\n{timer.name} disabled enabled\n'},
+             'stdout': f'{service.name} static -\n{timer.name} disabled enabled\n{dormant.name} disabled -\n'},
             {'tool': 'systemctl', 'argv_contains': ['--user', 'show', 'UnitPath'], 'stdout': str(self.h.unit_dir)},
         ]
         for index in (1, 2):
@@ -3613,6 +3615,7 @@ class InstallerFleetTests(unittest.TestCase):
         units, targets, jobs = helper.fleet_inventory(ctx, [manager])
         self.assertEqual(list(targets), [config])
         self.assertEqual(jobs, {manager: {}})
+        self.assertFalse(any(call['argv'][-1].startswith('dormant@') for call in self.h.calls()))
         self.assertEqual({unit.name: unit.triggers for unit in units}, {
             'project-delivery@1.service': '', 'project-delivery@2.service': '',
             'project-schedule@1.timer': 'project-delivery@1.service',

@@ -171,6 +171,13 @@ import os, pathlib, shutil, stat, sys
 args = sys.argv[1:]
 with open(os.environ['FAKE_LOG'], 'a') as log:
     log.write('curl ' + ' '.join(args) + '\\n')
+if args[-1].startswith('https://api.github.com/repos/opensec-git/Pi-Bolt/releases'):
+    if os.environ.get('FAKE_RELEASE_FAIL'):
+        print('release API unavailable', file=sys.stderr)
+        raise SystemExit(22)
+    dest = pathlib.Path(args[args.index('--output') + 1])
+    dest.write_text((pathlib.Path(os.environ['FAKE_HOME']) / 'release.json').read_text())
+    raise SystemExit(0)
 if args[-1] != 'https://pi-bolt.opensec.in/install.sh':
     raise SystemExit('unexpected network request (stock Pi downloads forbidden)')
 dest = pathlib.Path(args[args.index('--output') + 1])
@@ -180,6 +187,7 @@ shutil.copyfile(pathlib.Path(os.environ['FAKE_HOME']) / 'upstream-pi-bolt-instal
 if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
     dest.write_bytes(b'')
 ''')
+        (self.home / 'release.json').write_text(json.dumps({'tag_name': 'bolt-v1.4.0', 'draft': False, 'prerelease': False}))
         self.fake('systemctl', LOGGING)
         self.fake('getent', '#!/bin/sh\nexit 0\n')
         self.claude_host()
@@ -1482,7 +1490,8 @@ esac
                 fragment.chmod(0o644)
                 states[manager][name] = dict(Id=name, Names=name, LoadState='loaded', FragmentPath=str(fragment),
                     NeedDaemonReload='no', WorkingDirectory=str(deploy) if kind == 'service' else '',
-                    ActiveState='active' if active else 'inactive', User=str(os.getuid()) if manager == '--system' else '',
+                    ActiveState='active' if active else 'inactive', SubState='waiting' if unit and active else 'dead',
+                    User=str(os.getuid()) if manager == '--system' else '',
                     DynamicUser='no', ExecStart=f'{{ path={bootstrap} ; argv[]={bootstrap} --config {config} ; }}' if not unit else '',
                     Unit=unit, Triggers=unit, TriggeredBy=f'{slug}-{slot}.timer' if slot in {'worker', 'queued'} and kind == 'service' else '',
                     UnitFileState=('enabled' if active else 'disabled') if unit else 'static',
@@ -1552,6 +1561,9 @@ elif verb in ('disable', 'stop', 'start', 'enable'):
         sys.exit(1)
     if verb in ('stop', 'start'):
         unit['ActiveState'] = 'inactive' if verb == 'stop' or unit.get('Type') == 'oneshot' else 'active'
+        if args[-1].endswith('.timer'):
+            unit['SubState'] = ('dead' if verb == 'stop' else
+                                'elapsed' if os.environ.get('ELAPSED_TIMER') == args[-1] else 'waiting')
     if verb == 'start':
         unit['ExecMainStartTimestampMonotonic'] = '2'
     if verb in ('enable', 'disable'):
@@ -1628,6 +1640,44 @@ else:
         self.assertEqual(self.calls('orbi sync-engine-source'), [])
         self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
                              for verb in ('stop', 'disable', 'cancel', 'start', 'enable')))
+
+    def test_orbi_holds_before_downtime_if_pin_rewrite_would_change_a_table(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        config = self.home / 'working/orbi.toml'
+        text = config.read_text().replace('"sha:' + 'a' * 40 + '"', "'sha:" + 'a' * 40 + "'")
+        text += '\n[unrelated]\nengine_source_track = "main"\n'
+        config.write_text(text)
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'{config}: engine_source_track is not writable at the top level', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(config.read_text(), text)
+        self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_for_configured_deployment_without_a_verified_unit(self):
+        config = self.home / '.local/share/orphan/orbi.toml'
+        config.parent.mkdir(parents=True)
+        config.write_text('source_repos = ["example/orphan"]\n')
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'{config}: configured deployment has no verified service binding', result.stdout)
+        self.assertEqual(self.calls('orbi'), [])
+        self.assertEqual(self.calls('uv'), [])
+
+    def test_orbi_reports_active_but_elapsed_timer_as_incomplete(self):
+        receipt, _, _ = self.orbi_fleet_fixture()
+        result = self.install('--only', 'orbi', env={
+            'KIT_INSTALL_REPORT': str(receipt), 'ELAPSED_TIMER': 'working-worker.timer',
+        })
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        fleet = next(r['orbi_fleet'] for r in map(json.loads, receipt.read_text().splitlines()) if r['item'] == 'orbi')
+        self.assertEqual(fleet['status'], 'incomplete')
+        paused, working = fleet['deployments']
+        self.assertEqual((paused['status'], working['status']), ('started', 'failed'))
+        self.assertEqual(working['failed_step'], 'verify_scheduling')
+        self.assertTrue(any(s['step'] == 'verify_service_start' for s in working['steps']))
+        self.assertIn('timer not confirmed enabled and scheduling', result.stdout)
 
     def test_orbi_restores_a_paused_standalone_persistent_worker(self):
         _, state, _ = self.orbi_fleet_fixture()
@@ -1831,17 +1881,268 @@ chmod 755 "$UV_TOOL_BIN_DIR/orbi"
         self.assertFalse(list(self.home.glob('kit-pi-bolt-*')))
         self.assertFalse((self.home / '.profile').exists())
 
-    def test_pi_bolt_refreshes_on_install_and_on_update(self):
-        first = self.install('--only', 'pi-bolt')
-        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
-        self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
-        second = self.install('--only', 'pi-bolt')
-        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertNotIn('kept', second.stdout)
-        self.assertEqual(len(self.calls('pi-bolt-installer')), 2)  # install refreshes too
-        updated = self.install('update', '--only', 'pi-bolt')
-        self.assertEqual(updated.returncode, 0, updated.stdout + updated.stderr)
-        self.assertEqual(len(self.calls('pi-bolt-installer')), 3)
+    def native_bolt(self, version='1.4.0', variant='x64', root=None, system='linux'):
+        """Layout/banner from upstream build-pi.sh and version-fast-path.ts."""
+        root = root or self.home / '.pi-bolt'
+        build = root / f'pi-bolt-{system}-{variant}'
+        build.mkdir(parents=True, exist_ok=True)
+        native_platform = f'{system}-{"arm64" if variant.startswith("arm64") else "x64"}'
+        helper = 'darwin-platform.node' if system == 'darwin' else 'linux-platform-x11.node'
+        banner = f'0.67.1 (Pi-Bolt {version}, {system}-{variant}, JIT {"on" if variant.endswith("-jit") else "off"})'
+        payload = PI.replace('echo 1.4.0', f'echo "{banner}"')
+        (build / 'pi').write_text(payload)
+        (build / 'pi').chmod(0o755)
+        (build / 'pi-bolt.txt').write_text(f'Pi-Bolt {version} (Pi 0.67.1), {system}-{variant}, JIT {"on" if variant.endswith("-jit") else "off"}, built 2026-11-24\n')
+        (build / 'package.json').write_text('{"version": "0.67.1"}')
+        for name in ('README.md', 'photon_rs_bg.wasm', 'export-html/template.html',
+                     'export-html/template.css', 'export-html/template.js',
+                     'export-html/vendor/highlight.min.js', 'export-html/vendor/marked.min.js',
+                     'export-html/vendor/marked-cjk-friendly.min.js',
+                     'theme/dark.json', 'assets/logo.txt', 'docs/PLUGINS.md',
+                     'examples/example.ts', f'native/{system}/prebuilds/{native_platform}/{helper}'):
+            file = build / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text('fixture')
+        if system == 'darwin':
+            for name in ('pi-bin', 'pi-spawn'):
+                (build / name).write_text('#!/bin/sh\nexit 0\n')
+                (build / name).chmod(0o755)
+        self.bolt.unlink(missing_ok=True)
+        self.bolt.symlink_to(build / 'pi')
+        return build
+
+    def test_pi_bolt_skips_current_build_on_install_and_update(self):
+        build = self.native_bolt()
+        self.recording_services()
+        before = install_menu.installed_evidence([self.bolt])
+        stats = [(path, path.lstat()) for path in (self.bolt, build, *build.rglob('*'))]
+        for command in ((), ('update',)):
+            self.log.write_text('')
+            result = self.install(*command, '--only', 'pi-bolt', env={'PIBOLT_VARIANT': 'x64', 'PIBOLT_SOURCE': ''})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertRegex(result.stdout, r'pi-bolt[^\n]*0\.67\.1 \(Pi-Bolt 1\.4\.0, linux-x64, JIT off\); current')
+            self.assertEqual(install_menu.installed_evidence([self.bolt]), before)
+            self.assertEqual(self.bolt.resolve(), build / 'pi')
+            for path, previous in stats:
+                observed = path.lstat()
+                self.assertEqual((observed.st_ino, observed.st_mtime_ns),
+                                 (previous.st_ino, previous.st_mtime_ns), str(path))
+            self.assertEqual(len(self.calls('curl')), 1)
+            self.assertTrue(self.calls('curl')[0].endswith('/releases/latest'))
+            self.assertEqual(self.calls('pi-bolt-installer'), [])
+            self.assertEqual(self.calls('systemctl --user try-restart'), [])
+            self.assertFalse(any('install.sh' in c for c in self.calls('curl')))
+
+    def test_pi_bolt_default_platform_and_libc_selection(self):
+        read_text = Path.read_text
+        def cpuinfo(path, *args, **kwargs):
+            if str(path) != '/proc/cpuinfo':
+                return read_text(path, *args, **kwargs)
+            if cpu_flags is None:
+                raise FileNotFoundError(path)
+            return f'flags: {cpu_flags}'
+        # Upstream defaults: AVX2, baseline on missing CPU flags, musl, ARM64 and Apple silicon.
+        for system, machine, variant, libc, cpu_flags in (
+                ('Linux', 'x86_64', 'x64', 'glibc', 'avx2'),
+                ('Linux', 'x86_64', 'x64-baseline', None, None),
+                ('Linux', 'x86_64', 'x64-musl', 'musl', 'avx2'),
+                ('Linux', 'aarch64', 'arm64', 'glibc', None),
+                ('Darwin', 'arm64', 'arm64', '', None)):
+            with self.subTest(system=system, variant=variant):
+                build = self.native_bolt(variant=variant, system=system.lower())
+                real_run = subprocess.run
+                def run(argv, **kwargs):
+                    if argv == ['ldd', '--version']:
+                        if libc is None:
+                            raise FileNotFoundError('ldd')
+                        return SimpleNamespace(stdout=libc, stderr='', returncode=0)
+                    return real_run(argv, **kwargs)
+                with patch.dict(os.environ, {'PIBOLT_INSTALL': str(build.parent)}), \
+                     patch.object(install_menu.platform, 'system', return_value=system), \
+                     patch.object(install_menu.platform, 'machine', return_value=machine), \
+                     patch.object(install_menu.subprocess, 'run', side_effect=run), \
+                     patch.object(Path, 'read_text', cpuinfo):
+                    self.assertIn('Pi-Bolt 1.4.0', install_menu.pi_bolt_current(self.bolt.parent, '1.4.0'))
+                    if system == 'Darwin':
+                        (build / 'pi-spawn').chmod(0o644)
+                        self.assertIsNone(install_menu.pi_bolt_current(self.bolt.parent, '1.4.0'))
+
+    def test_pi_bolt_repairs_selected_build_once_then_skips(self):
+        self.recording_services()
+        self.upstream.write_text(self.upstream.read_text().replace(
+            'cp "$FAKE_HOME/pi-bolt-fixture" "$PIBOLT_BIN_DIR/pi-bolt"',
+            '''root=${PIBOLT_INSTALL:-$HOME/.pi-bolt}
+mkdir -p "$root"
+rm -rf "$root/pi-bolt-linux-x64"
+cp -R "$FAKE_HOME/release-build" "$root/pi-bolt-linux-x64"
+rm -f "$PIBOLT_BIN_DIR/pi-bolt" "$root/channel"
+ln -s "$root/pi-bolt-linux-x64/pi" "$PIBOLT_BIN_DIR/pi-bolt"'''))
+        for state in ('absent', 'stale', 'broken-link', 'wrong-link', 'wrong-platform',
+                      'wrong-variant', 'wrong-root', 'aliased-build', 'missing-assets', 'missing-export-js',
+                      'wrong-native', 'empty-native', 'bad-manifest', 'compiled', 'channel', 'invalid-channel-file'):
+            with self.subTest(state=state):
+                build = self.native_bolt()
+                release_build = self.home / 'release-build'
+                shutil.rmtree(release_build, ignore_errors=True)
+                shutil.copytree(build, release_build)
+                env = {'PIBOLT_VARIANT': 'x64', 'PIBOLT_CHANNEL': 'stable'}
+                if state == 'absent':
+                    self.bolt.unlink()
+                elif state in ('broken-link', 'wrong-link'):
+                    self.bolt.unlink()
+                    self.bolt.symlink_to(self.home / 'missing' if state == 'broken-link' else release_build / 'pi')
+                elif state == 'stale':
+                    (build / 'pi').write_text((build / 'pi').read_text().replace('Pi-Bolt 1.4.0', 'Pi-Bolt 1.3.0'))
+                elif state == 'wrong-platform':
+                    (build / 'pi').write_text((build / 'pi').read_text().replace('linux-x64', 'darwin-arm64'))
+                elif state == 'wrong-variant':
+                    (build / 'pi').write_text((build / 'pi').read_text().replace('linux-x64', 'linux-x64-baseline'))
+                elif state == 'wrong-root':
+                    env['PIBOLT_INSTALL'] = str(self.home / 'selected root')
+                elif state == 'aliased-build':
+                    shutil.rmtree(build)
+                    build.symlink_to(release_build, target_is_directory=True)
+                elif state == 'missing-assets':
+                    (build / 'export-html/template.html').unlink()
+                elif state == 'missing-export-js':
+                    # --version still works; Pi-Bolt's HTML export cannot read its template script.
+                    (build / 'export-html/template.js').unlink()
+                elif state == 'wrong-native':
+                    native = build / 'native/linux/prebuilds/linux-x64'
+                    native.rename(native.with_name('linux-arm64'))
+                elif state == 'empty-native':
+                    (build / 'native/linux/prebuilds/linux-x64/linux-platform-x11.node').write_bytes(b'')
+                elif state == 'bad-manifest':
+                    (build / 'pi-bolt.txt').write_text('Pi-Bolt 9.9.9 (Pi 0.67.1), linux-x64, JIT off, built today')
+                elif state == 'compiled':
+                    with (build / 'pi-bolt.txt').open('a') as manifest:
+                        manifest.write('Extensions compiled in (pi-bolt compile, 2026-11-24): sample\n')
+                elif state == 'channel':
+                    (build.parent / 'channel').write_text('beta\n')
+                elif state == 'invalid-channel-file':
+                    os.mkfifo(build.parent / 'channel')
+                self.log.write_text('')
+                repaired = self.install('--only', 'pi-bolt', env=env)
+                self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
+                self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
+                self.assertTrue(self.calls('pi-bolt-installer')[0].endswith('|1|no'))
+                selected = Path(env.get('PIBOLT_INSTALL', build.parent)) / build.name / 'pi'
+                self.assertEqual(self.bolt.resolve(), selected)
+                self.assertIn('Pi-Bolt 1.4.0', repaired.stdout)
+                self.log.write_text('')
+                current = self.install('update', '--only', 'pi-bolt', env=env)
+                self.assertEqual(current.returncode, 0, current.stdout + current.stderr)
+                self.assertIn('current (release checked', current.stdout)
+                self.assertEqual(self.calls('pi-bolt-installer'), [])
+                self.assertFalse(any('install.sh' in call for call in self.calls('curl')))
+                self.assertEqual(self.calls('systemctl --user try-restart'), [])
+
+    def test_pi_bolt_release_failure_preserves_existing_installation(self):
+        self.native_bolt()
+        before = install_menu.installed_evidence([self.bolt])
+        for metadata, env in ((None, {'FAKE_RELEASE_FAIL': '1'}), ('{', {}), ('[]', {}),
+                              ('{}', {}), ('{"tag_name": "nope", "draft": false, "prerelease": false}', {}),
+                              (' ' * 1048577, {}), ('[' * 1100 + ']' * 1100, {})):
+            for command in ((), ('update',)):
+                with self.subTest(metadata=str(metadata)[:30], command=command):
+                    if metadata is not None:
+                        (self.home / 'release.json').write_text(metadata)
+                    self.log.write_text('')
+                    result = self.install(*command, '--only', 'pi-bolt', env=env)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn('Pi-Bolt release check failed', result.stdout)
+                    self.assertIn('retry ./install.sh --only pi-bolt', result.stdout)
+                    self.assertNotIn('current (release checked', result.stdout)
+                    self.assertNotIn('contents unchanged', result.stdout)
+                    self.assertEqual(install_menu.installed_evidence([self.bolt]), before)
+                    self.assertEqual(self.calls('pi-bolt-installer'), [])
+                    self.assertFalse(any('install.sh' in call for call in self.calls('curl')))
+                    self.assertEqual(self.calls('systemctl --user try-restart'), [])
+
+    def test_pi_bolt_preserves_stored_channel_without_override(self):
+        build = self.native_bolt()
+        (build.parent / 'channel').write_text('beta\n')
+        before = install_menu.installed_evidence([self.bolt, build.parent / 'channel'])
+        # Upstream's unset channel selects latest stable for this install but leaves
+        # the stored channel unchanged for future pi-bolt updates.
+        for command in ((), ('update',)):
+            self.log.write_text('')
+            result = self.install(*command, '--only', 'pi-bolt', env={'PIBOLT_VARIANT': 'x64'})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('current (release checked', result.stdout)
+            self.assertEqual(install_menu.installed_evidence([self.bolt, build.parent / 'channel']), before)
+            self.assertTrue(self.calls('curl')[0].endswith('/releases/latest'))
+            self.assertEqual(self.calls('pi-bolt-installer'), [])
+            self.assertEqual(self.calls('systemctl --user try-restart'), [])
+
+    def test_pi_bolt_upstream_release_overrides_and_channel(self):
+        root = self.home / 'custom install'
+        self.native_bolt(variant='x64-jit', root=root)
+        env = {'PIBOLT_INSTALL': str(root), 'PIBOLT_VARIANT': 'jit'}
+        cases = [({'PIBOLT_VERSION': 'bolt-v1.4.0'},
+                  {'tag_name': 'bolt-v1.4.0', 'draft': False, 'prerelease': False}, '/tags/bolt-v1.4.0'),
+                 ({'PIBOLT_CHANNEL': 'beta'},
+                  [{'tag_name': 'bolt-v1.9.0', 'draft': False, 'prerelease': False},
+                   {'tag_name': 'bolt-v1.10.0', 'draft': False, 'prerelease': True,
+                    # The real 30-row response including assets exceeds 1 MiB.
+                    'assets': [{'name': 'pi-bolt-linux-x64-jit.tar.xz'}] * 29000},
+                   {'tag_name': 'bolt-v1.11.0', 'draft': True, 'prerelease': False}], '?per_page=30')]
+        for overrides, metadata, suffix in cases:
+            with self.subTest(overrides=overrides):
+                if overrides.get('PIBOLT_CHANNEL') == 'beta':
+                    self.native_bolt(version='1.10.0', variant='x64-jit', root=root)
+                    (root / 'channel').write_text('beta\n')
+                (self.home / 'release.json').write_text(json.dumps(metadata))
+                self.log.write_text('')
+                result = self.install('--only', 'pi-bolt', env={**env, **overrides})
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn('current (release checked', result.stdout)
+                self.assertEqual(len(self.calls('curl')), 1)
+                self.assertTrue(self.calls('curl')[0].endswith(suffix))
+                max_bytes, rate = ((8388608, '512K') if overrides.get('PIBOLT_CHANNEL') == 'beta'
+                                   else (1048576, '64K'))
+                for flag in ('--proto =https', '--proto-redir =https', '--connect-timeout 10',
+                             '--max-time 30', f'--max-filesize {max_bytes}', f'--limit-rate {rate}'):
+                    self.assertIn(flag, self.calls('curl')[0])
+                self.assertEqual(self.calls('pi-bolt-installer'), [])
+        self.log.write_text('')
+        result = self.install('--only', 'pi-bolt', '--dry-run', env={**env, 'FAKE_RELEASE_FAIL': '1'})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_pi_bolt_stable_start_launcher_and_ambiguous_overrides(self):
+        build = self.native_bolt(root=self.home / "custom 'root'")
+        install_root = f'{build.parent}/'
+        launcher = build.parent / (build.name + '.start')
+        # Upstream embeds the literal override, including the trailing slash and escaped quotes.
+        quoted = f'{install_root}/{build.name}'.replace("'", "'\\''")
+        launcher.write_text(f"#!/bin/sh\ndir='{quoted}'\n"
+                            'if [ -x "$dir/pi-start" ]; then exec "$dir/pi-start" "$@"; fi\n'
+                            'exec "$dir/pi" "$@"\n')
+        launcher.chmod(0o755)
+        self.bolt.unlink()
+        self.bolt.symlink_to(launcher)
+        result = self.install('--only', 'pi-bolt', env={'PIBOLT_VARIANT': 'x64', 'PIBOLT_INSTALL': install_root})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('current (release checked', result.stdout)
+        self.assertEqual(self.calls('pi-bolt-installer'), [])
+        for override in ({'PIBOLT_NO_PATH': '1'}, {'PIBOLT_DOWNLOAD_BASE': 'https://mirror.invalid'},
+                         {'PIBOLT_LAUNCHER': '1'}, {'PIBOLT_PASEO': 'yes'},
+                         {'PREFIX': '/data/user/0/com.termux/files/usr'}, {'PIBOLT_CHANNEL': 'unknown'},
+                         {'PIBOLT_VARIANT': 'unknown'}):
+            with self.subTest(override=override):
+                self.native_bolt()
+                self.log.write_text('')
+                env = {'PIBOLT_VARIANT': 'x64', **override}
+                direct = 'PIBOLT_VARIANT' not in override
+                if direct:
+                    env['FAKE_RELEASE_FAIL'] = '1'
+                result = self.install('--only', 'pi-bolt', env=env)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
+                self.assertEqual(len(self.calls('curl')), 1 if direct else 2)
+                self.assertTrue(self.calls('curl')[-1].endswith('/install.sh'))
+                self.assertNotIn('current (release checked', result.stdout)
 
     def test_pi_bolt_uses_the_selected_bin_directory(self):
         destination = self.home / 'custom bin'
