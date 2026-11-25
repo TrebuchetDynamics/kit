@@ -13,9 +13,9 @@
 - `setup` prepares one repository deployment without activating a timer:
   repository identity, native config, `.orbi/env` isolation, provider metadata
   reuse and a non-activating `orbi check`.
-- `start` re-reads ownership/source/provider evidence, runs the supported
-  upstream `setup`/`install-units` with the exact scoped environment, enables
-  only target timers and requests one first tick only when no worker runs.
+- `start` prepares an absent target or updates and validates an existing one,
+  then repairs and activates scoped scheduling. A current deployment with all
+  configured timers enabled and active is unchanged.
 - `update` disables owned timers, cancels queued starts and stops owned workers, then
   advances to the newest official release through `sync-engine-source`, locks
   the resolved commit as `sha:<commit>` and validates non-activating. It starts
@@ -2556,8 +2556,12 @@ def activate_existing_locked(ctx, args, repo, target, identities, steps, current
             continue
         current.clear()
         current.update({'step': 'activate_timer', 'unit': timer, 'mutation': 'possible'})
-        proc = ctx.run(['systemctl', '--user', 'enable', '--now', timer],
-                       timeout=MUTATION_TIMEOUT, allow_failure=True)
+        try:
+            proc = ctx.run(['systemctl', '--user', 'enable', '--now', timer],
+                           timeout=MUTATION_TIMEOUT, allow_failure=True)
+        except ControlError as error:
+            error.evidence.update(first_tick='not-requested', recurring_scheduling='incomplete')
+            raise
         if proc.returncode != 0:
             error = ControlError(
                 'command_failed', f"'systemctl --user' failed with exit {proc.returncode}",
@@ -2588,18 +2592,47 @@ def activate_existing_locked(ctx, args, repo, target, identities, steps, current
     return snapshot, state, first_tick
 
 
+def require_start_config_binding(target):
+    # Upstream setup/install-units render deploy_home/orbi.toml into the service.
+    # Its EnvironmentFile can override that value for the tick and its source sync.
+    unit_config = target.deploy_home / 'orbi.toml'
+    if (target.config_path != unit_config
+            or persisted_env(target).get('ORBI_CONFIG', str(unit_config)) != str(unit_config)):
+        raise ControlError('config_mismatch', 'the installed units would not run the selected config',
+                           fix=f'verify that {unit_config} owns this deployment and remove any conflicting '
+                               f'ORBI_CONFIG in {target.env_path} before starting', exit_code=2)
+
+
 def command_start(ctx, args):
     target = None
+    try:
+        repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
+        target = select_target(ctx, repo, args.config)
+        selectors = any(getattr(args, key) is not None for key in
+                        ('pi_providers', 'pi_provider', 'pi_model', 'pi_thinking', 'harness'))
+        if target is not None and selectors:
+            raise ControlError('bootstrap_override_refused', 'start selectors are only for absent preparation',
+                               fix='omit --pi-* and --harness to reuse the saved selection; '
+                                   'use deliberate setup/repair for partial deployments', exit_code=2)
+        if target is not None:
+            require_start_config_binding(target)
+    except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
+        exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=[],
+                                current={'step': 'preflight', 'mutation': 'none'}, mutated=False,
+                                evidence={'preparation': {'state': 'skipped'}, 'activation': 'none'})
+        raise exc from (error if exc is not error else None)
+    if target is not None and not args.dry_run:
+        return maintain_existing(ctx, args, repo, target, start=True)
+    return prepare_or_preview_start(ctx, args, repo, target)
+
+
+def prepare_or_preview_start(ctx, args, repo, target):
     steps, activated = [], []
     mutated, activation = False, 'none'
     preparation = {'state': 'skipped'}
     binding = {}
     current = {'step': 'preflight', 'mutation': 'none'}
     try:
-        repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
-        target = select_target(ctx, repo, args.config)
-        selectors = any(getattr(args, key) is not None for key in
-                        ('pi_providers', 'pi_provider', 'pi_model', 'pi_thinking', 'harness'))
         if target is None:
             # A foreign config in either target location is not an absent deployment.
             for path in (repo.path / 'orbi.toml',
@@ -2634,10 +2667,6 @@ def command_start(ctx, args):
             if setup_file_identities(target) != binding['identities']:
                 raise ControlError('target_changed', 'prepared deployment files changed',
                                    fix='inspect concurrent changes; preserve prepared files', exit_code=2)
-        elif selectors:
-            raise ControlError('bootstrap_override_refused', 'start selectors are only for absent preparation',
-                               fix='omit --pi-* and --harness to reuse the saved selection; '
-                                   'use deliberate setup/repair for partial deployments', exit_code=2)
         validate_target(target, repo)
         require_unit_ownership(ctx, target)
         # A newly prepared target keeps its validated baseline across both preflights.
@@ -2658,10 +2687,13 @@ def command_start(ctx, args):
             live = [name for name, item in snapshot['services'].items()
                     if item['state'] in ACTIVE_STATES]
             steps = [{'step': 'reuse_existing_deployment', 'status': 'ok'},
-                     {'step': 'activate_timers', 'status': 'planned',
+                     {'step': 'release_update', 'status': 'conditional',
+                      'reason': 'resolve the newest release on apply; no-op if current and scheduling active, '
+                                'otherwise quiesce as needed, sync, pin and check'},
+                     {'step': 'activate_timers', 'status': 'conditional',
                       'timers': pending},
-                     {'step': 'first_tick', 'status': 'planned',
-                      'mode': 'already-active' if live else 'requested'}]
+                     {'step': 'first_tick', 'status': 'conditional',
+                      'mode': 'only after activation if no worker is active'}]
             return {'action': 'start', 'platform': ctx.platform, 'status': 'planned',
                     'dry_run': True, 'repo': repo.full, 'deployment': report,
                     'steps': steps, 'activated': False, 'scheduler': snapshot,
@@ -2686,9 +2718,6 @@ def command_start(ctx, args):
             # Keep setup's exact original failed operation, target and mutation evidence.
             error.evidence = {**error.evidence, 'preparation': preparation, 'activation': 'none'}
             raise
-        if isinstance(error, ControlError) and current['step'] == 'activate_timer':
-            error.evidence.setdefault('first_tick', 'not-requested')
-            error.evidence.setdefault('recurring_scheduling', 'incomplete')
         exc = lifecycle_failure(ctx, target, error, target_path=preparation.get('target', args.config),
                                 steps=steps, current=current, mutated=mutated,
                                 evidence={'activation': activation, 'activated_timers': activated,
@@ -2807,7 +2836,8 @@ def checkout_head(ctx, deployment):
 def require_clean_checkout(ctx, deployment):
     """Tracked changes fail closed: update never discards or force-checks-out work."""
     proc = ctx.run(['git', '-C', str(deployment.deploy_home), 'status', '--porcelain',
-                    '--untracked-files=no'], allow_failure=True)
+                    '--untracked-files=no'], allow_failure=True,
+                   env={**ctx.env, 'GIT_OPTIONAL_LOCKS': '0'})
     if proc.returncode != 0:
         raise ControlError('source_unavailable',
                            f'cannot read the tracked state of {deployment.deploy_home}',
@@ -2824,13 +2854,23 @@ def require_clean_checkout(ctx, deployment):
 def engine_track_replacement(path, track):
     """Render only the engine_source_track literal; preserve every other byte."""
     text = path.read_bytes().decode('utf-8')
-    pattern = re.compile(r'^([ \t]*engine_source_track[ \t]*=[ \t]*)"[^"\n]*"', re.MULTILINE)
-    if len(pattern.findall(text)) != 1:
-        raise ControlError(
-            'config_invalid',
-            f'{path} must declare exactly one engine_source_track line',
-            fix='repair the native config deliberately; preserve recovery inputs', exit_code=2)
-    return text, pattern.sub(lambda match: match.group(1) + json.dumps(track), text, count=1)
+    pattern = re.compile(r'''^([ \t]*engine_source_track[ \t]*=[ \t]*)(["'])[^"'\r\n]*\2(?=[ \t]*(?:#|\r?$))''',
+                         re.MULTILINE)
+    if len(pattern.findall(text)) == 1:
+        replacement = pattern.sub(lambda match: match[1] + (
+            json.dumps(track) if match[2] == '"' else "'" + track + "'"), text, count=1)
+        try:
+            previous = tomllib.loads(text).get('engine_source_track')
+            # If the value is already right, do not change a lookalike elsewhere.
+            if previous == track:
+                return text, text
+            if tomllib.loads(replacement).get('engine_source_track') == track:
+                return text, replacement
+        except tomllib.TOMLDecodeError:
+            pass
+    raise ControlError('config_invalid', f'{path}: engine_source_track is not writable at the top level',
+                       fix='declare one unambiguous top-level engine_source_track line; preserve recovery inputs',
+                       exit_code=2)
 
 
 def rewrite_engine_track(deployment, track):
@@ -3073,7 +3113,7 @@ def apply_release_locked(ctx, target, read_target, steps, current, progress, *,
                   'track': source_track, 'mutation': 'completed'})
     release_target = deployment_from(target.config_path)
     if verify_head is not None and release_target.pin != source_track:
-        fleet_refuse('release track was not applied to the top-level deployment config')
+        raise ControlError('target_changed', 'release track was not applied to the top-level deployment config')
     release_identities = setup_file_identities(release_target)
     stage('sync_engine_source')
     # A nonzero exit or timeout can follow a partially applied source sync.
@@ -3098,7 +3138,7 @@ def apply_release_locked(ctx, target, read_target, steps, current, progress, *,
                   'track': 'sha:' + head, 'mutation': 'completed'})
     stage('validate_non_activating')
     if verify_head is not None and target.pin != 'sha:' + head:
-        fleet_refuse('deployment config does not contain the verified exact release pin')
+        raise ControlError('target_changed', 'deployment config does not contain the verified exact release pin')
     validated_identities = setup_file_identities(target)
     run_orbi_check(ctx, target)
     if verify_head is not None:
@@ -3112,38 +3152,58 @@ def apply_release_locked(ctx, target, read_target, steps, current, progress, *,
     return target, head, validated_identities
 
 
+def configured_timers_active(target, snapshot):
+    return all((item := snapshot['timers'].get(f'{target.prefix}@{i}.timer', {})).get('enabled')
+               and item.get('active') == 'active' for i in range(1, target.max_concurrency + 1))
+
+
 def command_update(ctx, args):
-    """Quiesce and update, then start scheduling after validation unless --stop."""
-    target = None
+    return maintain_existing(ctx, args)
+
+
+def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
+    """Quiesce as needed, update, and activate only after validation."""
+    action = 'start' if start else 'update'
+    symlink_error = 'unknown_target' if start else 'unit_conflict'
     steps, disabled, stopped = [], [], []
     mutated = False
     resume = None
+    start_fields = {'preparation': {'state': 'skipped'}} if start else {}
     previous = {'track': None, 'head': None}
     engine_result, activation = 'not_applied', 'none'
     activated = []
     activation_reason = 'not evaluated'
     current = {'step': 'preflight', 'mutation': 'none'}
     try:
-        repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
-        target = select_target(ctx, repo, args.config, require=True)
+        if target is None:  # update requires a prepared target; start already resolved one
+            repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
+            target = select_target(ctx, repo, args.config, require=True)
         validate_target(target, repo)
-        require_unit_ownership(ctx, target, symlink_error='unit_conflict')
+        require_unit_ownership(ctx, target, symlink_error=symlink_error)
         require_setup_transport(repo, target)
         require_harness(ctx, target)
         provider = require_provider(target)
+        if start:
+            current = {'step': 'verify_engine_checkout', 'mutation': 'none'}
+            require_engine_checkout(ctx, target, source_repo=repo.path)
+            current = {'step': 'preflight', 'mutation': 'none'}
         require_source(ctx, target)
         require_clean_checkout(ctx, target)
         previous = {'track': target.pin, 'head': checkout_head(ctx, target)}
         identities = setup_file_identities(target)
-        evidence = prerequisites(ctx, target, action='update', provider=provider,
+        evidence = prerequisites(ctx, target, action=action, provider=provider,
                                  allow_bootstrap_install=False)
-        snapshot = update_observation(ctx, target)
         bound_selectors = (' --repo-dir ' + shlex.quote(str(repo.path))
                            + ' --config ' + shlex.quote(str(target.config_path)))
-        resume = '/orbi update' + bound_selectors + (' --stop' if args.stop else '')
         start_command = '/orbi start' + bound_selectors
+        resume = '/orbi ' + action + bound_selectors + (' --stop' if args.stop else '')
         report = new_deployment_report(ctx, target, provider)
         report['source'] = source_evidence(ctx, target)['state']
+        if start:
+            current = {'step': 'resolve_release', 'mutation': 'none'}
+            tag, expected = official_latest_release(ctx)
+            current = {'step': 'observe_scheduler', 'mutation': 'none'}
+        snapshot = update_observation(ctx, target)
         if args.dry_run:
             return {'action': 'update', 'platform': ctx.platform, 'status': 'planned',
                     'dry_run': True, 'repo': repo.full, 'deployment': report,
@@ -3151,7 +3211,39 @@ def command_update(ctx, args):
                     'scheduler': snapshot, 'steps': update_plan_steps(stop=args.stop),
                     'activation': 'none' if args.stop else 'conditional',
                     'activated': False, 'warnings': []}
-        steps.append({'step': 'preflight_target', 'status': 'ok'})
+        source_track = verify_head = None
+        if start:
+            if (target.pin == 'sha:' + expected and previous['head'] == expected
+                    and configured_timers_active(target, snapshot)):
+                if (repo_identity(ctx, repo.path) != repo
+                        or select_target(ctx, repo, args.config, require=True) != target
+                        or setup_file_identities(target) != identities
+                        or checkout_head(ctx, target) != expected):
+                    raise ControlError('target_changed', 'start target changed during release discovery',
+                                       fix='inspect concurrent changes; preserve recovery inputs', exit_code=2)
+                live = any(item['state'] in ACTIVE_STATES for item in snapshot['services'].values())
+                steps.append({'step': 'release_update', 'status': 'not-needed',
+                              'reason': 'current release and configured timers enabled and active'})
+                return {'action': action, 'platform': ctx.platform, 'status': 'already-running',
+                        'dry_run': False, 'repo': repo.full,
+                        'deployment': {**report, 'deployed_commit': expected}, 'steps': steps,
+                        'activated': False, 'scheduler': snapshot, 'engine_update': 'up_to_date',
+                        'first_tick': 'already-active' if live else 'not-requested', **start_fields}
+
+            # The release channel also considers local tags. Sync the exact
+            # official tag we resolved, then verify its peeled commit.
+            source_track = 'tag:' + tag
+            current = {'step': 'preflight_release_track', 'mutation': 'none'}
+            engine_track_replacement(target.config_path, source_track)
+
+            def verify_head(head):
+                if head != expected:
+                    raise ControlError('release_unverified',
+                                       f'synced HEAD does not match the verified official release {tag}',
+                                       fix='inspect the official release and deployment source before retrying')
+
+        steps.append({'step': 'reuse_existing_deployment' if start else 'preflight_target',
+                      'status': 'ok'})
         current, mutated = {'step': 'lock', 'mutation': 'possible'}, True
         with locked(ctx, target.config_path):
             steps.append({'step': 'lock', 'status': 'ok', 'mutation': 'completed'})
@@ -3163,18 +3255,24 @@ def command_update(ctx, args):
                                    fix='inspect concurrent config, ownership and selection changes; '
                                        'preserve all recovery inputs', exit_code=2)
             validate_target(target, repo)
-            require_unit_ownership(ctx, target, symlink_error='unit_conflict')
+            require_unit_ownership(ctx, target, symlink_error=symlink_error)
+            if start:
+                require_start_config_binding(target)
+                require_engine_checkout(ctx, target, source_repo=repo.path)
             require_source(ctx, target)
             require_clean_checkout(ctx, target)
             require_setup_transport(repo, target)
             require_harness(ctx, target)
             provider = require_provider(target)
-            evidence = prerequisites(ctx, target, action='update', provider=provider,
+            evidence = prerequisites(ctx, target, action=action, provider=provider,
                                      allow_bootstrap_install=False)
             snapshot = update_observation(ctx, target)
             activation = 'held' if args.stop else 'pending'
             activation_reason = 'explicit --stop' if args.stop else 'maintenance scheduling request'
-            quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current)
+            if (not start or update_pending(snapshot)
+                    or any(item['enabled'] or item['active'] not in INACTIVE_STATES
+                           for item in snapshot['timers'].values())):
+                quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current)
             current = {'step': 'recheck_target', 'mutation': 'none'}
             if (repo_identity(ctx, repo.path) != repo
                     or select_target(ctx, repo, args.config, require=True) != target
@@ -3182,7 +3280,7 @@ def command_update(ctx, args):
                 raise ControlError('target_changed', 'update target changed while quiescing',
                                    fix='inspect concurrent changes; preserve recovery inputs', exit_code=2)
             validate_target(target, repo)
-            require_unit_ownership(ctx, target, symlink_error='unit_conflict')
+            require_unit_ownership(ctx, target, symlink_error=symlink_error)
             require_source(ctx, target)
             require_clean_checkout(ctx, target)
             require_quiescent(ctx, target)
@@ -3195,7 +3293,8 @@ def command_update(ctx, args):
 
             try:
                 target, head, validated_identities = apply_release_locked(
-                    ctx, target, read_target, steps, current, progress, repo=repo)
+                    ctx, target, read_target, steps, current, progress, repo=repo,
+                    source_track=source_track, verify_head=verify_head)
             finally:
                 target = progress.get('target', target)
                 engine_result = progress['engine_update']
@@ -3216,14 +3315,12 @@ def command_update(ctx, args):
                                    fix='verify the systemd user session, then rerun')
             if not args.stop:
                 activation = 'possible'
-                after, _state, _tick = activate_existing_locked(
+                _, _, first_tick = activate_existing_locked(
                     ctx, args, repo, target, validated_identities, steps, current, activated,
-                    first_tick_request=False)
+                    first_tick_request=start)
                 current = {'step': 'verify_activation', 'mutation': 'none'}
                 after = update_observation(ctx, target)
-                expected = [f'{target.prefix}@{i}.timer' for i in range(1, target.max_concurrency + 1)]
-                if any(not after['timers'].get(name, {}).get('enabled') or
-                       after['timers'].get(name, {}).get('active') != 'active' for name in expected):
+                if not configured_timers_active(target, after):
                     raise ControlError('activation_unverified', 'engine validated but configured timers are not enabled/active',
                                        fix='inspect partial timer state before deliberate start recovery',
                                        evidence={'scheduler': after})
@@ -3232,6 +3329,12 @@ def command_update(ctx, args):
         report = new_deployment_report(ctx, target, provider)
         report['source'] = source_evidence(ctx, target)['state']
         report['deployed_commit'] = head
+        if start:
+            return {'action': action, 'platform': ctx.platform, 'status': 'started',
+                    'dry_run': False, 'repo': repo.full, 'deployment': report,
+                    'steps': steps, 'activated': True, 'activation': activation,
+                    'first_tick': first_tick, 'scheduler': after, 'engine_update': engine_result,
+                    'disabled_timers': disabled, 'stopped_services': stopped, **start_fields}
         return {'action': 'update', 'platform': ctx.platform,
                 'status': 'up_to_date' if head == previous['head'] else 'updated',
                 'dry_run': False, 'repo': repo.full, 'deployment': report,
@@ -3247,7 +3350,7 @@ def command_update(ctx, args):
                 'steps': steps, 'activated': not args.stop,
                 'warnings': []}
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
-        if not mutated and not steps:
+        if not start and not mutated and not steps:
             # A preflight refusal changed nothing; keep its own precise fix text.
             if isinstance(error, ControlError):
                 error.evidence.setdefault('target', str(target.config_path) if target else args.config)
@@ -3262,14 +3365,15 @@ def command_update(ctx, args):
                                           'stopped_services': stopped,
                                           'resume_command': resume, 'activation': activation,
                                           'activated_timers': activated, 'engine_update': engine_result,
-                                          'activation_reason': activation_reason},
+                                          'activation_reason': activation_reason, **start_fields},
                                 snapshot_reader=update_observation)
         if engine_result in {'updated', 'up_to_date'}:
             exc.evidence['engine_revision'] = head
         repair = (start_command if engine_result in {'updated', 'up_to_date'} and not args.stop
                   else resume)
-        exc.fix += '; after repairing the cause, run ' + repair
-        exc.evidence['repair_command'] = repair
+        if repair:
+            exc.fix += '; after repairing the cause, run ' + repair
+            exc.evidence['repair_command'] = repair
         raise exc from (error if exc is not error else None)
 
 
@@ -4332,10 +4436,10 @@ def fleet_check_permissions(ctx, units, jobs):
             fleet_refuse('system: noninteractive write access denied for ' + ' '.join((action, *details)))
 
 
-def fleet_latest_release(ctx):
+def official_latest_release(ctx):
     # Resolve official tags independently of checkout Git config and URL rewrites.
     env = {key: value for key, value in ctx.env.items() if not key.startswith('GIT_')}
-    env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull)
+    env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull, GIT_TERMINAL_PROMPT='0')
     refs = ctx.run(['git', 'ls-remote', '--tags', OFFICIAL_ORIGIN, 'refs/tags/v*'], cwd='/', env=env).stdout
     tags = {}
     for line in refs.splitlines():
@@ -4344,33 +4448,41 @@ def fleet_latest_release(ctx):
             head, tag, major, minor, patch, peeled = match.groups()
             tags.setdefault((int(major), int(minor), int(patch)), {})[tag, bool(peeled)] = head
     if not tags:
-        fleet_refuse('cannot resolve an official stable Orbi release')
+        raise ControlError('release_unverified', 'cannot resolve an official stable Orbi release')
     latest = tags[max(tags)]
     names = {tag for tag, _ in latest}
     if len(names) != 1:
-        fleet_refuse('latest official release tag is ambiguous')
+        raise ControlError('release_unverified', 'latest official release tag is ambiguous')
     tag = next(iter(names))
     if '+' in tag:
-        fleet_refuse(f'{tag}: newest official stable tag is not supported by the engine tag selector')
+        raise ControlError('release_unverified',
+                           f'{tag}: newest official stable tag is not supported by the engine tag selector')
     return tag, latest.get((tag, True)) or latest[tag, False]
 
 
-def fleet_checkout_root(ctx, target):
+def require_engine_checkout(ctx, target, *, source_repo):
+    def refuse(message):
+        raise ControlError('source_unavailable', message,
+                           fix='verify deploy_home names the separate deployment checkout and '
+                               'remove Git checkout redirects before retrying', exit_code=2)
+
     # `git -C` by itself can discover the parent repository or operate on a
     # different worktree via ambient or deployment-persisted Git overrides.
     local_keys = set(ctx.run(['git', 'rev-parse', '--local-env-vars']).stdout.splitlines())
     if not {'GIT_DIR', 'GIT_WORK_TREE'} <= local_keys:
-        fleet_refuse('cannot verify Git checkout-local environment keys')
+        refuse('cannot verify Git checkout-local environment keys')
     if local_keys & (ctx.env.keys() | persisted_env(target).keys()):
-        fleet_refuse(f'{target.config_path}: Git environment redirects checkout state')
+        refuse(f'{target.config_path}: Git environment redirects checkout state')
     root = ctx.run(['git', '-C', target.deploy_home, 'rev-parse', '--show-toplevel']).stdout.strip()
     if root != str(target.deploy_home):
-        fleet_refuse(f'{target.deploy_home}: engine directory is not its own Git checkout root')
+        refuse(f'{target.deploy_home}: engine directory is not its own Git checkout root')
+    if target.deploy_home == source_repo:
+        refuse(f'{target.deploy_home}: engine checkout must be separate from the source repository')
     git_dir = Path(ctx.run(['git', '-C', target.deploy_home, 'rev-parse',
                             '--path-format=absolute', '--git-common-dir']).stdout.strip())
     if (not git_dir.is_absolute() or not checked_path(git_dir, 'engine Git directory').resolve().is_relative_to(target.deploy_home)
             or not git_dir.is_dir()):
-        fleet_refuse(f'{target.deploy_home}: Git state is not contained in the engine checkout')
+        refuse(f'{target.deploy_home}: Git state is not contained in the engine checkout')
     file_identity(git_dir)
 
 
@@ -4379,9 +4491,7 @@ def fleet_preflight_target(ctx, target):
     identities = setup_file_identities(target)
     if len(target.source_repos) != 1 or not target.deploy_home.is_dir():
         fleet_refuse(f'{target.config_path}: deployment identity is unverified')
-    fleet_checkout_root(ctx, target)
-    if target.repo_dir == target.deploy_home:
-        fleet_refuse(f'{target.deploy_home}: engine checkout must be separate from the source repository')
+    require_engine_checkout(ctx, target, source_repo=target.repo_dir)
     if target.repo_dir is not None:
         repo = repo_identity(ctx, target.repo_dir)
         validate_target(target, repo)
@@ -4390,11 +4500,8 @@ def fleet_preflight_target(ctx, target):
         fleet_refuse(f'{target.deploy_home}: engine origin is not official')
     if not os.access(target.config_path.parent, os.W_OK) or not os.access(target.deploy_home, os.W_OK):
         fleet_refuse(f'{target.config_path}: deployment files are not writable')
-    # Test the exact rewrite without touching the config. A matching line
-    # under a TOML table is not proof that the top-level track can be changed.
-    _, rendered = engine_track_replacement(target.config_path, 'tag:installer-preflight')
-    if tomllib.loads(rendered).get('engine_source_track') != 'tag:installer-preflight':
-        fleet_refuse(f'{target.config_path}: engine_source_track is not writable at the top level')
+    # Test the exact rewrite without touching the config.
+    engine_track_replacement(target.config_path, 'tag:installer-preflight')
     source = require_source(ctx, target)
     if source['state'] != 'verified' or not re.fullmatch(r'[0-9a-f]{40}', source['head']):
         fleet_refuse(f'{target.config_path}: current engine is not pinned to its exact checkout commit')
@@ -4502,7 +4609,7 @@ def installer_fleet(ctx, *, report_progress=None):
                     for u in units):
                 fleet_refuse(f'{config}: no verified scheduling or persistent worker to restore')
         fleet_check_permissions(ctx, units, jobs)
-        tag, expected = fleet_latest_release(ctx)
+        tag, expected = official_latest_release(ctx)
         receipt['release'] = {'tag': tag, 'head': expected}
 
         def verify_head(head):
@@ -4524,7 +4631,7 @@ def installer_fleet(ctx, *, report_progress=None):
                         or checkout_head(ctx, target) != before[config][1]
                         or fleet_bootstrap_identity(ctx) != before[config][2]):
                     fleet_refuse(f'{config}: deployment files changed after preflight')
-                fleet_checkout_root(ctx, target)
+                require_engine_checkout(ctx, target, source_repo=target.repo_dir)
                 require_clean_checkout(ctx, target)
             receipt['status'] = 'incomplete'
 
@@ -4603,7 +4710,7 @@ def installer_fleet(ctx, *, report_progress=None):
                         or checkout_head(ctx, target) != before[config][1]
                         or fleet_bootstrap_identity(ctx) != before[config][2]):
                     fleet_refuse(f'{config}: deployment changed while stopping')
-                fleet_checkout_root(ctx, target)
+                require_engine_checkout(ctx, target, source_repo=target.repo_dir)
                 require_clean_checkout(ctx, target)
                 progress = {}
                 current['step'] = 'apply_release'
@@ -4783,14 +4890,16 @@ def command_help(ctx, args):
             'Other lifecycle/mutation selectors conflict and are refused before probes. Coverage and totals are observed, not an absolute host census.',
             'Bare /orbi or status inspects only. For a genuinely absent deployment with no explicit --config, '
             'authorized start prepares, validates non-activating, then activates in one invocation; '
-            'no separate setup or repeated approval. An existing valid target skips preparation and '
-            'retains its provider/harness. Missing explicit configs, partial and foreign targets are not absent.',
+            'no separate setup or repeated approval. Missing explicit configs, partial and foreign targets are not absent.',
+            'Existing-target start is unchanged if the exact pin is the newest official release and all '
+            'configured timers are enabled and active. Otherwise, quiesce owned units as needed, sync, '
+            'pin and run orbi check under the config lock before repairing units and starting scheduling. '
+            'The helper runs orbi check --config PATH with the bound deployment bootstrap and scoped environment. '
+            'Saved provider and harness stay selected. On sync or validation failure, start nothing and report '
+            'the bound recovery command. Dry-run defers release resolution and makes no changes.',
             'Explicit /orbi start, plain /orbi update, and install.sh with Orbi selected authorize activation. '
             'Require verified unit and file ownership, a validated release pin and a passing orbi check. '
-            'Existing-target start does not run orbi check. Before starting, if there is no passing result '
-            'for the same config, pin and environment, run orbi check --config PATH with the bound '
-            'deployment bootstrap and scoped environment. Do not start if validation fails or is unknown. '
-            'No separate approval is required.',
+            'Do not start if validation fails or is unknown. No separate approval is required.',
             'Public skill syntax: /orbi setup starts by default (maps to helper start). /orbi setup --prepare-only '
             'maps to non-activating helper setup. The skill consumes --prepare-only; it is not a Python flag. '
             'Public setup --resume-setup requires --prepare-only; otherwise reject before invocation and '
@@ -4979,13 +5088,14 @@ ACTIONS = {
     },
     'start': {
         'handler': command_start,
-        'effect': 'Prepare if absent, then install scoped units, enable owned timers and request a first tick if idle.',
+        'effect': 'Prepare if absent or update an existing target, then repair and start scoped scheduling.',
         'mutates': 'scheduler',
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json',
                     '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--harness'],
-        'when': 'An explicit start authorizes activation after technical checks. Prepare only if genuinely absent '
-                'with no explicit --config. On failure report the specific check and next safe action.',
+        'when': 'Prepare only if genuinely absent with no explicit --config. Existing targets quiesce as needed '
+                'and sync, pin and validate before activation. No changes if current with configured timers enabled '
+                'and active. On failure report the specific check and next safe action.',
     },
     'update': {
         'handler': command_update,

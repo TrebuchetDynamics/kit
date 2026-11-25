@@ -17,7 +17,7 @@ gates. This skill is a lifecycle client with read-only local host inventory, not
 | --- | --- |
 | Setup (default) or start; genuinely absent deployment, no explicit config | `start` prepares, validates non-activating, then activates in **one invocation** if technical checks pass. No separate setup or repeated approval is needed. |
 | Preview setup/default start | `setup --dry-run` maps to `start --dry-run`: write-free preview of preparation then activation. Staging-dependent validation and activation checks remain deferred; success is not authorization. |
-| Setup (default) or start; valid existing target | Skip setup; retain saved provider/harness/pin and omit bootstrap selectors. A missing explicit config, partial or foreign target is **not absent**: inspect and repair deliberately. |
+| Setup (default) or start; valid existing target | Retain the saved provider/harness and omit bootstrap selectors. If current with all configured timers enabled and active, report `already-running` without changes. Otherwise stop owned work as needed, sync/pin/check, repair units and start scheduling. A missing explicit config, partial or foreign target is **not absent**: inspect and repair deliberately. |
 | Enabled/active owned timer; no observed running workers | Scheduling is active, but no worker was observed. Do not call it stopped or say setup is needed. Missing evidence or activity outside the scan is unknown, not zero. |
 | `setup_busy` | Cite observed timer/worker state and use `status` to inspect. Offer authorized stop only when deliberately re-preparing or pausing, not just to make a preview pass. |
 | Activation check fails or cannot be verified | Name the failed technical check and give the next read-only check or exact repair. Do not report a prepared deployment as started. |
@@ -52,8 +52,7 @@ concrete unmet need, not a fixed sequence of model turns.
    helper `setup` remains non-activating for automation and recovery.
 
    Bare `/orbi` means `status`. **Help first.** For help requests, run only help.
-   For lifecycle commands, go directly to the requested action except for the
-   existing-target start validation described below.
+   For lifecycle commands, go directly to the requested action.
    Return observed output from the helper's `help` for help or command inventory;
    it needs no repository, config, environment or scheduler reads.
    **Host inventory:** preserve literal
@@ -74,10 +73,9 @@ concrete unmet need, not a fixed sequence of model turns.
    release pin and a passing `orbi check`; do not ask for a cutover record or
    separate approval. Public `setup` has the same authority as `start` because it
    maps to it. `setup --prepare-only` and dry-run never activate.
-   Before existing-target `start` (including setup-as-start), verify a passing
-   `orbi check` for the selected configuration and pin; if missing or stale, run
-   the [deployment-scoped check](references/lifecycle.md#activation-evidence).
-   Do not run that check as part of dry-run. See [offline examples](references/lifecycle.md#offline-guidance-examples)
+   The helper runs the [deployment-scoped check](references/lifecycle.md#activation-evidence)
+   before activation; no separate check or dry-run validation call is needed.
+   See [offline examples](references/lifecycle.md#offline-guidance-examples)
    for precise refusals. Do not silently fall back to preparation. Activation does
    not qualify live delivery.
 
@@ -89,9 +87,9 @@ concrete unmet need, not a fixed sequence of model turns.
    Authentication, repository access, ownership and other technical checks still apply.
    Plain `update` requests scheduling after engine validation, even after an earlier
    `stop`. Use `update --stop` to update and leave scheduling stopped. Stop and
-   update disable owned timers, cancel verified queued starts and stop owned workers
-   through systemd. Confirm inactivity from the receipt. Preserve attempts,
-   worktrees and recovery inputs; no direct kill or restart.
+   release maintenance disable owned timers, cancel verified queued starts and stop
+   owned workers through systemd as needed. Preserve attempts, worktrees and
+   recovery inputs; no direct kill or restart.
    Other mutations require their own accepted scope. Offline checks grant none.
 3. **Invoke once.** Preserve literal argument values, quoting, paths, provider/model
    IDs, `--config`, `--repo-dir` and all restrictions. Build argv, never interpolate
@@ -202,7 +200,7 @@ For host/fixture measurement limits, use the reference's
 | --- | --- |
 | "One more model should route or rephrase this." | Interpret once; the helper owns checks, and its safe receipt is the answer. Host-mandated continuations only relay it. |
 | "I remember help, so I can compose the table." | Run the helper's `help`; report observed output. |
-| "Start needs setup first; update needs a separate stop command." | Absent start composes preparation internally. Update stops owned workers before syncing; no separate stop or natural-drain wait. |
+| "Start needs setup first; release maintenance needs a separate stop command." | Absent start composes preparation internally. Release maintenance verifies inactivity before syncing; no separate stop or natural-drain wait. |
 | "A passing preview authorizes activation." | Only an explicit activating command authorizes it; previews perform no activation. |
 | "The command failed, so nothing changed and retry is safe." | Preserve mutation/activation evidence and repair deliberately; failure can be partially applied. |
 | "The queue is empty because the status read failed." | Failed reads are unavailable; partial reads disclose gaps. Zero verified ready is not zero pending. |

@@ -225,10 +225,14 @@ unknown technical checks hold activation with the specific blocker and repair, n
 a silent fallback to preparation. If genuinely absent and no explicit config was
 supplied, start first uses the same setup preparation, validates non-activating,
 then rebinds and revalidates under the activation lock. Existing targets skip
-preparation and reject bootstrap/harness selectors; follow the
-[existing-target check](../skills/orbi/references/lifecycle.md#activation-evidence).
+initial preparation and reject bootstrap/harness selectors. Start reports
+`already-running` without mutation when the newest official release is pinned and
+all configured timers are enabled and active. Otherwise it uses the same locked
+release transaction as update, quiescing owned work as needed, then repairing units
+and activating only after the [deployment check](../skills/orbi/references/lifecycle.md#activation-evidence)
+passes. Failed sync or check starts nothing and reports a bound recovery command.
 Partial, foreign or missing explicit configs require deliberate recovery, never
-silent resume. Stop and update disable owned timers, cancel verified queued starts
+silent resume. To quiesce, disable owned timers, cancel verified queued starts
 and stop owned workers through systemd. Missing evidence is unavailable, not stopped.
 Linux supports lifecycle changes; macOS supports read-only status/version. `help`
 prints the action reference read-only and needs no repository.
@@ -264,7 +268,8 @@ for serialization, legacy/unknown reporting and repair boundaries. Native Pi-Bol
 extensions, streaming/recovery and installed worker/reviewer compatibility remain
 live-unverified; static routing does not qualify delivery.
 
-`update` is the deliberate release channel: under lock it quiesces the deployment,
+`update` explicitly requests release maintenance even when scheduling is current:
+under lock it quiesces the deployment,
 then lets `sync-engine-source` resolve the newest official semver release and pins
 it as `sha:<commit>`. After non-activating validation, plain update starts configured
 scheduling through start’s technical checks, even after an earlier `/orbi stop`.
@@ -296,8 +301,8 @@ Each helper mutation reports its own outcome: direct helper `setup` (public
 `setup --prepare-only`) says `prepared` (staging, not scheduler activation),
 helper `start` (public default setup or start) says `started` or `already-running`, `update` says
 `updated` or `up_to_date`, and `stop` says `stopped` after verified inactivity;
-`--dry-run` says `planned` for all four. Stop and update name the disabled timers
-and stopped workers and preserve attempt files, worktrees and recovery inputs.
+`--dry-run` says `planned` for all four. Quiescing reports disabled timers and
+stopped workers and preserves attempt files, worktrees and recovery inputs.
 Update syncs only after quiescing and starts scheduling unless `--stop`
 is used. The read-only `status` still describes current activity, not intent.
 Start also retains `preparation.state` (`skipped`, `planned`, `prepared`, `failed`).
