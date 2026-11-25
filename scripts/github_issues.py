@@ -180,6 +180,8 @@ class PublicationProgress:
             row['unverified_write'] = True
         if phase == 'create':
             row['creation'] = 'unknown'
+        if phase == 'ready_post':
+            row['readiness'] = 'unknown'
 
     def observe(self, spec, issue):
         row = self.rows[spec['key']]
@@ -229,10 +231,13 @@ def publish(api: GitHub, batch: Any) -> list[dict]:
     specs = validate(batch)
     progress = PublicationProgress(specs)
     try:
-        return publish_batch(api, specs, progress)
-    except (PublicationError, OSError, ValueError, subprocess.SubprocessError) as exc:
-        progress.reconcile(api)
-        error = PublicationError(str(exc))
+        try:
+            return publish_batch(api, specs, progress)
+        except (PublicationError, OSError, ValueError, subprocess.SubprocessError):
+            progress.reconcile(api)
+            raise
+    except (KeyboardInterrupt, Exception) as exc:
+        error = PublicationError('interrupted' if isinstance(exc, KeyboardInterrupt) else str(exc))
         error.receipt = progress.receipt()
         raise error from exc
 
@@ -414,7 +419,7 @@ def main(argv=None) -> int:
         print(f'Publication incomplete: {exc}', file=sys.stderr)
         if isinstance(exc, PublicationError) and exc.receipt is not None:
             print(json.dumps(exc.receipt), file=sys.stderr)
-        return 1
+        return 130 if isinstance(exc.__cause__, KeyboardInterrupt) else 1
 
 
 if __name__ == '__main__':
