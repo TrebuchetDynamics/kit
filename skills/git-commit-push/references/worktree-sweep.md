@@ -25,7 +25,7 @@ references; reading shared delivery rules does not authorize a sweep.
 
 | State | Meaning | Sweep action |
 | --- | --- | --- |
-| `merged` | HEAD is already contained in the base branch | close it out if clean |
+| `merged` | HEAD is already contained in the base branch | close it out if clean and idle |
 | `unmerged-clean` | commits are not on the base branch, tree is clean | verify scope/completion/ownership/gates before merge |
 | `unmerged-dirty` | commits are not on the base branch, and the tree has changes | report it to its owner; never commit it |
 | `detached` | release or review checkout with no branch | leave it |
@@ -63,6 +63,8 @@ references; reading shared delivery rules does not authorize a sweep.
    attributed to a worktree.
 5. **Close out.** The bundled executor helper is removed. `--remove` requires an
    explicit existing `--closeout` safety helper; otherwise it fails before merging.
+   The sweep keeps worktrees with tracked or untracked changes, or Git metadata newer
+   than the `--idle-minutes` threshold (default 5; `0` disables the idle check).
    Apply [ownership and recovery checks](worktree-closeout.md) independently.
    Preserve existing legacy worktrees during removal; never use a force fallback.
    **Pass when:** each removed worktree is reported, and each kept one names its reason.

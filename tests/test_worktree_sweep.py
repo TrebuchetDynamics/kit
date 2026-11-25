@@ -55,9 +55,18 @@ class WorktreeSweepTests(unittest.TestCase):
         done = run(sys.executable, str(SCRIPT), str(self.repo), '--idle-minutes', '0', *args, check=check)
         return done
 
-    def inventory(self):
+    def inventory(self, *args):
         return {entry['path'].split('/')[-1]: entry
-                for entry in json.loads(self.sweep('--json').stdout.split('\n\n')[0])}
+                for entry in json.loads(self.sweep('--json', *args).stdout.split('\n\n')[0])}
+
+    def recording_closeout(self):
+        helper = Path(self.tmp.name) / 'closeout.py'
+        marker = Path(self.tmp.name) / 'seen'
+        helper.write_text(
+            'import pathlib, sys\n'
+            f'with pathlib.Path({str(marker)!r}).open("a") as log:\n'
+            '    print(sys.argv[3], file=log)\n')
+        return str(helper), marker
 
     def test_remove_without_explicit_safety_helper_refuses_before_merging(self):
         ahead = self.worktree('ahead', commit='pending work')
@@ -76,15 +85,43 @@ class WorktreeSweepTests(unittest.TestCase):
 
     def test_explicit_closeout_receives_only_eligible_candidates(self):
         finished = self.worktree('finished')
+        gitdir = git(finished, 'rev-parse', '--absolute-git-dir')
+        os.utime(gitdir, (1, 1))
         self.worktree('ahead-dirty', commit='unfinished work', dirty=True)
-        helper = Path(self.tmp.name) / 'closeout.py'
-        marker = Path(self.tmp.name) / 'seen'
-        helper.write_text(
-            'import pathlib, sys\n'
-            f'pathlib.Path({str(marker)!r}).write_text(sys.argv[3])\n')
-        self.sweep('--remove', '--closeout', str(helper))
-        self.assertEqual(marker.read_text(), str(finished))
+        helper, marker = self.recording_closeout()
+        self.sweep('--remove', '--closeout', helper, '--idle-minutes', '30')
+        self.assertEqual(marker.read_text().splitlines(), [str(finished)])
         self.assertTrue(finished.is_dir(), 'only the explicit helper may remove it')
+
+    def test_remove_keeps_dirty_merged_worktrees(self):
+        modified = self.worktree('modified', dirty=True) / 'app.txt'
+        untracked = self.worktree('untracked') / 'draft.txt'
+        untracked.write_text('untracked work\n')
+        helper, marker = self.recording_closeout()
+
+        entries = self.inventory('--remove', '--closeout', helper)
+
+        self.assertFalse(marker.exists(), 'closeout must not receive any dirty worktree')
+        for name in ('modified', 'untracked'):
+            with self.subTest(worktree=name):
+                entry = entries[name]
+                self.assertEqual(entry['state'], 'merged')
+                self.assertEqual(entry['closed'], 'kept')
+                self.assertIn('dirty', entry['note'])
+        self.assertEqual(modified.read_text(), 'edited but uncommitted\n')
+        self.assertEqual(untracked.read_text(), 'untracked work\n')
+
+    def test_remove_keeps_recently_active_merged_worktree(self):
+        active = self.worktree('active')
+        helper, marker = self.recording_closeout()
+
+        entry = self.inventory('--remove', '--closeout', helper, '--idle-minutes', '30')['active']
+
+        self.assertFalse(marker.exists(), 'closeout must not receive the active worktree')
+        self.assertEqual(entry['state'], 'merged')
+        self.assertEqual(entry['closed'], 'kept')
+        self.assertIn('active within 30 min', entry['note'])
+        self.assertTrue(active.is_dir())
 
     def test_classification_covers_every_state_without_changing_anything(self):
         self.worktree('finished')
