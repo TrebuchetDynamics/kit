@@ -150,23 +150,19 @@ that same deployment. Outside that context, retain necessary selectors and liter
 paths. `--stop` remains in both retry forms when requested. Exit 0 and disabled
 timers are not an applied engine update. Do not suggest start while deferred.
 
-Plain `/orbi update` is authorization for maintenance and to restore eligible
-scheduling after validation; it needs no separate approval. Under lock the helper
-records maintenance intent bound to verified deployment file identities. It restores
-prior configured enabled/active scheduling or a matching maintenance intent.
-An inactive timer alone is not evidence of prior scheduling. Explicit `stop` and
-`update --stop` invalidate maintenance intent, including across deliberate retries.
-Changed or unknown bindings prevent restoration. Each invocation resolves the
-scheduler and target afresh.
+Plain `/orbi update` authorizes maintenance and scheduling, even after an earlier
+`stop` or `update --stop`. It needs no separate approval. The helper keeps no saved
+stop record. It deletes any legacy record without reading it when it takes the
+deployment lock. Each invocation resolves the target and scheduler afresh.
 
 Once sync/pin/check succeeds (including already-current releases), plain update uses
 start's shared lock-aware existing-target checks and setup/install/enable actions.
 It does not prepare a new deployment or explicitly start/restart a worker service.
 It verifies configured timers **enabled and active**, separately from running services,
-and reports engine and activation results separately. No separate start is needed
-on eligible success. Failed or unknown technical checks hold activation.
-`update --stop` is the compatibility opt-out: update, skip activating unit refresh,
-and leave stopped. It is not equivalent to plain update.
+and reports engine and activation results separately. A successful plain update
+reports `activation: started` without a separate start. Use `update --stop` to
+skip activating unit refresh and leave scheduling stopped: `activation: held`
+with reason `explicit --stop`.
 
 On partial/unknown activation, the nonzero error retains the validated engine result,
 completed/failed steps, actual timer state (or unavailable), and exact bound
@@ -192,8 +188,8 @@ unchanged;
 one exact commit instead of tracking a moving tag;
 4. validates with non-activating `orbi check`;
 5. rechecks the paused scheduler and pending starts;
-6. restores eligible scheduling for plain update through shared existing-target start
-actions, or defers activating unit refresh when scheduling is not eligible or `--stop` is set;
+6. starts scheduling for plain update through shared existing-target start actions,
+or defers activating unit refresh for explicit `--stop`;
 7. verifies and reports engine and scheduling results separately, with partial evidence
 if activation or readback fails.
 
@@ -204,11 +200,10 @@ release channel fails the sync closed and is reported as
 a second retry.
 
 It reports `updated`, or `up_to_date` when the release commit did not move; both
-validate the engine before any eligible activation. `previous.track`/`previous.head` name the
+validate the engine before activation. `previous.track`/`previous.head` name the
 observed starting point, and `deployment.deployed_commit` the locked release.
 Origin, slots, provider metadata, harness selection, `.orbi/env` and unrelated
-config bytes are preserved. Eligible plain update restores scheduling without a
-separate command; explicit `--stop` leaves stopped. Rollback is a deliberate owner edit
+config bytes are preserved. Rollback is a deliberate owner edit
 of `engine_source_track` to the previous tag or sha; there is no second state.
 `update --dry-run` performs no write, fetch or lock and reports `planned`.
 - Deployment/config paths and provider/env paths must not traverse symlinks,
@@ -434,12 +429,15 @@ Explicit `/orbi start`, plain `/orbi update`, and `install.sh` with Orbi selecte
 authorize activation. Require verified unit and file ownership, a validated release
 pin and a passing `orbi check`. The helper runs the check during absent-target
 preparation and release update; the Orbi installer runs it during fleet refresh.
-Existing-target `start` skips preparation: if the selected configuration and pin
-have not been validated, run the non-activating `orbi check --config PATH` with that
-deployment's environment before starting. Report the specific failed or unknown
-technical check and the next safe read-only check or repair. A cutover or
-human-approval record is not required. A preview neither authorizes activation nor
-passes staged checks. Report live delivery only from live evidence.
+Existing-target `start` skips preparation and does not run `orbi check` itself.
+Reuse a passing result only for the same unchanged config, release pin and
+runtime environment. Otherwise, before invoking the activating helper, run the
+non-activating `orbi check --config PATH` using the bound deployment's bootstrap
+and scoped environment, not an unrelated global CLI or the ambient shell alone.
+If you cannot bind that scope or the check fails, name the exact missing evidence
+or error and the next safe read-only check or repair; do not start. This is not
+part of dry-run. No cutover or human-approval record is required. Report live
+delivery only from live evidence.
 
 Branch protection is not a Kit setup/start prerequisite. If GitHub reports
 **unprotected main**, report that observed branch state; it is not an access error.
@@ -630,7 +628,8 @@ live qualification.
 1 through `max(5, max_concurrency)`, including observed out-of-config instances
 within that bound, and runs only `systemctl --user disable --now <timer>`.
 It never runs `stop`, `kill` or `restart` on a service. A pre-existing invocation
-may finish; later issue phases may wait for a start. Re-read the service states within
+may finish. Scheduling stays disabled until an explicit `start`, plain `update`,
+or `install.sh` refresh that selects Orbi starts it again. Re-read the service states within
 the same bound and report `draining`
 while any is active or activating, `stopped` only when all service states were
 observed as inactive or failed. Failed, empty or unknown state reads leave drain
@@ -978,8 +977,8 @@ same CLI requests against the base and current helper each use **one helper
 invocation**. These fixtures establish helper receipts, not model calls or host
 round trips. Routine previews return `planned`. Both update modes
 pause owned timers and return `draining` when workers remain, with the exact plain
-resume command; a later deliberate plain invocation after drain updates and restores
-eligible scheduling. Explicit `--stop` leaves stopped.
+resume command; a later deliberate plain invocation after drain updates and starts
+scheduling. Explicit `--stop` leaves stopped.
 Dirty-source refusal returns `source_dirty`, `mutated: false` and a preservation
 repair action before any pause. No implicit retry follows.
 

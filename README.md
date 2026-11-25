@@ -205,13 +205,13 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `setup` | Start by default: map to `start`, preparing and validating if absent. |
 | `setup --prepare-only` | Prepare source/configuration without scheduling or timer activation (direct helper `setup`). |
 | `start` | The command authorizes scheduling after technical checks. Prepare first if absent. |
-| `update` | The command authorizes maintenance and restoration of eligible scheduling. Pause owned timers, defer while workers finish, then pin and validate the newest official release before restoring scheduling. `update --stop` leaves scheduling stopped. Not `/update-kit`. |
+| `update` | The command authorizes maintenance and activation, even after an earlier `stop`. Pause owned timers, defer while workers finish, then pin and validate the newest official release before starting scheduling. `update --stop` leaves scheduling stopped. Not `/update-kit`. |
 | `stop` | Disable owned timers without killing active workers; report draining while they finish. |
 
 Linux supports lifecycle changes. macOS supports status, version and help only.
 Never run bare `orbi` to inspect: it runs a Runner tick, not status.
 
-Pause scheduling and update in one command (no extra stop command or prompt):
+Update the release and start scheduling in one command (no separate stop or start):
 
 ```text
 /orbi update --dry-run
@@ -220,8 +220,8 @@ Pause scheduling and update in one command (no extra stop command or prompt):
 
 Active workers finish naturally. A `draining` receipt names pending units and the
 exact command to retry after drain; no background update or restart follows.
-Plain update restores eligible scheduling after validation; use `--stop` to leave
-scheduling stopped. Neither spelling interrupts active worker services.
+Plain update enables configured timers only after validation and existing start
+checks. `--stop` skips activating unit refresh. Neither mode interrupts workers.
 
 The upstream CLI remains available for diagnostics:
 

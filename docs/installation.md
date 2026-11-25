@@ -180,8 +180,8 @@ Timestamps, updater success messages and checkout HEAD alone are not change evid
 Installed evidence is captured before automatic stash/pull and carried across installer re-execution,
 so source-linked packages retain their original baseline. This may inspect candidate hosts before
 menu selection; only the final selection can update payloads or request restarts.
-Outside the [Orbi fleet refresh](#orbi-cli), a healthy unchanged repeat requests no service
-restarts, including nested host refreshes. Only complete changed payloads are eligible for this
+Outside the [Orbi fleet refresh](#orbi-cli), an unchanged repeat with no pending restart work
+requests no service restarts, including nested host refreshes. Only complete changed payloads are eligible for this
 consumer restart pass; it affects supported host integrations only.
 On Linux user systemd, active `kit-*` units
 must reference the affected executable or configuration input before one `try-restart` is requested.
@@ -189,7 +189,13 @@ The prefix alone proves no ownership. This consumer restart pass leaves stopped,
 A tx-only change without a proven active consumer restarts nothing. Unknown installed inputs or
 unit references are held with the named input/service and an inspection/retry action, not reported as unchanged.
 Hosts without Linux user systemd report restarts unavailable. Restart failures make installation fail.
-A failed payload holds its consumer while independent successful changes remain eligible.
+The installer saves observed changes beside its lock before moving on to the next component. If it is
+interrupted or a restart fails, fix the reported problem and rerun with the same selection. The installer
+rechecks the affected consumers even if the refreshed payload is now unchanged or Hermes does not
+repeat a completed nested host refresh. Unverified unit references leave restart work pending. The installer records successful restarts even if a later
+restart is interrupted, so retries can skip those units for the same payload. Once the restart work is
+complete, an unchanged repeat requests no restart. A failed payload holds its consumer while
+independent successful changes remain eligible.
 
 Hermes owns gateway disposition on both setup and installed-update paths. Its native
 `gateway_restart` fields (including `deferred`, `pending` and `not_needed`) reach the outer receipt;

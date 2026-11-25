@@ -52,7 +52,8 @@ concrete unmet need, not a fixed sequence of model turns.
    helper `setup` remains non-activating for automation and recovery.
 
    Bare `/orbi` means `status`. **Help first.** For help requests, run only help.
-   For lifecycle commands, go directly to the requested action.
+   For lifecycle commands, go directly to the requested action except for the
+   existing-target start validation described below.
    Return observed output from the helper's `help` for help or command inventory;
    it needs no repository, config, environment or scheduler reads.
    **Host inventory:** preserve literal
@@ -73,8 +74,10 @@ concrete unmet need, not a fixed sequence of model turns.
    release pin and a passing `orbi check`; do not ask for a cutover record or
    separate approval. Public `setup` has the same authority as `start` because it
    maps to it. `setup --prepare-only` and dry-run never activate.
-   Use [activation evidence](references/lifecycle.md#activation-evidence) for
-   the existing-target check and [offline examples](references/lifecycle.md#offline-guidance-examples)
+   Before existing-target `start` (including setup-as-start), verify a passing
+   `orbi check` for the selected configuration and pin; if missing or stale, run
+   the [deployment-scoped check](references/lifecycle.md#activation-evidence).
+   Do not run that check as part of dry-run. See [offline examples](references/lifecycle.md#offline-guidance-examples)
    for precise refusals. Do not silently fall back to preparation. Activation does
    not qualify live delivery.
 
@@ -84,9 +87,8 @@ concrete unmet need, not a fixed sequence of model turns.
    repository access. Do not require PR-only mode, special opt-in, a protection change,
    paid GitHub plan, engine release/proof or second approval on that basis.
    Authentication, repository access, ownership and other technical checks still apply.
-   Plain `update` requests maintenance and restoration of eligible scheduling after
-   engine validation. `update --stop` is the compatibility opt-out: pause/update and
-   leave stopped. Workers finish naturally.
+   Plain `update` requests scheduling after engine validation, even after an earlier
+   `stop`. Use `update --stop` to update and leave scheduling stopped. Workers finish naturally.
    Stop disables only owned timers; `draining` is not `stopped`. Never kill/restart workers.
    Other mutations require their own accepted scope. Offline checks grant none.
 3. **Invoke once.** Preserve literal argument values, quoting, paths, provider/model
@@ -216,7 +218,7 @@ For host/fixture measurement limits, use the reference's
 - A guessed alias, shell interpolation, changed literal selectors or removed dry-run.
 - Prepare-only/dry-run enables timers, status writes, or stop/update kills/restarts a service.
 - Update syncs before fresh idle/no-pending-start evidence, activates before engine
-  validation or with unverified scheduler eligibility, or reports stopped from missing evidence.
+  validation or with unverified ownership, or reports stopped from missing evidence.
 - Missing ownership/authorization, silently changed pin/provider/harness/origin,
   or an automatic install/login/repair/retry after a refusal.
 - An empty queue or stopped state inferred from unavailable evidence, or secrets

@@ -219,15 +219,16 @@ canonical repository and `--config` selects its existing native configuration.
 Explicit `/orbi start`, plain `/orbi update`, and `install.sh` with Orbi selected
 authorize activation. Verify unit and file ownership, the release pin and a passing
 `orbi check`. Neither a cutover record nor separate human approval is required.
-Public `setup` maps to helper `start`. `setup --prepare-only` prepares without activating scheduling
-(direct helper `setup` remains non-activating). Failed or unknown technical
-checks hold activation with the specific blocker and repair, not a silent fallback to
-preparation. If genuinely absent
-and no explicit config was supplied, start first uses the same setup preparation,
-validates non-activating, then rebinds/revalidates under the activation lock. Existing
-valid/active targets skip preparation and reject bootstrap/harness selectors; partial,
-foreign or missing explicit configs require deliberate recovery, never silent resume. Stop disables only
-owned timers and reports draining until active workers finish; missing evidence
+Public `setup` maps to helper `start`. `setup --prepare-only` prepares without
+activating scheduling (direct helper `setup` remains non-activating). Failed or
+unknown technical checks hold activation with the specific blocker and repair, not
+a silent fallback to preparation. If genuinely absent and no explicit config was
+supplied, start first uses the same setup preparation, validates non-activating,
+then rebinds and revalidates under the activation lock. Existing targets skip
+preparation and reject bootstrap/harness selectors; follow the
+[existing-target check](../skills/orbi/references/lifecycle.md#activation-evidence).
+Partial, foreign or missing explicit configs require deliberate recovery, never
+silent resume. Stop disables only owned timers and reports draining until active workers finish; missing evidence
 is unavailable, not stopped. Linux supports lifecycle changes; macOS supports read-only status/version. `help` prints the action reference read-only and needs no repository.
 
 On Linux, status names the state it observed: `absent` when no deployment owns
@@ -259,14 +260,15 @@ No temporary auth profile, credential copying or user-catalog mutation is used.
 See [harness evidence](../skills/orbi/references/lifecycle.md#harness-selection-and-evidence)
 for serialization, legacy/unknown reporting and repair boundaries. Native Pi-Bolt
 extensions, streaming/recovery and installed worker/reviewer compatibility remain
-live-unverified; static routing does not qualify delivery or release pauses.
+live-unverified; static routing does not qualify delivery.
 
-`update` is the deliberate release channel: it pauses owned timers under lock by
-default, defers while workers or pending starts remain with an exact plain resume
-command, then writes upstream's `release` track, lets `sync-engine-source` resolve
-the newest official semver release and locks it as `sha:<commit>`. Explicit
-`update --stop` is compatible. Both validate non-activating and defer unit refresh
-to the next authorized start, never enabling timers or interrupting services.
+`update` pauses owned timers under lock and defers while workers or pending starts
+remain, returning the exact command to retry. Once idle, it writes upstream's
+`release` track, lets `sync-engine-source` resolve the newest official semver release
+and locks it as `sha:<commit>`. After validation, plain update starts configured
+scheduling through the existing start checks, even after a prior `/orbi stop`.
+Use `update --stop` to leave scheduling stopped and defer activating unit refresh.
+Neither mode interrupts workers.
 Tracked checkout changes refuse as `source_dirty` before pausing. Uncertain
 ownership/scheduler evidence holds; partial failures retain confirmed disables and
 failed steps without claiming stopped. Update preserves origin, provider, harness
