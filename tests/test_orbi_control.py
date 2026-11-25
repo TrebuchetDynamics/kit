@@ -2878,9 +2878,9 @@ class PartialLifecycleReceiptTests(unittest.TestCase):
                                   'write': {str(marker): 'disabled'}}, *self.h.scheduler_rules())
                     reads = []
 
-                    def broken_snapshot(ctx, target):
+                    def broken_snapshot(ctx, target, **kwargs):
                         if not marker.exists():
-                            return original(ctx, target)
+                            return original(ctx, target, **kwargs)
                         reads.append('read')
                         if len(reads) > 1:
                             raise UnicodeError(SECRET)
@@ -2957,6 +2957,101 @@ class LifecycleSequenceTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         harness.clear_calls()
         return harness
+
+    def test_stop_configured_slots_above_five(self):
+        for active_worker in (False, True):
+            with self.subTest(active_worker=active_worker):
+                h = self.fresh()
+                config = h.deploy / 'orbi.toml'
+                config.write_text(config.read_text().replace('max_concurrency = 1',
+                                                           'max_concurrency = 6'))
+                prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+                timers = [f'{prefix}@{i}.timer' for i in range(1, 7)]
+                service = f'{prefix}@6.service'
+                disabled = [h.root / f'disabled-{i}' for i in range(1, 7)]
+                mutations = []
+                for timer, marker in zip(timers, disabled):
+                    mutations.extend([
+                        {'tool': 'systemctl', 'argv_contains': ['disable', '--now', timer],
+                         'write': {str(marker): 'disabled'}},
+                        {'tool': 'systemctl', 'argv_contains': ['is-enabled', timer],
+                         'if_exists': str(marker), 'stdout': 'disabled\n', 'exit': 1},
+                        {'tool': 'systemctl', 'argv_contains': ['show', 'ActiveState', timer],
+                         'if_exists': str(marker), 'stdout': 'inactive\n'}])
+                h.rules(*mutations, *h.scheduler_rules(
+                    services={6: 'active' if active_worker else 'inactive'},
+                    timers=dict.fromkeys(range(1, 7), 'active'),
+                    enabled=dict.fromkeys(range(1, 7), True)))
+                before = snapshot(h.home)
+                for dry_run in (True, False):
+                    result = subprocess.run(
+                        [sys.executable, '-B', str(HELPER), 'stop', '--repo-dir', str(h.repo),
+                         '--json', *(['--dry-run'] if dry_run else [])], env=h.env,
+                        capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+                    doc = json.loads(result.stdout)
+                    self.assertEqual(doc['disabled_timers'], timers)
+                    self.assertEqual(doc['pending_services'],
+                                     [{'unit': service, 'state': 'active'}] if active_worker else [])
+                    self.assertEqual(doc['status'], 'planned' if dry_run else
+                                     ('draining' if active_worker else 'stopped'))
+                    if dry_run:
+                        self.assertEqual(snapshot(h.home), before)
+                        self.assertFalse(any(marker.exists() for marker in disabled))
+                    else:
+                        self.assertTrue(all(marker.exists() for marker in disabled))
+                mutations = [c['argv'] for c in h.calls() if c['tool'] == 'systemctl'
+                             and set(c['argv']) & {'enable', 'disable', 'start', 'stop',
+                                                   'kill', 'restart'}]
+                self.assertEqual(mutations,
+                                 [['--user', 'disable', '--now', timer] for timer in timers])
+                self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
+
+    def test_stop_failure_receipt_observes_configured_slot_above_five(self):
+        h = self.fresh()
+        config = h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace('max_concurrency = 1',
+                                                   'max_concurrency = 6'))
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        timer = f'{prefix}@6.timer'
+        h.rules({'tool': 'systemctl', 'argv_contains': ['disable', '--now', timer], 'exit': 7},
+                *h.scheduler_rules(timers={6: 'active'}, enabled={6: True}))
+        code, doc, err = h.run('stop')
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'command_failed')
+        self.assertEqual(doc['steps'][-1]['unit'], timer)
+        self.assertNotIn(timer, doc['disabled_timers'])
+        self.assertTrue(doc['scheduler']['timers'][timer]['enabled'])
+        self.assertEqual(doc['scheduler']['inventory']['scan_last'], 6)
+
+    def test_setup_configured_slots_above_five_are_busy(self):
+        h = self.fresh()
+        config = h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace('max_concurrency = 1',
+                                                   'max_concurrency = 6'))
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        for services, timers, enabled in (({}, {}, {6: True}),
+                                         ({}, {6: 'active'}, {}),
+                                         ({6: 'active'}, {}, {})):
+            for dry_run in (True, False):
+                with self.subTest(services=services, timers=timers, enabled=enabled,
+                                  dry_run=dry_run):
+                    # Include slot 6's inactive fragments in every fixture variant.
+                    h.rules(*h.scheduler_rules(services={6: 'inactive', **services},
+                                               timers=timers, enabled=enabled))
+                    h.clear_calls()
+                    before = snapshot(h.home)
+                    code, doc, err = h.run('setup', dry_run=dry_run)
+                    self.assertNotEqual(code, 0, (doc, err))
+                    self.assertEqual(doc['error']['code'], 'setup_busy')
+                    self.assertIn(f'{prefix}@6.service', doc['scheduler']['services'])
+                    inventory = doc['scheduler']['inventory']
+                    self.assertEqual(inventory['scan_last'], 6)
+                    self.assertTrue(inventory['configured_slots_covered'])
+                    self.assertIn('stop/drain', doc['error']['fix'])
+                    self.assertIn('preserve workers', doc['error']['fix'])
+                    self.assertEqual(snapshot(h.home), before)
+                    SetupBoundaryTests.assert_no_activation(self, h.calls())
 
     def test_stop_rechecks_owned_timers_after_lock(self):
         for observation_fails in (False, True):

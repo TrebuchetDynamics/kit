@@ -50,15 +50,33 @@ def discover_tests(root):
 
 
 def test_ids(path):
-    """`module.Class.test_name` for each test method, read with ast so nothing is imported;
-    empty when the module defines none that way."""
+    """Read test IDs from the AST without importing; return no IDs for unresolved bases."""
     try:
         tree = ast.parse(path.read_text(encoding='utf-8'), str(path))
     except (OSError, SyntaxError, ValueError):
         return []
-    return [f'{path.stem}.{node.name}.{item.name}' for node in tree.body if isinstance(node, ast.ClassDef)
-            for item in node.body if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and item.name.startswith('test')]
+    classes = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        methods = dict.fromkeys(item.name for item in node.body
+                                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                                and item.name.startswith('test'))
+        is_test_case = False
+        # A local base must already be defined. Keep mixin methods, but only
+        # emit IDs for TestCase subclasses, as unittest's module loader does.
+        for base in node.bases:
+            if isinstance(base, ast.Name) and base.id in classes:
+                base_is_test_case, base_methods = classes[base.id]
+                is_test_case |= base_is_test_case
+                methods.update(base_methods)
+            elif ast.unparse(base) == 'unittest.TestCase':
+                is_test_case = True
+            else:
+                return []
+        classes[node.name] = is_test_case, methods
+    return [f'{path.stem}.{name}.{method}' for name, (is_test_case, methods) in classes.items()
+            if is_test_case for method in methods]
 
 
 def units(root, tests, pattern=None, shard=None):

@@ -232,6 +232,7 @@ def ensure_idle(source, hermes_home=None):
             except PermissionError as error:
                 raise Hold('Unknown process ownership; resolve process visibility before retry') from error
     root = Path(hermes_home or os.environ.get('HERMES_HOME') or Path(os.environ['HOME']) / '.hermes')
+    lock_homes = []
     for home in [root, *root.glob('profiles/*')]:
         linked = any(path.is_symlink() and path.resolve() == source
                      for path in (home / 'plugins').glob('*'))
@@ -239,6 +240,11 @@ def ensure_idle(source, hermes_home=None):
             continue
         if (home / 'gateway.pid').exists():
             raise Hold(f'Live/unknown linked gateway at {home}; resolve native ownership before retry')
+        lock_homes.append(home)
+    # The Hermes updater locks at the root even if only a named profile links the source.
+    if lock_homes and root not in lock_homes:
+        lock_homes.append(root)
+    for home in lock_homes:
         lock = home / 'maintenance/toolset-update/lock'
         if lock.exists():
             import fcntl

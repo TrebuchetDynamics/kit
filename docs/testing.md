@@ -208,9 +208,10 @@ its own suites: the hook now prints the load average and cpu count when it refus
 so the failure can be attributed instead of bypassed. Run one failing module alone
 before you treat the tree as broken; a second failure there is the tree's.
 
-`main` requires the GitHub Actions `test` check and an up-to-date branch. The
-single `test` job checks plugin syntax, runs the Pi adapter tests with Node 22,
-and runs the full offline Python suite with Python 3.12. Inspect
+`main` requires the GitHub Actions `test` check and an up-to-date branch. Four
+`shard` jobs run the full offline Python suite with Python 3.12, each with
+`check.py --shard I/4`. The first shard also checks plugin syntax and runs the Pi
+adapter tests with Node 22. The `test` job passes only when every shard passed. Inspect
 [the workflow](../.github/workflows/test.yml) for its current inventory. Live
 Telegram delivery and model execution require separate qualification.
 
