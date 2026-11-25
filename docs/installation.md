@@ -925,7 +925,11 @@ the original plugin is moved back if the slot is still empty; partial native out
 An interruption can leave plugin and skill publication at different phases.
 Rerun the same command to resume the original source, selection, staging and
 backup. A different revision/selection, including the same profiles in a different order,
-is refused while that run is incomplete.
+is refused while that run is incomplete. If an incomplete scoped run has a recorded
+phase for any selected profile, `hermes kit update` and `hermes kit update --check`
+return `incomplete` before fetching or changing the checkout or skill files. Follow
+the reported action to resume the original scoped command before retrying the
+all-profile update.
 
 If the original source is gone and **publication never began**, inspect the receipt
 and its backup manifest, then cancel only that exact attempt:
