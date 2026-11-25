@@ -32,6 +32,7 @@ failed, and 2 for a usage error.
 """
 import argparse
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -41,23 +42,24 @@ from pathlib import Path
 CLASSES = ('merged', 'unmerged-clean', 'unmerged-dirty', 'detached', 'locked', 'prunable')
 
 
-def git(repo, *args, check=True):
-    done = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True)
+def git(repo, *args, check=True, literal=False):
+    done = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=not literal)
     if check and done.returncode:
-        raise RuntimeError(done.stderr.strip() or f'git {" ".join(args)} failed')
-    return done.stdout.strip()
+        raise RuntimeError(os.fsdecode(done.stderr).strip() or f'git {" ".join(args)} failed')
+    return os.fsdecode(done.stdout) if literal else done.stdout.strip()
 
 
 def worktrees(repo):
-    """Parse `git worktree list --porcelain` into records, canonical checkout first."""
+    """Parse `git worktree list --porcelain -z` into records, canonical checkout first."""
     records, current = [], {}
-    for line in git(repo, 'worktree', 'list', '--porcelain').splitlines():
-        if not line.strip():
+    # A newline can be part of a path, including the path the guard trusts.
+    for field in git(repo, 'worktree', 'list', '--porcelain', '-z', literal=True).split('\0'):
+        if not field:
             if current:
                 records.append(current)
             current = {}
             continue
-        key, _, value = line.partition(' ')
+        key, _, value = field.partition(' ')
         if key == 'worktree':
             current['path'] = value
         elif key == 'HEAD':
@@ -118,17 +120,22 @@ def classify(repo, record, base):
     return entry
 
 
+def merge_in_progress(repo):
+    path = git(repo, 'rev-parse', '--git-path', 'MERGE_HEAD', literal=True).removesuffix('\n')
+    return (repo / path).exists()
+
+
 def preflight(repo, base):
-    """Refuse to merge into a branch the canonical checkout is not on, or over local edits."""
+    """Refuse a wrong branch, an in-progress merge, or local edits."""
     branch = git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')
     if branch != base:
         raise SystemExit(f'refusing: the canonical checkout is on {branch!r}, not {base!r}. '
                          f'Check out {base} first; this sweep never moves your HEAD.')
+    if merge_in_progress(repo):
+        raise SystemExit('refusing: a merge is already in progress in the canonical checkout.')
     if git(repo, 'status', '--porcelain', '--untracked-files=no'):
         raise SystemExit('refusing: the canonical checkout has uncommitted changes. '
                          'Commit or set them aside first; the sweep never stashes.')
-    if (Path(repo) / '.git' / 'MERGE_HEAD').exists():
-        raise SystemExit('refusing: a merge is already in progress in the canonical checkout.')
 
 
 def merge(repo, entry, base):
@@ -138,7 +145,7 @@ def merge(repo, entry, base):
     if result.returncode == 0:
         entry['result'] = 'merged'
         return True
-    if (Path(repo) / '.git' / 'MERGE_HEAD').exists():
+    if merge_in_progress(repo):
         subprocess.run(['git', '-C', str(repo), 'merge', '--abort'], capture_output=True, text=True)
         entry['result'] = 'conflict'
     else:
@@ -211,10 +218,13 @@ def main():
         parser.error('--closeout requires --remove')
 
     repo = args.repo.resolve()
+    records = worktrees(repo)
+    canonical = Path(records[0]['path']).resolve()
+    if repo != canonical:
+        raise SystemExit(f'refusing: use the canonical checkout: {canonical}')
+
     base = args.base or git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')
     preflight(repo, base)
-
-    records = worktrees(repo)
     entries = [classify(repo, record, base) for record in records[1:]]  # skip the canonical one
     closer = args.closeout.resolve() if args.remove else None
 
