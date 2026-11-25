@@ -357,11 +357,13 @@ class UpdateKitTests(unittest.TestCase):
         lock = native / 'maintenance/toolset-update/lock'
         lock.parent.mkdir(parents=True)
         holder = '''
-import fcntl, sys
+import fcntl, select, sys
 with open(sys.argv[1], 'w') as lock:
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     print('locked', flush=True)
-    sys.stdin.read()
+    # Release even if the caller regresses to a blocking flock.
+    if not select.select([sys.stdin], [], [], 15)[0]:
+        sys.exit('fixture timed out waiting for lock release')
 '''
         with patch.object(updater, 'ensure_idle', self.real_idle):
             with subprocess.Popen([sys.executable, '-B', '-c', holder, str(lock)],
@@ -380,6 +382,7 @@ with open(sys.argv[1], 'w') as lock:
                     except subprocess.TimeoutExpired:
                         owner.kill()
                         raise
+            self.assertEqual(owner.returncode, 0, 'fixture released the lock before the invocation returned')
             self.assertEqual(code, 1, out)
             self.assertIn(f'Concurrent/unknown native updater at {native}; retry after native owner finishes', out)
             self.assertNotIn('fetch', [call.args[1] for call in commands.call_args_list])
