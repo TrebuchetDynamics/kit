@@ -7,7 +7,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 49);
+  assert.equal(commands.size, 50);
   assert.equal(commands.has('orbi'), true);
   assert.equal(commands.has('push'), true);
   assert.equal(commands.has('unblock'), true);
@@ -47,6 +47,9 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
     assert.equal(messages.at(-1)[0].includes('trigger analysis and issue handoff'), true);
     assert.equal(messages.at(-1)[0].endsWith(`User request (preserve scope and restrictions):\n${args}`), true);
   }
+  await commands.get('sakurai').handler(raw, {isIdle: () => true});
+  await assertWorkflow('sakurai');
+  assert.equal(messages.at(-1)[0].endsWith(raw), true);
   await commands.get('ui-taste').handler(raw, {isIdle: () => true});
   await assertWorkflow('ui-taste');
   assert.equal(messages.at(-1)[0].endsWith(raw), true);
@@ -448,7 +451,14 @@ test('installed archive resolves portable references and commands without checko
         if (!match[1].includes('://')) await stat(fileURLToPath(new URL(match[1], pathToFileURL(path))));
       }
     }
-    assert.equal(skillCount, 36);
+    assert.equal(skillCount, 37);
+    const sakurai = join(installed, 'skills/sakurai');
+    assert.deepEqual((await readdir(sakurai)).sort(), ['SKILL.md', 'UPSTREAM.json']);
+    assert.equal(await readFile(join(sakurai, 'SKILL.md'), 'utf8'),
+      await readFile(join(root, 'skills/sakurai/SKILL.md'), 'utf8'));
+    const sakuraiSource = JSON.parse(await readFile(join(sakurai, 'UPSTREAM.json'), 'utf8'));
+    assert.equal(sakuraiSource.distribution, 'pointer-only');
+    assert.deepEqual(sakuraiSource.files, {});
     const publicEntries = (await readdir(join(installed, 'adapters/skills'), {withFileTypes: true}))
       .filter(e => e.isDirectory()).map(e => e.name);
     assert.equal(publicEntries.includes('agents-md-generator'), true);
@@ -525,7 +535,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 49);
+    assert.equal(commands.size, 50);
     assert.equal(commands.has('orbi'), true);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {

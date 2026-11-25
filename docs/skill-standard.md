@@ -144,6 +144,33 @@ live adherence. The checked-in traces are synthetic fixtures.
   owners instead of a second command set. High-risk skills adopt Addy's
   rationalization and red-flag sections.
 
+## Unlicensed upstream: Sakurai pointer
+
+The [`sakurai` wrapper](../skills/sakurai/SKILL.md) ships pointer-only. On
+2026-11-25, [kociden/sakurai-skill](https://github.com/kociden/sakurai-skill) had
+no LICENSE file, GitHub reported no detectable license (license endpoint HTTP 404),
+and no owner's written redistribution grant was available. There is no grant URL
+or grant condition to encode. The [source note](../skills/sakurai/UPSTREAM.json)
+records the checked URLs, evidence and empty file inventory. Package inventory
+already includes `skills/` and `adapters/`, so it ships the wrapper and portable
+adapter without upstream text, tools, examples or images.
+
+The requested commit `c138943cd6c35276d02e9bcbcf9e4332e58aa2ef` returns HTTP 404
+upstream. Observed main `913dc46b9dedc5e0b12e3834d25d684cf8213f87` matches the
+requested timestamp and skill blob, but is not a replacement vendoring pin.
+Links follow upstream `main`; no byte-integrity pass is claimed for this pointer.
+Before vendoring, obtain the owner's written redistribution grant, record its URL
+and summary in the source note and this section, and resolve the verified commit.
+Encode any grant conditions in the wrapper and source note, then preserve upstream
+bytes and verify their recorded hashes under the pinned-vendoring convention.
+
+Upstream is an unofficial fan-made resource based on Masahiro Sakurai's
+[桜井政博のゲーム作るには / Masahiro Sakurai on Creating Games](https://www.youtube.com/@sora_sakurai_jp)
+YouTube series, whose copyright holders are Masahiro Sakurai and Sora Ltd.
+Its AI summaries of automatic YouTube captions may contain transcription errors
+and are not human-verified or verbatim statements. Check the original videos.
+The wrapper preserves this caveat and attribution without implying endorsement.
+
 ## Review checklist
 
 - [ ] Description is a one-sentence summary under 60 characters, with no "Use when…".
