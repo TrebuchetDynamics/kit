@@ -25,14 +25,21 @@ class CheckWorkflowTests(unittest.TestCase):
             'push': {'branches': ['main'], 'tags': ['**']},
         })
         jobs = workflow['jobs']
-        self.assertEqual(set(jobs), {'test'})
-        steps = jobs['test']['steps']
+        self.assertEqual(set(jobs), {'shard', 'test'})
+        shards = jobs['shard']['strategy']['matrix']['shard']
+        self.assertEqual(shards, list(range(1, len(shards) + 1)))
+        steps = jobs['shard']['steps']
         commands = [step['run'] for step in steps if 'run' in step]
         self.assertEqual(commands[1:], [
             'python -m py_compile __init__.py',
             'node --test tests/portable_pi.test.mjs',
-            'python scripts/check.py',
+            f'python scripts/check.py --shard ${{{{ matrix.shard }}}}/{len(shards)}',
         ])
+        # The required `test` check aggregates every shard, including failed or cancelled ones.
+        gate = jobs['test']
+        self.assertEqual((gate['needs'], gate['if']), ('shard', 'always()'))
+        self.assertEqual([step['run'] for step in gate['steps']],
+                         ['test "${{ needs.shard.result }}" = success'])
         self.assertIn('python -m pip install -r requirements-test.txt', commands[0].splitlines())
         self.assertNotIn('textual', commands[0])
         setups = {step['uses'].split('@')[0]: step.get('with', {}) for step in steps if 'uses' in step}
@@ -220,6 +227,14 @@ class OfflineCheckTests(unittest.TestCase):
         expected = {(str(path.parent.relative_to(ROOT)), name)
                     for path in actual.values() for name in checker['test_ids'](path) or [path.stem]}
         self.assertEqual(observed, expected)
+        inherited = {name for folder, name in observed if folder == 'tests'
+                     and name.startswith('test_orbi_control.ExplicitStopUpdateTests.')}
+        self.assertIn('test_orbi_control.ExplicitStopUpdateTests.test_final_readback_missing_never_claims_stopped',
+                      inherited)
+        self.assertEqual(inherited, {name.replace('.PauseUpdateTests.', '.ExplicitStopUpdateTests.')
+                                     for folder, name in observed if folder == 'tests'
+                                     and name.startswith('test_orbi_control.PauseUpdateTests.')})
+
     def test_importable_inventory_is_side_effect_free(self):
         self.assertTrue(SCRIPT.is_file(), 'missing offline checker')
         spec = importlib.util.spec_from_file_location('check_inventory', SCRIPT)
@@ -415,6 +430,56 @@ class Check(unittest.TestCase):
                 result = self.run_check('tests/test_selected.py', path)
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertNotIn('CHECK', result.stdout)
+
+    def test_shards_run_inherited_methods_once(self):
+        self.write('tests/test_inherited.py', '''import unittest
+class A(unittest.TestCase):
+    def test_x(self):
+        print('RAN', self.id())
+
+class B(A):
+    pass
+
+class Mixin:
+    def test_y(self):
+        print('RAN', self.id())
+    def test_z(self):
+        print('RAN', self.id())
+
+class C(B, Mixin):
+    def test_y(self):
+        print('RAN', self.id())
+''')
+        seen = []
+        for shard in ('1/2', '2/2'):
+            result = self.run_check('tests/test_inherited.py', '--shard', shard)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            seen.extend(re.findall(r'^RAN (\S+)$', result.stdout, re.MULTILINE))
+        self.assertCountEqual(seen, ['test_inherited.A.test_x', 'test_inherited.B.test_x',
+                                     'test_inherited.C.test_x', 'test_inherited.C.test_y',
+                                     'test_inherited.C.test_z'])
+
+    def test_shards_run_module_with_unresolved_base_whole_on_first_shard(self):
+        self.write('tests/support.py', '''import unittest
+class External(unittest.TestCase):
+    def test_external(self):
+        print('RAN', self.id())
+''')
+        self.write('tests/test_external_base.py', '''import unittest
+import support
+class A(unittest.TestCase):
+    def test_local(self):
+        print('RAN', self.id())
+
+class B(support.External):
+    pass
+''')
+        for shard, expected in (('1/2', ['test_external_base.A.test_local', 'test_external_base.B.test_external']),
+                                ('2/2', [])):
+            with self.subTest(shard=shard):
+                result = self.run_check('tests/test_external_base.py', '--shard', shard)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertCountEqual(re.findall(r'^RAN (\S+)$', result.stdout, re.MULTILINE), expected)
 
     def test_shards_and_exclusions_split_a_selection_across_machines(self):
         body = ''.join(f'''    def test_{n}(self):
