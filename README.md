@@ -200,7 +200,7 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 
 | Action | Effect and boundary |
 | --- | --- |
-| Bare skill invocation or `status` | Read-only status for the repository, including its last recorded Kit lifecycle action; missing evidence is unavailable, not an empty queue. |
+| Bare skill invocation or `status` | Read-only status for the repository, including worktree disk use and its last recorded Kit lifecycle action; missing evidence is unavailable, not an empty queue. |
 | `version` | Read-only selected deployment engine release/revision and verification evidence, without full status or global CLI probes. |
 | `help` | Read-only action reference, without a repository or deployment. |
 | `setup` | Start by default: map to `start`, preparing and validating if absent. |
@@ -208,7 +208,7 @@ Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 | `start` | The command authorizes scheduling after checks: prepare if absent; otherwise stop owned work as needed, sync, pin and validate the newest release, then repair units and start scheduling. No changes if already current with all configured timers enabled and active. |
 | `update` | Plain `update` authorizes maintenance and activation, even after an earlier `stop`. Disable owned timers, cancel queued starts and stop owned workers, then pin and validate the newest official release before starting scheduling. `update --stop` updates and leaves scheduling stopped. It is not `/update-kit`. |
 | `stop` | Disable owned timers, cancel queued starts and stop owned workers through systemd. Report `stopped` after verified inactivity. |
-| `prune` | Preview stale unloaded Linux user unit templates. Use `prune --apply` to remove only those files and reload the user manager; deployment data is preserved. |
+| `prune` | On Linux, preview verified finished Orbi task worktrees and stale unloaded user unit templates. Use `prune --apply` to remove candidates. See [prune safety checks](skills/orbi/references/lifecycle.md#prune). |
 
 Linux supports lifecycle changes. macOS supports status, version and help only.
 Never run bare `orbi` to inspect: it runs a Runner tick, not status.
