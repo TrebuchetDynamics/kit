@@ -119,14 +119,35 @@ entry. This is best-effort history for the Kit helper, not evidence of direct
 systemd, upstream CLI or installer actions. A failed write warns without changing
 the command result.
 
-On Linux, `/orbi prune [--apply] [--json]` needs no checkout or selectors. The
-preview lists owned user unit templates with an explicitly missing config or a
-config whose recorded `repo_dir` is missing. A different engine pin alone is not
-stale evidence. Loaded or installed instances, queued jobs and unverified
-bindings are kept. `--apply` rechecks before removing only the candidate unit
-files, then reloads the user manager. There is no instance to stop. Configs,
-worktrees and deploy-home data remain in place. If inventory is unavailable,
-restore the user systemd session before previewing again.
+### Prune
+
+On Linux, `/orbi prune [--apply] [--json]` needs no checkout or selectors. Preview
+is the default; `--apply` repeats the checks before removing anything.
+
+- **Task worktrees:** Inspect local deployments from standard config discovery or
+  a verified user template. Consider registered worktrees under each canonical
+  `repo_dir/.worktrees/` on branches named
+  `orbi/<OWNER>-<REPO>-issue-<N>`. Both modes fetch the configured base, which can
+  update its local tracking ref. Keep a worktree unless GitHub reports the issue
+  closed, its branch is an ancestor of the fetched base, Git reports it clean,
+  and no visible process cwd or live Orbi slot identifies it as in use. Run as
+  the deployment user; processes hidden by other accounts or namespaces are not
+  observable. Apply uses non-force `git worktree remove`, then `git branch -d`.
+  The receipt lists candidates, removals, reasons for keeping worktrees or
+  branches, and estimated allocated bytes freed per repo. If a check fails,
+  fix the reported cause and preview again. Detached and unregistered worktrees
+  are outside this action; engine retention settings are unchanged.
+- **User templates:** Preview lists owned templates with an explicitly missing
+  config or a config whose recorded `repo_dir` is missing. A different engine pin
+  alone is not stale evidence. Loaded or installed instances, queued jobs and
+  unverified bindings are kept. Apply rechecks before removing the candidate unit
+  files, then reloads the user manager. There is no instance to stop. Configs and
+  deploy-home data remain in place. If inventory is unavailable, restore the
+  user systemd session before previewing again.
+
+`/orbi status` and `/orbi status all` report allocated disk use for each deployment's
+`.worktrees/` directory, including retained worktrees that prune does not inspect.
+Each measurement is bounded to three seconds; unavailable sizes carry a reason.
 
 ## Suite installer refresh
 
@@ -194,8 +215,10 @@ and continued stopped scheduling for `--stop`.
 On Linux, `update all` discovers local configs as `status all` does, without
 needing a checkout or querying GitHub API budget. Each update runs from the
 config's canonical `repo_dir` using the usual per-deployment safety checks.
-Only supported current-user timer/service bindings are changed. Mixed or
-unverified timer scheduling is refused rather than normalized. `--dry-run`
+Only supported current-user timer/service bindings are changed. If either
+local manager inventory is unavailable, the helper cannot rule out a second
+worker using the same config and refuses to update. Mixed or unverified timer
+scheduling is refused rather than normalized. `--dry-run`
 previews without writes, waits or fetching the release. Do not add repo/config,
 `--stop`, `--wait`, `--work` or `--verbose` selectors.
 

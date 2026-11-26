@@ -29,8 +29,9 @@
 - `set` drains like `update --wait` and applies a backed-up config change without moving the engine pin.
 - `stop` quiesces the same owned units under lock and reports `stopped` only
   after idle readback. Neither action kills or restarts a worker directly.
-- `prune` lists stale unloaded user unit templates. `--apply` removes the
-  verified templates and reloads the user manager, without deleting configs.
+- `prune` previews finished task worktrees and stale unloaded user unit templates.
+  `--apply` removes verified candidates and reloads the user manager only if it
+  removed templates. Configs are never deleted.
 
 Linux owns the mutations; macOS also supports status/version; help works on every platform.
 All subprocesses use an argv list (no shell). Secrets are never printed: the
@@ -2193,6 +2194,32 @@ def enrich_activity(activity, queue):
             issue['title'] = pending[issue['number']]['title']
 
 
+def worktree_usage(ctx, path):
+    """Measure allocated space without making status wait on a large tree."""
+    if path is None:
+        return {'bytes': None, 'reason': 'deployment has no repo_dir'}
+    try:
+        checked_path(path, 'worktree directory')
+        if not stat.S_ISDIR(path.stat().st_mode):
+            return {'bytes': None, 'reason': 'worktree path is not a directory'}
+        proc = ctx.run(['du', '-sk', str(path)], timeout=3)
+        size = int(proc.stdout.split('\t', 1)[0])
+        if size >= 0:
+            return {'bytes': size * 1024}
+    except FileNotFoundError:
+        return {'bytes': 0}
+    except ControlError as exc:
+        if exc.code == 'command_timeout':
+            return {'bytes': None, 'reason': 'du timed out after 3s'}
+    except (OSError, ValueError):
+        pass
+    return {'bytes': None, 'reason': 'cannot measure worktree directory'}
+
+
+def deployment_worktree_usage(ctx, target):
+    return worktree_usage(ctx, target.repo_dir / '.worktrees' if target and target.repo_dir else None)
+
+
 def status_linux(ctx, repo, explicit_config):
     target = select_target(ctx, repo, explicit_config)
     queue = queue_evidence(ctx, repo)
@@ -2213,7 +2240,8 @@ def status_linux(ctx, repo, explicit_config):
     document = {
         'action': 'status', 'platform': 'linux', 'repo': repo.full,
         'repo_dir': str(repo.path),
-        'deployment': {'state': deployment_state(snapshot), **summary},
+        'deployment': {'state': deployment_state(snapshot), **summary,
+                       'worktree_usage': deployment_worktree_usage(ctx, target)},
         'activity': activity,
         'scheduler': snapshot,
         'queue': queue,
@@ -2286,7 +2314,7 @@ def status_darwin(ctx, repo, explicit_config):
     return {
         'action': 'status', 'platform': 'darwin', 'repo': repo.full,
         'repo_dir': str(repo.path),
-        'deployment': {'state': 'prepared', **summary},
+        'deployment': {'state': 'prepared', **summary, 'worktree_usage': deployment_worktree_usage(ctx, target)},
         'activity': activity_darwin(ctx, target),
         'scheduler': {'state': 'launchd', 'labels': plist_labels(ctx, target),
                       'active': 'unavailable',
@@ -2663,13 +2691,17 @@ def run_upstream_step(ctx, target, command, *args, timeout=CHECK_TIMEOUT, curren
                 *args, timeout=timeout, allow_failure=True)
     if proc.returncode != 0:
         step = command
+        fix = None
         if command == 'setup' and current is not None:
             # The engine can install/activate timers before subsequent setup checks.
             # Classify its fixed reason prefixes; never echo child stderr or checkout paths.
             setup_steps = {
                 'required path missing:': 'load_config',
                 'config_not_found': 'load_config',
+                'example config unavailable for': 'load_config',
+                'config creation failed for': 'load_config',
                 '--repo must be one of:': 'select_repo',
+                'label definitions invalid:': 'load_labels',
                 'required command missing:': 'check_commands',
                 'systemd user session unavailable': 'check_commands',
                 'gh auth status failed': 'check_auth',
@@ -2689,11 +2721,15 @@ def run_upstream_step(ctx, target, command, *args, timeout=CHECK_TIMEOUT, curren
             reason = next((line.removeprefix('setup_failed reason=') for line in proc.stderr.splitlines()
                            if line.startswith('setup_failed reason=')), '')
             step = next((name for prefix, name in setup_steps.items() if reason.startswith(prefix)), command)
+            if reason.startswith('checkout is not clean:'):
+                fix = 'inspect git status in the configured repo_dir and preserve the local changes before starting'
+            elif re.match(r'^/.+ must be a git checkout of ', reason):
+                step = 'check_checkout'
             current['step'] = step
         detail = f' at {step}' if step != command else ''
         raise ControlError(command.replace('-', '_') + '_failed',
                            f'upstream `orbi {command}` failed{detail}',
-                           fix=f'inspect the failed {command}{detail} privately')
+                           fix=fix or f'inspect the failed {command}{detail} privately')
 
 
 def first_tick_after_timer_failure(ctx, args, repo, target, identities):
@@ -3476,7 +3512,8 @@ def configured_timers_active(target, snapshot):
 
 
 def fleet_scheduling(target, snapshot):
-    if snapshot.get('state') != 'ok':
+    if (snapshot.get('state') != 'ok'
+            or any(item['state'] != 'ok' for item in snapshot['inventory']['counts'].values())):
         return 'unknown'
     enabled_or_active = [item for item in snapshot['timers'].values()
                          if item['enabled'] or item['active'] not in INACTIVE_STATES]
@@ -3619,7 +3656,8 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
     activation_reason = 'not evaluated'
     current = {'step': 'preflight', 'mutation': 'none'}
     try:
-        if target is None:  # update requires a prepared target; start already resolved one
+        if target is None or fleet:  # resolve the scoped target, including fleet duplicate checks
+            discovered = target
             repo_dir = args.repo_dir
             if args.config and repo_dir is None:
                 config = deployment_from(explicit_config_file(args.config))
@@ -3629,6 +3667,9 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
                 repo_dir = config.repo_dir
             repo = repo_identity(ctx, repo_dir or ctx.cwd)
             target = select_target(ctx, repo, args.config, require=True)
+            if fleet and target != discovered:
+                raise ControlError('target_changed', 'deployment changed since fleet discovery',
+                                   fix='inspect the config and rerun /orbi update all after verifying ownership')
         validate_target(target, repo)
         require_unit_ownership(ctx, target, symlink_error=symlink_error)
         require_setup_transport(repo, target)
@@ -3993,6 +4034,10 @@ def work_count_text(count):
     return f'{count}+' if count == HOST_WORK_LIMIT else str(count)
 
 
+def worktree_usage_text(usage):
+    return f"{usage['bytes']} bytes" if usage['bytes'] is not None else f"unavailable ({usage['reason']})"
+
+
 def render(ctx, document, json_mode, *, verbose=False):
     if json_mode:
         ctx.out.write(json.dumps(document, indent=2) + '\n')
@@ -4003,8 +4048,20 @@ def render(ctx, document, json_mode, *, verbose=False):
         for row in document['candidates']:
             verb = 'Would remove' if document['dry_run'] else 'Removed'
             ctx.out.write(f"{verb} {', '.join(row['units'])} ({row['reason']}: {row['config']})\n")
-        if document['dry_run'] and document['candidates']:
-            ctx.out.write('Preview only. Use /orbi prune --apply to remove these templates.\n')
+        for repo in document['worktrees']:
+            size = repo['bytes_freed'] if repo['bytes_freed'] is not None else 'unknown'
+            ctx.out.write(f"{repo['repo']} ({repo['repo_dir']!r}): {len(repo['candidates'])} candidates, "
+                          f"{len(repo['removed'])} removed, {len(repo['kept'])} kept; estimated bytes freed: {size}\n")
+            if repo.get('reason'):
+                ctx.out.write(f"  {repo['reason']}\n")
+            for label, items in (('Would remove', repo['candidates'] if document['dry_run'] else []),
+                                 ('Removed', repo['removed']), ('Kept', repo['kept'])):
+                for item in items:
+                    reason = item.get('reason') or item.get('size_reason')
+                    note = f' ({reason})' if reason else ''
+                    ctx.out.write(f"  {label} {item['path']!r} (#{item['issue']}){note}\n")
+        if document['dry_run'] and (document['candidates'] or any(repo['candidates'] for repo in document['worktrees'])):
+            ctx.out.write('Preview only. Use /orbi prune --apply to remove verified candidates.\n')
         return
     if document.get('action') == 'update' and document.get('scope') == 'host':
         ctx.out.write(f"Orbi update all: {document['status']}; coverage={document['coverage']['state']}\n")
@@ -4015,7 +4072,8 @@ def render(ctx, document, json_mode, *, verbose=False):
                           f"{row['scheduling_before']} -> {row['scheduling_after']}; "
                           f"version drift={row['version_drift']}\n")
             if error := row.get('error'):
-                ctx.out.write(f"  Error {error['code']}: {error['message']}\n  Next: {error['fix']}\n")
+                step = f" at {row['failed_step']}" if row['failed_step'] else ''
+                ctx.out.write(f"  Error {error['code']}{step}: {error['message']}\n  Next: {error['fix']}\n")
         if document['coverage']['state'] != 'ok':
             ctx.out.write('Inspect /orbi status all --verbose for discovery gaps.\n')
         return
@@ -4055,7 +4113,10 @@ def render(ctx, document, json_mode, *, verbose=False):
                               f"loaded={row['loaded']} installed={row['installed']} "
                               f"state={row['state']} scheduler={row['scheduler']} worker={row['worker']['state']} "
                               f"issue={row['worker'].get('issue', {}).get('url', 'unknown')} "
-                              f"next={row['next_trigger'] or 'unknown'} binding={row['binding']['state']}{model}\n")
+                              f"next={row['next_trigger'] or 'unknown'} binding={row['binding']['state']}{model}")
+                if usage := row.get('worktree_usage'):
+                    ctx.out.write(f' worktrees={worktree_usage_text(usage)}')
+                ctx.out.write('\n')
                 if row.get('last_lifecycle'):
                     ctx.out.write(lifecycle_text(row['last_lifecycle']) + '\n')
             for line in flatten(document['coverage'], 'coverage.'):
@@ -4084,12 +4145,15 @@ def render(ctx, document, json_mode, *, verbose=False):
                       f"revision={engine.get('revision') or 'unknown'} "
                       f"({engine['state']}; {engine.get('reason', engine.get('provenance'))})\n")
     if document.get('action') == 'status' and 'repo' in document:
-        engine = document.get('deployment', {}).get('engine', {})
+        deployment = document['deployment']
+        engine = deployment.get('engine', {})
         ctx.out.write(f"Repository: {document['repo']}\n")
         ctx.out.write(f"Orbi: {engine.get('version') or 'unknown'} "
                       f"revision={engine.get('revision') or 'unknown'} "
                       f"({engine.get('state', 'unknown')}; {engine.get('provenance', 'no deployment metadata')})\n")
-        provider = document.get('deployment', {}).get('provider', {})
+        if usage := deployment.get('worktree_usage'):
+            ctx.out.write(f'Worktrees: {worktree_usage_text(usage)}\n')
+        provider = deployment.get('provider', {})
         if provider.get('metered'):
             ctx.out.write(f"Model: {provider['provider']}/{provider['model']} (metered)\n")
         cli = engine.get('bootstrap_cli', {})
@@ -4165,6 +4229,8 @@ def render_host_compact(ctx, document):
         repos = first.get('repos', [])
         line = (f"{','.join(repos) or config} slots={len(busy)}/{first.get('max_concurrency', '?')} {selection} "
                 f"state={state} issues={','.join(numbers) or '-'} next={next_run}")
+        if usage := first.get('worktree_usage'):
+            line += f' worktrees={worktree_usage_text(usage)}'
         if 'work' in document:
             counts = ','.join(work_count_text(document['work'].get(repo)) for repo in repos)
             line += f" work={counts or 'unknown'}"
@@ -5730,6 +5796,10 @@ def host_slot_issue(main, pid, repo_dir):
     return ''
 
 
+def host_process_cwd(pid):
+    return (HOST_PROC / pid / 'cwd').readlink()
+
+
 def host_worktree_branches(ctx, repo_dir, group, pid):
     """Only worktrees in use by processes of this unit are candidate evidence."""
     try:
@@ -5744,7 +5814,7 @@ def host_worktree_branches(ctx, repo_dir, group, pid):
         if not re.fullmatch(r'[1-9][0-9]*', child):
             continue
         try:
-            parts = (HOST_PROC / child / 'cwd').readlink().relative_to(root).parts
+            parts = host_process_cwd(child).relative_to(root).parts
             if parts:
                 worktree = root / parts[0]
                 if (worktree / '.git').is_file():
@@ -5824,7 +5894,7 @@ def prune_config_path(ctx, value):
     return checked_path(path, 'prune config').resolve()
 
 
-def prune_candidate(ctx, service):
+def prune_candidate(ctx, service, *, configs=None):
     """Use an explicit generated service binding, not its name or a pin mismatch."""
     prefix = service.name.removesuffix('@.service')
     timer = service.with_suffix('.timer')
@@ -5888,6 +5958,8 @@ def prune_candidate(ctx, service):
         target = deployment_from(config, tomllib.loads(bounded_text(config)))
         if target.prefix != prefix or target.repo_dir is None or len(target.source_repos) != 1:
             return None
+        if configs is not None:
+            configs.add(config)
         try:
             target.repo_dir.stat()
         except FileNotFoundError:
@@ -5953,8 +6025,237 @@ def prune_has_instances(ctx, prefix):
     return False
 
 
+def registered_worktrees(git):
+    """NUL-delimited paths and fields also preserve spaces/newlines in checkout names."""
+    records = git('worktree', 'list', '--porcelain', '-z').stdout.split('\0\0')
+    worktrees = {}
+    for record in filter(None, records):
+        fields = dict(field.partition(' ')[::2] for field in record.split('\0'))
+        worktrees[Path(fields['worktree'])] = fields
+    return worktrees
+
+
+def prune_fetch_base(git, repo_dir, base):
+    # Share Orbi's lock when writing its shared origin tracking ref.
+    lock = checked_path(repo_dir / '.orbi/base-sync.lock', 'Orbi base sync lock')
+    lock.parent.mkdir(exist_ok=True)
+    if lock.exists() and not lock.is_file():
+        return None, 'Orbi base sync lock is not a regular file; check the deployment and preview again'
+    with lock.open('a') as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return None, 'Orbi base sync is busy; wait for it to finish and preview again'
+        try:
+            git('fetch', '--no-tags', '--no-prune', '--no-prune-tags', '--no-recurse-submodules',
+                '--no-auto-maintenance', '--no-write-fetch-head', '--refmap=', 'origin',
+                f'refs/heads/{base}:refs/remotes/origin/{base}')
+            return git('rev-parse', '--verify', f'refs/remotes/origin/{base}^{{commit}}').stdout.strip(), None
+        except (ControlError, OSError, ValueError):
+            return None, 'base fetch failed; check origin and access, then preview again'
+
+
+def prune_issue_reason(ctx, repo, number):
+    issue = github_read(ctx, ['issue', 'view', str(number), '--repo', f'github.com/{repo}', '--json', 'number,state'])
+    if (not isinstance(issue, dict) or type(issue.get('number')) is not int
+            or issue['number'] != number or issue.get('state') not in ('OPEN', 'CLOSED')):
+        return 'issue state unavailable; check gh auth status and repository access'
+    return 'issue open' if issue['state'] == 'OPEN' else None
+
+
+def prune_worktree_local_reason(git, path, branch, fields, worktrees, base, base_tip):
+    try:
+        checked_path(path / '.git', 'registered worktree')
+    except ControlError:
+        return 'worktree path traverses a symlink'
+    if 'locked' in fields or 'prunable' in fields:
+        return 'worktree is locked or prunable'
+    if (not (path / '.git').is_file() or path.resolve() != path
+            or any(other != path and (other.is_relative_to(path) or info.get('branch') == branch)
+                   for other, info in worktrees.items())):
+        return 'worktree path or branch ownership is ambiguous'
+    ancestor = git('merge-base', '--is-ancestor', branch, base_tip, allow_failure=True)
+    if ancestor.returncode == 1:
+        return f'branch not merged into origin/{base}'
+    if ancestor.returncode:
+        return 'branch ancestry unavailable'
+    if git('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none', cwd=path).stdout:
+        return 'worktree dirty'
+    return None
+
+
+def prune_worktree_live_reason(repo_dir, path, identity):
+    # A worker can still own delivery while between commands in its worktree.
+    # Check the same locked-slot record consulted by host_worker_issue.
+    try:
+        slots = checked_path(repo_dir / '.orbi/slots', 'Orbi slots')
+        try:
+            entries = list(slots.iterdir())
+        except FileNotFoundError:
+            entries = []
+        for slot in entries:
+            if not re.fullmatch(r'slot-[1-9][0-9]*', slot.name):
+                continue
+            checked_path(slot, 'Orbi slot')
+            if not stat.S_ISREG(slot.stat().st_mode):
+                return 'Orbi slot inventory unavailable'
+            with slot.open() as handle:
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    owner, _, delivery = handle.read(1024).partition('\n')
+                    delivery = delivery.strip()
+                    if delivery.casefold() == identity.casefold():
+                        return 'worktree issue has a live Orbi slot'
+                    if not (re.fullmatch(r'[1-9][0-9]*', owner)
+                            and re.fullmatch(r'[^/\s]+/[^/\s]+#[1-9][0-9]*', delivery)):
+                        return 'live Orbi slot has no verifiable issue; wait for the worker and preview again'
+    except (ControlError, OSError, ValueError):
+        return 'Orbi slot inventory unavailable; check the deployment and preview again'
+
+    # Unlike status attribution, examine every visible cwd, including non-systemd workers.
+    try:
+        host_process_cwd('self')  # An unavailable procfs cannot prove a worktree idle.
+        for process in HOST_PROC.iterdir():
+            if not re.fullmatch(r'[1-9][0-9]*', process.name):
+                continue
+            try:
+                cwd = host_process_cwd(process.name)
+            except (FileNotFoundError, PermissionError, ProcessLookupError):
+                continue  # exited, no userspace cwd, or outside local process visibility
+            if cwd.is_relative_to(path) or Path(str(cwd).removesuffix(' (deleted)')).is_relative_to(path):
+                return 'process cwd in worktree'
+    except OSError:
+        return 'process cwd inventory unavailable; check local procfs and preview again'
+    return None
+
+
+def prune_repo_worktrees(ctx, row, target, apply):
+    repo_dir = target.repo_dir
+    root = repo_dir / '.worktrees'
+    # Do not inherit checkout redirects or allow Git to refresh the worktree index on status.
+    env = {k: v for k, v in ctx.env.items() if not k.startswith('GIT_')}
+    env.update(GIT_NO_REPLACE_OBJECTS='1', GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0',
+               GIT_ASKPASS='/bin/false', SSH_ASKPASS_REQUIRE='never')
+
+    def git(*argv, cwd=repo_dir, **kwargs):
+        return ctx.run(['git', '-C', cwd, *argv], env=env, cwd=cwd, **kwargs)
+
+    checked_path(root, 'worktree directory')
+    if not root.is_dir():
+        return
+    worktrees = registered_worktrees(git)
+    if next(iter(worktrees), None) != repo_dir or 'bare' in worktrees[repo_dir]:
+        row['reason'] = 'repo_dir is not the canonical checkout'
+        return
+    repo = row['repo']
+    prefix = re.escape(f"refs/heads/orbi/{repo.replace('/', '-')}-issue-")
+    entries = [(path, fields, int(match[1])) for path, fields in worktrees.items()
+               if path != root and path.is_relative_to(root)
+               and (match := re.fullmatch(prefix + r'([1-9][0-9]{0,19})', fields.get('branch', '')))]
+    if not entries:
+        return
+    base = target.data.get('base_branch', 'main')
+    urls = git('config', '--get-all', 'remote.origin.url', allow_failure=True).stdout.splitlines()
+    url = urls[0] if len(urls) == 1 else ''
+    origin = parse_github_remote(url) if url.startswith(('https://github.com/', 'git@github.com:', 'ssh://git@github.com/')) else None
+    if not origin or origin.casefold() != repo.casefold():
+        base_tip, reason = None, 'origin does not match deployment source_repo; check the deployment config'
+    elif (not isinstance(base, str) or not base or base.startswith('-')
+          or git('check-ref-format', f'refs/heads/{base}', allow_failure=True).returncode):
+        base_tip, reason = None, 'invalid base_branch; correct the deployment config'
+    else:
+        base_tip, reason = prune_fetch_base(git, repo_dir, base)
+    for path, fields, number in entries:
+        branch = fields['branch']
+        item = {'path': str(path), 'branch': branch.removeprefix('refs/heads/'), 'issue': number}
+        keep = reason
+        identity = f'{repo}#{number}'
+        try:
+            if base_tip:
+                keep = (prune_issue_reason(ctx, repo, number)
+                        or prune_worktree_local_reason(git, path, branch, fields, worktrees, base, base_tip)
+                        or prune_worktree_live_reason(repo_dir, path, identity))
+            if not keep and apply:
+                usage = worktree_usage(ctx, path)
+                # A checkout can change, a worker can start, or the issue can reopen during measurement.
+                keep = prune_issue_reason(ctx, repo, number)
+                if not keep:
+                    current = registered_worktrees(git)
+                    if current.get(path) != fields:
+                        keep = 'worktree registration changed; preview again'
+                    else:
+                        keep = (prune_worktree_local_reason(git, path, branch, fields, current, base, base_tip)
+                                or prune_worktree_live_reason(repo_dir, path, identity))
+        except (ControlError, OSError, ValueError):
+            keep = 'Git or filesystem check failed; inspect the worktree and preview again'
+        if keep:
+            row['kept'].append({**item, 'reason': keep})
+            continue
+        row['candidates'].append(item)
+        if not apply:
+            continue
+        try:
+            git('worktree', 'remove', '--', path, timeout=MUTATION_TIMEOUT)
+        except (ControlError, OSError, ValueError):
+            row['kept'].append({**item, 'reason': 'git worktree remove did not complete; inspect the checkout and registration'})
+            continue
+        removed = {**item, 'branch_deleted': False, 'bytes_freed': usage['bytes']}
+        row['removed'].append(removed)
+        if row['bytes_freed'] is not None:
+            row['bytes_freed'] = (row['bytes_freed'] + usage['bytes'] if usage['bytes'] is not None else None)
+        try:
+            # Make -d check the fetched base even if local HEAD is stale or the PR upstream is gone.
+            # Git takes the first branch.merge value, so remap that ref for this command only.
+            key = f"branch.{item['branch']}"
+            upstream = git('config', '--get-all', f'{key}.merge', allow_failure=True).stdout.splitlines()
+            merge = upstream[0] if upstream else f'refs/heads/{base}'
+            if git('check-ref-format', merge, allow_failure=True).returncode:
+                raise ValueError('invalid branch merge ref')
+            if git('merge-base', '--is-ancestor', branch, base_tip, allow_failure=True).returncode:
+                raise ValueError('branch changed')
+            git('-c', f'{key}.remote=kit-orbi-prune', '-c', f'{key}.merge={merge}',
+                '-c', f'remote.kit-orbi-prune.fetch={merge}:refs/remotes/origin/{base}', 'branch', '-d', '--', item['branch'])
+            removed['branch_deleted'] = True
+        except (ControlError, OSError, ValueError):
+            removed['reason'] = 'local branch kept; inspect its tip and upstream before deleting it'
+        if usage['bytes'] is None:
+            removed['size_reason'] = usage['reason']
+
+
+def prune_worktrees(ctx, apply, audit, configs):
+    coverage = {'state': 'ok', 'problems': []}
+    targets = {}
+    for config in sorted(configs | host_config_paths(ctx, coverage)):
+        try:
+            path = checked_path(config, 'deployment config')
+            target = deployment_from(path, tomllib.loads(bounded_text(path)))
+        except (ControlError, OSError, ValueError, RuntimeError):
+            continue
+        if (target.repo_dir and len(target.source_repos) == 1
+                and re.fullmatch(r'[a-zA-Z0-9-]+/[a-zA-Z0-9_.-]+', target.source_repos[0])):
+            targets.setdefault(target.repo_dir, []).append(target)
+    rows = []
+    for repo_dir, deployments in sorted(targets.items()):
+        target = deployments[0]
+        row = {'repo': target.source_repos[0], 'repo_dir': str(repo_dir),
+               'candidates': [], 'removed': [], 'kept': [], 'bytes_freed': 0}
+        rows.append(row)
+        if any(t.source_repos != target.source_repos or t.data.get('base_branch', 'main') != target.data.get('base_branch', 'main')
+               for t in deployments[1:]):
+            row['reason'] = 'conflicting deployment configs; correct the bindings and preview again'
+            continue
+        try:
+            prune_repo_worktrees(ctx, row, target, apply)
+        except (ControlError, OSError, ValueError, KeyError, RuntimeError):
+            row['reason'] = 'worktree inventory unavailable; check checkout paths, Git and base sync lock, then preview again'
+        if row['removed']:
+            audit.add(target.deploy_home)
+    return rows
+
+
 def command_prune(ctx, args):
-    candidates, removed, audit = [], [], set()
+    candidates, removed, audit, configs = [], [], set(), set()
     error = None
     try:
         folder = checked_path(user_unit_dir(ctx), 'user unit directory')
@@ -5965,7 +6266,7 @@ def command_prune(ctx, args):
         for service in files:
             if not re.fullmatch(r'orbi(?:-[a-zA-Z0-9_.-]+)?@\.service', service.name):
                 continue
-            entry = prune_candidate(ctx, service)
+            entry = prune_candidate(ctx, service, configs=configs)
             if (entry is not None and not prune_has_overrides(ctx, service)
                     and not prune_has_instances(ctx, entry[0]['prefix'])):
                 candidates.append(entry)
@@ -6004,6 +6305,7 @@ def command_prune(ctx, args):
             else:
                 error = ControlError('daemon_reload_unverified', 'templates removed but user reload unverified',
                                      fix=fix)
+    worktrees = prune_worktrees(ctx, args.apply, audit, configs) if not error else []
     for home in sorted(audit):
         record_lifecycle(ctx, home, args, error.code if error else 'pruned')
     if error:
@@ -6011,7 +6313,7 @@ def command_prune(ctx, args):
         error.evidence['removed'] = removed
         raise error
     return {'action': 'prune', 'platform': ctx.platform, 'dry_run': not args.apply,
-            'candidates': [row for row, _, _ in candidates], 'removed': removed}
+            'candidates': [row for row, _, _ in candidates], 'removed': removed, 'worktrees': worktrees}
 
 
 def github_budget(ctx):
@@ -6056,7 +6358,14 @@ def command_update_all(ctx, args):
     _, paths, _ = host_linux(ctx, coverage, bindings=bindings)
     deployments = host_configs(ctx, paths, coverage)
     checkout_owners = Counter(item['target'].deploy_home for item in deployments.values() if 'target' in item)
-    release = official_latest_release(ctx) if deployments and not args.dry_run else None
+    release, release_error = None, None
+    # Scoped quiesce checks cannot see a second worker in an unobserved manager.
+    managers_unavailable = any(item['state'] != 'ok' for item in coverage['managers'].values())
+    if deployments and not args.dry_run and not managers_unavailable:
+        try:
+            release = official_latest_release(ctx)
+        except ControlError as error:
+            release_error = error
     wait_minutes = args.wait_minutes if args.wait_minutes is not None else FLEET_UPDATE_WAIT_MINUTES
     deadline = time.monotonic() + wait_minutes * 60
     results = []
@@ -6068,7 +6377,7 @@ def command_update_all(ctx, args):
                'scheduling_before': 'unknown'}
         version, revision = before['version'], before.get('revision')
         verified_revision = revision if before['state'] == 'verified' else None
-        snapshot = {}
+        snapshot, failed_step = {}, 'verify_discovery'
         child = Context(env=ctx.env, platform=ctx.platform, cwd=target.repo_dir if target else ctx.cwd,
                         stdout=ctx.out, stderr=ctx.err, noninteractive=True)
         try:
@@ -6085,9 +6394,18 @@ def command_update_all(ctx, args):
                    for unit in bindings.get(config, ())):
                 raise ControlError('unit_conflict', 'deployment has units outside its supported user timer/service scope',
                                    fix='inspect /orbi status all --verbose; update only after verifying ownership')
+            if managers_unavailable:
+                raise ControlError('scheduler_unavailable', 'a local manager inventory is unavailable; fleet ownership cannot be verified',
+                                   fix='restore manager read access and inspect /orbi status all --verbose before updating')
+            if release_error is not None:
+                failed_step = 'resolve_release'
+                raise ControlError(release_error.code, release_error.message,
+                                   fix=release_error.fix or 'verify connectivity and the official Orbi release tags before retrying')
+            failed_step = 'preflight'
             child_args = argparse.Namespace(**{**vars(args), 'config': config, 'repo_dir': str(target.repo_dir),
                                                'wait': True})
-            receipt = maintain_existing(child, child_args, fleet_row=row, release=release, deadline=deadline)
+            receipt = maintain_existing(child, child_args, target=target, fleet_row=row,
+                                        release=release, deadline=deadline)
             snapshot = receipt['scheduler']
             row['status'] = receipt['status']
         except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
@@ -6096,7 +6414,7 @@ def command_update_all(ctx, args):
                 current={'step': 'preflight', 'mutation': 'none'}, mutated=False, evidence={})
             evidence = exc.evidence
             snapshot = evidence.get('scheduler', {})
-            failed = evidence.get('steps', [{}])[-1].get('step')
+            failed = (evidence.get('steps') or [{'step': failed_step}])[-1]['step']
             row.update(status='pending' if exc.code == 'update_busy' and failed == 'wait_for_workers' else 'failed',
                        failed_step=failed,
                        error={'code': exc.code, 'message': exc.message, 'fix': exc.fix, 'mutated': exc.mutated})
@@ -6134,6 +6452,8 @@ def command_status_all(ctx, *, work):
     else:
         rows, paths = host_darwin(ctx, coverage)
     deployments = host_configs(ctx, paths, coverage)
+    for item in deployments.values():
+        item['worktree_usage'] = deployment_worktree_usage(ctx, item.get('target'))
     config_fields = ('repos', 'provider', 'model', 'metered', 'thinking', 'max_concurrency')
     bound = set()
     for row in rows:
@@ -6142,7 +6462,7 @@ def command_status_all(ctx, *, work):
         row.update(repo=None, engine={'state': 'unknown', 'version': None})
         if deployment:
             bound.add(config)
-            row.update(repo=deployment['repo'], engine=deployment['engine'],
+            row.update(repo=deployment['repo'], engine=deployment['engine'], worktree_usage=deployment['worktree_usage'],
                        last_lifecycle=deployment.get('last_lifecycle'))
             row['binding'] = deployment['binding']
             target = deployment.get('target')
@@ -6161,7 +6481,7 @@ def command_status_all(ctx, *, work):
             rows.append({'manager': None, 'unit': None, 'timer': None, 'kind': 'config-only',
                          'loaded': False, 'installed': False, 'scheduler': 'prepared-only', 'state': 'prepared-only',
                          'repo': item['repo'], 'engine': item['engine'], 'binding': item['binding'],
-                         'last_lifecycle': item.get('last_lifecycle'),
+                         'last_lifecycle': item.get('last_lifecycle'), 'worktree_usage': item['worktree_usage'],
                          'worker': {'state': 'not observed'}, 'next_trigger': None,
                          **{key: item[key] for key in config_fields if key in item}})
     document = {'action': 'status', 'scope': 'host', 'platform': ctx.platform, 'coverage': coverage,
@@ -6232,7 +6552,7 @@ def command_help(ctx, args):
         '--stop': 'update only: compatibility opt-out: quiesce, update and leave stopped',
         '--wait': f'update only: wait up to {UPDATE_WAIT_MINUTES} minutes for workers to finish; leave paused on timeout',
         '--wait-minutes': f'update all only: shared drain deadline in minutes (default: {FLEET_UPDATE_WAIT_MINUTES})',
-        '--apply': 'prune only: remove verified stale user unit templates and reload the user manager',
+        '--apply': 'prune only: remove verified finished task worktrees and stale user unit templates',
         '--resume-setup': 'setup only: fill a legacy missing local provider; requires explicit '
                           '--config and complete matching --pi-* inputs; never overwrite',
         '--pi-providers': 'regular Pi metadata JSON for new setup/absent start or explicit bounded setup resume (no credentials)',
@@ -6438,7 +6758,7 @@ def command_help(ctx, args):
 ACTIONS = {
     'status': {
         'handler': command_status,
-        'effect': 'Inspect deployment release/revision with provenance, scheduler and per-slot running issues; '
+        'effect': 'Inspect deployment release/revision with provenance, worktree disk use, scheduler and per-slot running issues; '
                   'queue order is not pickup. Missing live bindings mean active/issue unknown, not idle. '
                   'Literal status all inspects accessible local host services and GitHub API budget without repository binding.',
         'mutates': 'none',
@@ -6514,12 +6834,12 @@ ACTIONS = {
     },
     'prune': {
         'handler': command_prune,
-        'effect': 'List stale unloaded user unit templates; --apply removes them and reloads the user manager.',
-        'mutates': 'scheduler with --apply',
+        'effect': 'Preview finished task worktrees and stale unloaded user unit templates; --apply removes verified candidates.',
+        'mutates': 'worktrees and scheduler with --apply (base fetch in both modes)',
         'platforms': ['linux'],
         'applies': ['--dry-run', '--json', '--apply'],
-        'when': 'No checkout needed. Requires an explicit missing configuration or repository directory. '
-                'Keeps loaded or installed instances, queued jobs, configs and deployment data.',
+        'when': 'No checkout selector needed. Fetch each candidate repository base and keep open, unmerged, dirty or in-use worktrees. '
+                'Keep loaded or installed instances, queued jobs and configs; reload the user manager only after removing stale templates.',
     },
     'help': {
         'handler': command_help,
@@ -6586,7 +6906,7 @@ def parse_args(argv):
     parser.add_argument('--json', action='store_true', help='print one JSON document')
     parser.add_argument('--verbose', action='store_true', help='status all only: show per-unit text and coverage details')
     parser.add_argument('--work', action='store_true', help='status all only: count open ai-ready or ai-fix-needed issues')
-    parser.add_argument('--apply', action='store_true', help='prune only: remove stale unit templates')
+    parser.add_argument('--apply', action='store_true', help='prune only: remove verified worktrees and stale unit templates')
     parser.add_argument('--stop', action='store_true',
                         help='update only: compatibility opt-out: quiesce, update and leave stopped')
     parser.add_argument('--wait', action='store_true',
