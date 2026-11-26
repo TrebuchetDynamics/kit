@@ -94,6 +94,24 @@ class WorktreeSweepTests(unittest.TestCase):
         self.assertEqual(marker.read_text().splitlines(), [str(finished)])
         self.assertTrue(finished.is_dir(), 'only the explicit helper may remove it')
 
+    def test_silent_closeout_failure_keeps_worktree_and_report(self):
+        ahead = self.worktree('ahead', commit='add ahead file')
+        helper = Path(self.tmp.name) / 'closeout.py'
+        helper.write_text('import sys\nsys.exit(3)\n')
+
+        done = self.sweep('--apply', '--remove', '--closeout', str(helper), '--json')
+
+        report, summary = done.stdout.split('\n\n', 1)
+        [entry] = json.loads(report)
+        self.assertEqual(entry['path'], str(ahead))
+        self.assertEqual(entry['result'], 'merged')
+        self.assertEqual(entry['closed'], 'kept')
+        self.assertEqual(entry['note'], 'exit 3')
+        self.assertIn('1 worktree(s): 1 unmerged-clean', summary)
+        self.assertIn('Merged 1 into main; 0 merge failure(s); 0 kept dirty.', summary)
+        self.assertTrue(ahead.is_dir())
+        self.assertEqual((self.repo / 'ahead.txt').read_text(), 'ahead\n')
+
     def test_remove_keeps_dirty_merged_worktrees(self):
         modified = self.worktree('modified', dirty=True) / 'app.txt'
         untracked = self.worktree('untracked') / 'draft.txt'
