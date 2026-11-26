@@ -4046,35 +4046,59 @@ class InstallerFleetTests(unittest.TestCase):
                     with self.assertRaises(helper.ControlError):
                         call()
 
+    def test_bound_unit_binding_ignores_dependency_order_after_daemon_reload(self):
+        manager = helper.FleetManager('user', ('--user',), os.getuid(), self.h.home)
+        values = dict(Id='w@1.service', LoadState='loaded', NeedDaemonReload='no', ActiveState='inactive',
+                      CanStart='yes', CanStop='yes', KillMode='control-group', SendSIGKILL='yes',
+                      Conflicts='shutdown.target', Wants='network-online.target')
+
+        def bind(**extra):
+            return helper.fleet_bound_unit(manager, 'w@1.service', self.h.root / 'orbi.toml',
+                                           dict(values, **extra), []).binding
+
+        # Observed on Fedora: `systemctl disable` of the timer reloads and reorders Requires.
+        before = bind(Requires='"app-w\\x2d1.slice" basic.target')
+        self.assertEqual(bind(Requires='basic.target "app-w\\x2d1.slice"'), before)
+        self.assertNotEqual(bind(Requires='"app-w\\x2d1.slice"'), before)
+        self.assertNotEqual(bind(Requires='"app-w\\x2d1.slice" basic.target', Wants=''), before)
+
     def test_recheck_ignores_unrelated_jobs_and_oneshot_worker_activity_only(self):
         user = helper.FleetManager('user', ('--user',), os.getuid(), self.h.home)
         system = helper.FleetManager('system', ('--system',), 0, Path('/root'))
         config = self.h.root / 'orbi.toml'
 
-        def unit(manager, name, active='inactive', service_type='oneshot', triggers=''):
+        def unit(manager, name, active='inactive', service_type='oneshot', triggers='', runner=False):
             return helper.FleetUnit(manager, name, config, ('binding',), active, 'static', triggers,
-                                    service_type=service_type)
+                                    runner=runner, service_type=service_type)
 
         plan = (unit(user, 'w@1.service'), unit(user, 'w@1.timer', 'active', '', 'w@1.service'),
-                unit(user, 'p.service', 'active', 'simple'), unit(system, 's@1.service'))
+                unit(user, 'p.service', 'active', 'simple'), unit(system, 's@1.service'),
+                unit(user, 'x@1.service', service_type='simple', runner=True),
+                unit(user, 'x@1.timer', 'active', '', 'x@1.service'))
         targets = {config: object()}
         jobs = {user: {}, system: {}}
         key = helper.fleet_recheck_key(plan, targets, jobs)
         same = (
-            # The oneshot worker's own timer started it; unrelated units queued jobs.
-            ((unit(user, 'w@1.service', 'activating'), *plan[1:]),
+            # The workers' own timers started them; unrelated units queued jobs.
+            ((unit(user, 'w@1.service', 'activating'), *plan[1:4],
+              unit(user, 'x@1.service', 'active', 'simple', runner=True), plan[5]),
              {user: {'7': ('w@1.service', 'start'), '8': ('observer.service', 'start')},
               system: {'9': ('watchdog.service', 'start')}}),
         )
         for units, live_jobs in same:
             self.assertEqual(helper.fleet_recheck_key(units, targets, live_jobs), key)
         changed = (
+            # Timer activity decides restored scheduling.
             ((*plan[:1], unit(user, 'w@1.timer', 'inactive', '', 'w@1.service'), *plan[2:]), jobs),
-            ((*plan[:2], unit(user, 'p.service', 'inactive', 'simple'), plan[3]), jobs),
+            # A persistent (not timer-started) service decides its own restore.
+            ((*plan[:2], unit(user, 'p.service', 'inactive', 'simple'), *plan[3:]), jobs),
+            ((*plan[:2], unit(user, 'p.service', 'activating', 'simple'), *plan[3:]), jobs),
+            # A new system-manager Orbi job changes the cancel permission.
             (plan, {user: {}, system: {'9': ('s@1.service', 'start')}}),
+            # Changed binding or a missing unit.
             ((*plan[:3], helper.FleetUnit(system, 's@1.service', config, ('other',), 'inactive', 'static',
-                                         service_type='oneshot')), jobs),
-            (plan[:3], jobs),
+                                         service_type='oneshot'), *plan[4:]), jobs),
+            ((*plan[:3], *plan[4:]), jobs),
         )
         for units, live_jobs in changed:
             with self.subTest(units=[u.name for u in units], jobs=live_jobs):
