@@ -157,7 +157,8 @@ def preflight(repo, root, profiles, *, bundle_only=False):
     spec.loader.exec_module(provisioner)
     messages = []
     try:
-        if provisioner.install(repo / 'skills', profiles, dry_run=True, report=messages.append):
+        if provisioner.install(repo / 'skills', profiles, dry_run=True, report=messages.append,
+                               verbose=os.environ.get('KIT_INSTALL_HERMES_SUMMARY') != '1'):
             errors.extend(m for m in messages if m.startswith('Failed:'))
     except (ValueError, OSError) as exc:
         errors.append(str(exc))

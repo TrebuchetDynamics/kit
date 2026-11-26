@@ -56,7 +56,7 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
     def run_setup(self, *args):
         self.assertTrue((ROOT / 'scripts/setup_bundle.py').is_file(), 'missing complete setup orchestrator')
         return subprocess.run([sys.executable, str(self.repo / 'scripts/setup_bundle.py'), *args],
-                              env=self.env, capture_output=True, text=True)
+                              env=self.env, capture_output=True, text=True, timeout=30)
 
     def test_missing_declared_source_payload_refuses_before_any_stage(self):
         copy_sources(self.repo)
@@ -117,6 +117,107 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
         receipt = json.loads(result.stdout.splitlines()[-1])
         self.assertEqual(receipt['gateway_restart'], 'not_requested')
         self.assertIn('failed stages', receipt['error'].lower())
+
+    def use_suite_entrypoint(self):
+        copy_sources(self.repo, entries=('install.sh', 'scripts/install_menu.py', 'scripts/checkout_lock.py',
+                                         'install-skills.sh', 'install-plugins.sh', 'plugin.yaml',
+                                         'plugins/defaults.json', 'plugins/PLUGINS.md'))
+        # Exercise actual preflight planning and skill installation; only the
+        # native runtime compatibility check needs an installed Hermes.
+        shim = self.repo / 'scripts/setup_preflight.py'
+        shim.write_text(shim.read_text() + '\ndef runtime_check(*args): return []\n')
+        systemctl = self.repo / 'systemctl'
+        systemctl.write_text('#!/bin/sh\nexit 1\n')
+        systemctl.chmod(0o755)
+        for name in ('alpha', 'beta'):
+            skill = self.repo / 'skills' / name
+            skill.mkdir(parents=True)
+            (skill / 'SKILL.md').write_text('fixture')
+        hermes = self.repo / 'hermes'
+        hermes.write_text(f'#!{sys.executable}\n' + '''\
+import argparse, os, sys
+from pathlib import Path
+profile, action, option = sys.argv[2:5]
+root = Path(os.environ['HERMES_HOME'])
+home = root if profile == 'default' else root / 'profiles' / profile
+if (action, option) == ('plugins', 'enable'):
+    if profile == 'sample':
+        (home / 'config.yaml').write_text('approvals:\\n  mode: manual\\n')
+    raise SystemExit(0)
+if (action, option) == ('config', 'set'):
+    raise SystemExit(0)
+assert (action, option) == ('kit', 'finalize'), sys.argv
+sys.path.insert(0, str(Path(__file__).parent / 'scripts'))
+import bundle
+bundle.inventory = lambda: {}
+failed = profile == os.environ.get('VERIFY_FAIL')
+result = dict(home=str(home), status='incomplete' if failed else 'ready', settings='current',
+              gateway='unreachable' if failed else 'commands_reloaded',
+              verified_gateway_commands=['kit:alpha', 'kit:beta'],
+              errors=['gateway control endpoint unavailable'] if failed else [])
+runtime = bundle._KIT_COMPAT.peer(vars(bundle), 'setup_runtime')
+runtime.finalize = lambda *_: (result, int(failed))
+parser = argparse.ArgumentParser()
+bundle.setup_parser(parser)
+raise SystemExit(bundle.handle_cli(parser.parse_args(['finalize', *sys.argv[5:]])))
+''')
+
+    def run_hermes_item(self, *args):
+        return subprocess.run(['bash', str(self.repo / 'install.sh'), '--no-pull', '--only', 'hermes',
+                               '--bundle-only', '--skip', 'orbi', *args], cwd=self.repo,
+                              env=dict(self.env, HOME=self.tmp.name,
+                                       PATH=f'{self.repo}:{Path(sys.executable).parent}:{self.env["PATH"]}',
+                                       KIT_BIN_DIR=str(Path(self.tmp.name) / 'bin'),
+                                       KIT_SYSTEMCTL=str(self.repo / 'systemctl'),
+                                       KIT_INSTALL_REPORT=str(self.repo / 'install-report.jsonl')),
+                              capture_output=True, text=True, timeout=30)
+
+    def test_suite_hermes_repeat_reports_counts_status_and_timings(self):
+        self.use_suite_entrypoint()
+        first = self.run_hermes_item()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertIn('Installed: alpha (sample)', first.stdout)
+        self.assertIn('Profile sample settings: changed', first.stdout)
+        self.assertIn('Apply: config approvals.mode=manual (sample)', first.stdout)
+        repeat = self.run_hermes_item()
+        self.assertEqual(repeat.returncode, 0, repeat.stdout + repeat.stderr)
+        for profile in ('default', 'sample'):
+            self.assertEqual(repeat.stdout.count(f'Skills ({profile}): 0 installed, 0 planned, 2 skipped, 0 failed'), 2)
+            self.assertIn(f'Profile {profile}: ready; settings current; gateway commands_reloaded', repeat.stdout)
+            self.assertIn(f'Profile {profile} settings: unchanged', repeat.stdout)
+        for step in ('preflight', 'bundled skills', 'plugins and configuration', 'verify/wire sample'):
+            self.assertRegex(repeat.stdout, rf'{step}: done in \d+\.\ds')
+        self.assertNotIn('already exists:', repeat.stdout)
+        self.assertNotIn('"verified_gateway_commands"', repeat.stdout)
+        self.assertNotIn('{"status": "complete"', repeat.stdout)
+        self.assertIn('Hermes: native gateway disposition not_requested', repeat.stdout)
+        rows = [json.loads(line) for line in (self.repo / 'install-report.jsonl').read_text().splitlines()]
+        hermes = next(row for row in rows if row['item'] == 'hermes')
+        self.assertEqual(hermes['gateway_restart'], 'not_requested')
+        verbose = self.run_hermes_item('--verbose')
+        self.assertEqual(verbose.returncode, 0, verbose.stdout + verbose.stderr)
+        self.assertIn('Skip: alpha (sample) already exists:', verbose.stdout)
+        self.assertIn('"verified_gateway_commands"', verbose.stdout)
+        self.assertIn('{"status": "complete"', verbose.stdout)
+
+    def test_suite_hermes_summarizes_failures_without_hiding_the_cause(self):
+        self.use_suite_entrypoint()
+        self.env['VERIFY_FAIL'] = 'sample'
+        failed = self.run_hermes_item()
+        self.assertNotEqual(failed.returncode, 0, failed.stdout + failed.stderr)
+        self.assertIn('Profile sample: incomplete; settings current; gateway unreachable', failed.stdout)
+        self.assertIn('gateway control endpoint unavailable', failed.stdout)
+        self.assertIn('Repair the failed stages and rerun ./install.sh --only hermes', failed.stdout)
+        self.assertNotIn('"verified_gateway_commands"', failed.stdout)
+        incomplete = self.home / 'profiles/sample/skills/beta/SKILL.md'
+        incomplete.unlink()
+        refused = self.run_hermes_item()
+        self.assertNotEqual(refused.returncode, 0, refused.stdout + refused.stderr)
+        self.assertIn(f'Failed: beta (sample): incomplete existing skill at {incomplete.parent}; preserved', refused.stdout)
+        self.assertIn('Preflight failed; no installation stages started.', refused.stdout)
+        self.assertIn('Skills (sample): 0 installed, 0 planned, 1 skipped, 1 failed', refused.stdout)
+        self.assertNotIn('already exists:', refused.stdout)
+        self.assertFalse(incomplete.exists())
 
     def test_verification_failure_does_not_claim_complete(self):
         self.env['VERIFY_FAIL'] = 'sample'
