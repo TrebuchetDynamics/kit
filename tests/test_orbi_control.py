@@ -3063,6 +3063,61 @@ class LifecycleSequenceTests(unittest.TestCase):
                          [['--user', 'stop', service]])
         self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
 
+    def test_invalid_discovered_config_does_not_block_status_or_stop_cli(self):
+        h = self.fresh()
+        config = h.data_home / 'orbi-0-other/orbi.toml'
+        config.parent.mkdir()
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        service = f'{prefix}@1.service'
+        h.rules(*h.stop_service_rules(service), *h.scheduler_rules(services={1: 'active'}))
+        for action, text in (
+            ('status', 'source_repos = ["other/project"]\nmax_concurrency = 0\n'),
+            ('stop', 'source_repos = ["other/project",'),
+        ):
+            with self.subTest(action=action):
+                config.write_text(f'# {SECRET}\n{text}')
+                before = snapshot(config.parent)
+                result = subprocess.run([sys.executable, '-B', str(HELPER), action, '--repo-dir',
+                                         str(h.repo), '--json'], env=h.env, capture_output=True,
+                                        text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+                doc = json.loads(result.stdout)
+                self.assertEqual(doc['deployment']['config'], str(h.deploy / 'orbi.toml'))
+                self.assertIn('warning=', result.stderr)
+                self.assertIn(str(config), result.stderr)
+                self.assertNotIn(SECRET, result.stdout + result.stderr)
+                self.assertEqual(snapshot(config.parent), before)
+                if action == 'stop':
+                    self.assertEqual(doc['status'], 'stopped')
+                    self.assertEqual(doc['stopped_services'], [service])
+        self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
+
+    def test_invalid_discovered_config_preserves_strict_binding_failures(self):
+        h = self.fresh()
+        config = h.data_home / 'orbi-0-other/orbi.toml'
+        config.parent.mkdir()
+        local = h.repo / 'orbi.toml'
+        for case, path, text in (
+            ('names repository', config, f'source_repos = ["{REPO}"'),
+            ('explicit', config, 'source_repos = ['),
+            ('checkout', local, 'source_repos = ['),
+            ('no valid owner', config, 'source_repos = ["other/project",'),
+        ):
+            if case == 'no valid owner':
+                (h.deploy / 'orbi.toml').unlink()
+            path.write_text(text)
+            for action in ('status', 'stop'):
+                with self.subTest(case=case, action=action):
+                    h.clear_calls()
+                    code, doc, err = h.run(action, config=path if case == 'explicit' else None)
+                    self.assertEqual(code, 1, (doc, err))
+                    self.assertEqual(doc['error']['code'], 'config_invalid')
+                    self.assertIn(str(path), doc['error']['message'])
+                    self.assertIn('repair or remove the config', doc['error']['fix'])
+                    self.assertFalse(doc['error']['mutated'])
+                    self.assertFalse([c for c in h.calls() if c['tool'] == 'systemctl'])
+            path.unlink()
+
     def test_stop_disables_runtime_timer_before_stopping_worker(self):
         h = self.fresh()
         prefix = helper.unit_prefix(helper.derive_unit_name(REPO))

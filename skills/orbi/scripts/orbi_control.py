@@ -320,11 +320,12 @@ def explicit_config_file(value):
     return path
 
 
-def load_deployments(ctx, repo_path, explicit_config=None):
+def load_deployments(ctx, repo_path, explicit_config=None, *, repo_full=None):
     paths = []
     if explicit_config:
         paths.append(explicit_config_file(explicit_config))
     paths.append(repo_path / 'orbi.toml')
+    strict_paths = set(paths)
     share = data_home(ctx)
     if share.is_dir():
         paths.extend(sorted(share.glob('*/orbi.toml')))
@@ -334,7 +335,7 @@ def load_deployments(ctx, repo_path, explicit_config=None):
             config = installed_config(service, home_dir(ctx))
             if config is not None:
                 paths.append(config)
-    deployments, seen = [], set()
+    deployments, invalid, seen = [], [], set()
     for candidate in paths:
         resolved = checked_path(candidate, 'config').resolve()
         key = str(resolved)
@@ -343,12 +344,28 @@ def load_deployments(ctx, repo_path, explicit_config=None):
         seen.add(key)
         if not resolved.is_file():
             continue
-        deployments.append(deployment_from(resolved))
+        try:
+            deployments.append(deployment_from(resolved))
+        except ControlError as exc:
+            if candidate in strict_paths or repo_full is None:
+                raise
+            invalid.append((resolved, exc))
+    if invalid and not any(repo_full in item.source_repos for item in deployments):
+        raise invalid[0][1]
+    for path, exc in invalid:
+        # A broken TOML file can still name the repo; don't hide a possible duplicate.
+        try:
+            raw = path.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            raw = ''
+        if repo_full in raw:
+            raise exc
+        ctx.err.write(f'warning=invalid_discovered_config path={path} fix=repair or remove the config\n')
     return deployments
 
 
 def select_target(ctx, repo, explicit_config=None, *, require=False):
-    deployments = load_deployments(ctx, repo.path, explicit_config)
+    deployments = load_deployments(ctx, repo.path, explicit_config, repo_full=repo.full)
     matching = [item for item in deployments if repo.full in item.source_repos]
     if len(matching) > 1:
         paths = ', '.join(str(item.config_path) for item in matching)
@@ -2324,7 +2341,7 @@ def command_setup(ctx, args, *, prepared_binding=None):
         repo = step('resolve_repository', lambda: repo_identity(ctx, args.repo_dir or ctx.cwd))
         current = 'preflight_target'
         target_path = args.config or str(data_home(ctx) / f'orbi-{derive_unit_name(repo.full)}' / 'orbi.toml')
-        deployments = load_deployments(ctx, repo.path, args.config)
+        deployments = load_deployments(ctx, repo.path, args.config, repo_full=repo.full)
         target = select_target(ctx, repo, args.config)
         new = target is None
         if not new:
@@ -2394,7 +2411,8 @@ def command_setup(ctx, args, *, prepared_binding=None):
                                    fix='inspect duplicate/concurrent deployment ownership', exit_code=2)
             if new:
                 # Repeat all unit/ownership checks, without silently adopting new selectors.
-                rechecked, _, _ = plan_new_deployment(ctx, repo, load_deployments(ctx, repo.path), args)
+                deployments = load_deployments(ctx, repo.path, repo_full=repo.full)
+                rechecked, _, _ = plan_new_deployment(ctx, repo, deployments, args)
                 if rechecked != target:
                     raise ControlError('target_changed', 'new deployment target changed',
                                        fix='inspect concurrent setup changes', exit_code=2)
