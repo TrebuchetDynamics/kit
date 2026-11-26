@@ -168,7 +168,7 @@ class Context:
         return shutil.which(name, path=self.env.get('PATH'))
 
     def run(self, argv, *, env=None, timeout=PROBE_TIMEOUT, allow_failure=False,
-            cwd=None):
+            cwd=None, umask=-1):
         child = dict(self.env if env is None else env)
         child.setdefault('PYTHONDONTWRITEBYTECODE', '1')
         stdin = {}
@@ -180,7 +180,7 @@ class Context:
         try:
             proc = subprocess.run(command, env=child, capture_output=True,
                                   text=True, timeout=timeout,
-                                  cwd=str(cwd) if cwd else None, **stdin)
+                                  cwd=str(cwd) if cwd else None, umask=umask, **stdin)
         except FileNotFoundError as exc:
             raise ControlError(
                 'prerequisite_missing',
@@ -1515,8 +1515,11 @@ def locked(ctx, key, *, nonblocking=False):
 def orbi(ctx, deployment, *argv, timeout=CHECK_TIMEOUT, allow_failure=False):
     require_harness(ctx, deployment)
     bootstrap = home_dir(ctx) / '.local/bin/orbi'
+    # The engine creates unit templates with the process umask. Do not change
+    # the parent mask (the installer can call this helper in-process).
+    umask = 0o022 if argv[:1] in (('setup',), ('install-units',), ('sync-engine-source',)) else -1
     return ctx.run([str(bootstrap), *argv], env=scoped_env(ctx, deployment),
-                   timeout=timeout, allow_failure=allow_failure)
+                   timeout=timeout, allow_failure=allow_failure, umask=umask)
 
 
 def run_orbi_check(ctx, deployment):
@@ -4899,10 +4902,42 @@ def fleet_fragments(ctx, manager, name, values):
     return items
 
 
-def fleet_owned_fragment(path, uid):
-    info = checked_path(path, 'unit fragment').stat()
-    if (not stat.S_ISREG(info.st_mode) or info.st_uid not in {0, uid, os.getuid()} or info.st_mode & 0o022):
-        fleet_refuse(f'unit fragment ownership is unverified: {path}')
+def fleet_owned_fragment(path, uid, *, repaired=None):
+    path = checked_path(path, 'unit fragment')
+    info = path.stat()
+    mode = stat.S_IMODE(info.st_mode)
+    writable = mode & 0o022
+    regular = stat.S_ISREG(info.st_mode)
+    trusted_uid = info.st_uid in {0, uid, os.getuid()}
+    if writable:
+        who = 'group' if writable == 0o020 else 'other' if writable == 0o002 else 'group- and other'
+        bits = ','.join(bit for flag, bit in ((0o020, 'g-w'), (0o002, 'o-w')) if writable & flag)
+        fix = f'Have the file owner verify the unit binding, then run chmod {bits} {shlex.quote(str(path))}.'
+        message = f'unit fragment ownership is unverified: {path}: mode {mode:o} is {who}-writable'
+        # Only the initial inventory can opt in, and only for its own template.
+        # Use the verified inode so chmod cannot follow a replaced fragment.
+        if repaired is not None and regular and info.st_uid == uid == os.getuid() and info.st_nlink == 1:
+            try:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                try:
+                    if os.fstat(fd) != info:
+                        fleet_refuse(f'unit fragment changed before permission repair: {path}')
+                    os.fchmod(fd, mode & ~0o022)
+                    repaired.append(str(path))
+                    info = os.fstat(fd)
+                finally:
+                    os.close(fd)
+            except OSError as error:
+                raise ControlError('installer_fleet_hold', message, fix=fix) from error
+        else:
+            if not regular or not trusted_uid:
+                fix = 'Verify the fragment is a regular file with a trusted owner first. ' + fix
+            elif repaired is not None and info.st_nlink != 1:
+                fix = 'Replace the multiply linked fragment with an unshared file before changing its mode. ' + fix
+            raise ControlError('installer_fleet_hold', message, fix=fix)
+    if not regular or not trusted_uid or info.st_mode & 0o022:
+        fleet_refuse(f'unit fragment ownership is unverified: {path} (mode {stat.S_IMODE(info.st_mode):o}); '
+                     'verify the fragment is a regular file with a trusted owner')
     return (path, info.st_dev, info.st_ino, info.st_uid, info.st_mode, bounded_bytes(path))
 
 
@@ -5023,7 +5058,8 @@ class FleetUnit:
         return f'{self.manager.name}:{self.name}'
 
 
-def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', runner=False):
+def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', runner=False,
+                     repair_path=None, repaired=None):
     label = f'{manager.name}:{name}'
     if (values['Id'] != name or values['LoadState'] != 'loaded' or values.get('NeedDaemonReload') != 'no'
             or values.get('ActiveState') not in DRAIN_STATES | INACTIVE_STATES
@@ -5066,7 +5102,8 @@ def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', r
                 fleet_refuse(f'{label}: unit dependencies are unreadable')
         return value
 
-    binding = (tuple(fleet_owned_fragment(path, manager.uid) for path, _ in fragments),
+    binding = (tuple(fleet_owned_fragment(path, manager.uid, repaired=repaired if path == repair_path else None)
+                     for path, _ in fragments),
                tuple(bound_value(prop) for prop in FLEET_UNIT_PROPS if prop not in {
                    'ActiveState', 'SubState', 'UnitFileState', 'Result', 'ExecMainStartTimestampMonotonic',
                    'ExecMainStatus', 'ConditionResult', 'Names', 'TriggeredBy', 'WantedBy', 'ExecStart', 'ExecStartPre'}))
@@ -5076,8 +5113,19 @@ def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', r
                      triggers, runner, values.get('Type', ''), frozenset(values.get('TriggeredBy', '').split()))
 
 
-def fleet_inventory(ctx, managers, *, known_units=()):
+def fleet_inventory(ctx, managers, *, known_units=(), repaired=None):
     units, targets, jobs = [], {}, {}
+
+    def bind(manager, target, values, fragments, *, triggers='', runner=False):
+        name = values['Id']
+        repair_path = None
+        if (repaired is not None and manager.flags == ('--user',)
+                and re.fullmatch(re.escape(target.prefix) + r'@[1-9][0-9]*\.(?:service|timer)', name)
+                and (not triggers or triggers == name.removesuffix('.timer') + '.service')):
+            repair_path = user_unit_dir(ctx) / (target.prefix + '@' + Path(name).suffix)
+        return fleet_bound_unit(manager, name, target.config_path, values, fragments,
+                                triggers=triggers, runner=runner, repair_path=repair_path, repaired=repaired)
+
     for manager in managers:
         loaded = fleet_listing(ctx, manager, 'list-units')
         installed = fleet_listing(ctx, manager, 'list-unit-files')
@@ -5171,7 +5219,7 @@ def fleet_inventory(ctx, managers, *, known_units=()):
                 continue
             target, runner = service
             targets[target.config_path] = target
-            unit = fleet_bound_unit(manager, values['Id'], target.config_path, values, fragments, runner=runner)
+            unit = bind(manager, target, values, fragments, runner=runner)
             services[unit.name] = unit  # canonical Id, not an alias
             triggered_by[unit.name] = values.get('TriggeredBy', '').split()
             if len(services) > HOST_DETAIL_LIMIT:
@@ -5182,7 +5230,7 @@ def fleet_inventory(ctx, managers, *, known_units=()):
             if service not in services:
                 continue
             fragments = fleet_fragments(ctx, manager, name, values)
-            unit = fleet_bound_unit(manager, values['Id'], services[service].config, values, fragments, triggers=service)
+            unit = bind(manager, targets[services[service].config], values, fragments, triggers=service)
             bound_timers[unit.name] = unit
             if len(services) + len(bound_timers) > HOST_DETAIL_LIMIT:
                 fleet_refuse(f'{manager.name}: Orbi unit detail exceeds {HOST_DETAIL_LIMIT}')
@@ -5396,7 +5444,13 @@ def installer_fleet(ctx, *, report_progress=None):
         managers, not_checked = manager_coverage
         if not_checked:
             receipt['not_checked'] = list(not_checked)
-        units, targets, jobs = fleet_inventory(ctx, managers)
+        repaired = []
+        try:
+            units, targets, jobs = fleet_inventory(ctx, managers, repaired=repaired)
+        finally:
+            # Preserve completed permission repairs even if another fragment holds the fleet.
+            if repaired:
+                receipt['repaired_unit_fragments'] = repaired
         coverage = {'state': 'ok', 'problems': []}
         configs = host_config_paths(ctx, coverage)
         if coverage['problems']:

@@ -1380,6 +1380,22 @@ class FirstDeploymentTests(unittest.TestCase):
         self.assertEqual(mutations, [['--user', 'enable', '--now', timer],
                                      ['--user', 'start', service]])
 
+    def test_public_setup_creates_unit_templates_under_umask_002(self):
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        service = self.h.unit_dir / f'{prefix}@.service'
+        timer = self.h.unit_dir / f'{prefix}@.timer'
+        self.h.rules(
+            {'tool': 'orbi', 'argv_contains': ['setup'], 'write': {
+                str(service): f'[Service]\nEnvironment="ORBI_CONFIG={self.h.deploy / "orbi.toml"}"\n'}},
+            {'tool': 'orbi', 'argv_contains': ['install-units'], 'write': {str(timer): '[Timer]\n'}})
+        # Public setup delegates to start; invoke the same argv as the skill.
+        result = subprocess.run(
+            [sys.executable, '-B', str(HELPER), 'start', '--repo-dir', str(self.h.repo),
+             '--json', *self.options], env=self.h.env, capture_output=True, text=True, timeout=30, umask=0o002)
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertEqual(json.loads(result.stdout)['status'], 'started')
+        self.assertEqual([path.stat().st_mode & 0o777 for path in (service, timer)], [0o644, 0o644])
+
     def test_first_start_prepares_validates_and_activates_once(self):
         for kind in (None, 'pi', 'donor'):
             with self.subTest(harness=kind):
@@ -6706,6 +6722,27 @@ class SchedulingUpdateTests(unittest.TestCase):
                     recovered = json.loads(restored.stdout)
                     self.assertEqual(recovered['deployment']['pin'], 'sha:' + NEW_PIN)
                     self.assertEqual(recovered['activation'], 'started')
+
+    def test_update_creates_unit_templates_under_umask_002(self):
+        templates = [self.h.unit_dir / f'{self.prefix}@.{kind}' for kind in ('service', 'timer')]
+        synced = self.h.root / 'synced'
+        self.active_rules(extra=[
+            {'tool': 'orbi', 'argv_contains': ['sync-engine-source'], 'write': {str(synced): '1'}},
+            {'tool': 'orbi', 'argv_contains': ['install-units'],
+             # Model a fresh write of each template, not a truncate that preserves its fixture mode.
+             'exec': [sys.executable, '-c',
+                      'from pathlib import Path; import sys\n'
+                      'for path in map(Path, sys.argv[1:]):\n'
+                      '    content = path.read_bytes(); path.unlink(); path.write_bytes(content)',
+                      *map(str, templates)]},
+        ])
+        result = subprocess.run([sys.executable, '-B', str(HELPER), 'update', '--json'],
+                                cwd=self.h.repo, env=self.h.env,
+                                capture_output=True, text=True, timeout=45, umask=0o002)
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertEqual(json.loads(result.stdout)['unit_refresh'], 'refreshed')
+        for path in [*templates, synced]:
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644, str(path))
 
     def test_plain_enabled_active_idle_updates_validates_and_restores_in_one_invocation(self):
         self.active_rules()

@@ -212,9 +212,9 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
         path.write_text(body)
         path.chmod(0o755)
 
-    def install(self, *args, stdin=None, env=None):
+    def install(self, *args, stdin=None, env=None, umask=-1):
         return subprocess.run(['bash', str(INSTALL), *args], env={**self.env, **(env or {})}, input=stdin,
-                              capture_output=True, text=True, timeout=120, cwd=self.project)
+                              capture_output=True, text=True, timeout=120, cwd=self.project, umask=umask)
 
     def calls(self, prefix=''):
         return [c for c in self.log.read_text().splitlines() if c.startswith(prefix)]
@@ -1832,6 +1832,111 @@ Path.iterdir = iterdir
         self.assertEqual(json.loads(state.read_text())['--user']['paused-worker.timer']['ActiveState'], 'active')
         self.assertEqual(self.calls('uv'), [])
         self.assertFalse((ROOT / 'skills/orbi/scripts/__pycache__').exists())
+
+    def writable_orbi_templates(self, *, elsewhere=False, foreign_name=False):
+        receipt, state, _ = self.orbi_fleet_fixture()
+        config = self.home / 'paused/orbi.toml'
+        with config.open('a') as stream:
+            stream.write('unit_name = "paused"\n')
+        states = json.loads(state.read_text())
+        user = states['--user']
+        for name in list(user):
+            if name.startswith('paused-') and not name.startswith('paused-worker.'):
+                del user[name]
+        directory = self.home / ('paused/units' if elsewhere else '.config/systemd/user')
+        directory.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for kind, mode in (('service', 0o664), ('timer', 0o666)):
+            unit = user.pop(f'paused-worker.{kind}')
+            name = f'orbi-paused@1.{kind}'
+            path = Path(unit['FragmentPath']).rename(
+                directory / f'orbi-{"other" if foreign_name else "paused"}@.{kind}')
+            paths.append(path)
+            if kind == 'timer':
+                path.write_text(path.read_text().replace('paused-worker.service', 'orbi-paused@1.service'))
+            path.chmod(mode)
+            unit.update(Id=name, Names=name, FragmentPath=str(path))
+            for prop in ('Unit', 'Triggers', 'TriggeredBy'):
+                unit[prop] = unit[prop].replace('paused-worker.', 'orbi-paused@1.')
+            user[name] = unit
+        state.write_text(json.dumps(states))
+        return receipt, paths
+
+    def test_orbi_fleet_repairs_and_reports_owned_writable_fragments_on_update(self):
+        receipt, paths = self.writable_orbi_templates()
+        contents = [path.read_bytes() for path in paths]
+        result = self.install('update', '--only', 'orbi', env={'KIT_INSTALL_REPORT': str(receipt)}, umask=0o002)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        fleet = next(row['orbi_fleet'] for row in map(json.loads, receipt.read_text().splitlines())
+                     if row['item'] == 'orbi')
+        for deployment in ('paused', 'working'):
+            marker = self.home / deployment / 'sync-attempted'
+            self.assertEqual(marker.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(fleet['status'], 'completed')
+        self.assertCountEqual(fleet['repaired_unit_fragments'], list(map(str, paths)))
+        for path, content in zip(paths, contents):
+            self.assertIn(str(path), result.stdout)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+            self.assertEqual(path.read_bytes(), content)
+
+    def test_orbi_fleet_preserves_the_permission_repair_receipt_on_a_later_hold(self):
+        receipt, (service, timer) = self.writable_orbi_templates()
+        # A chmod would also change the mode of the file outside the unit directory.
+        outside = self.home / 'unrelated.timer'
+        os.link(timer, outside)
+        result = self.install('update', '--only', 'orbi', env={'KIT_INSTALL_REPORT': str(receipt)})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'{timer}: mode 666 is group- and other-writable', result.stdout)
+        self.assertIn('Replace the multiply linked fragment', result.stdout)
+        self.assertIn(f'chmod g-w,o-w {timer}', result.stdout)
+        fleet = next(row['orbi_fleet'] for row in map(json.loads, receipt.read_text().splitlines())
+                     if row['item'] == 'orbi')
+        self.assertEqual(fleet['status'], 'held')
+        self.assertEqual(fleet['repaired_unit_fragments'], [str(service)])
+        self.assertEqual(service.stat().st_mode & 0o777, 0o644)
+        for path in (timer, outside):
+            self.assertEqual(path.stat().st_mode & 0o777, 0o666)
+        self.assertEqual(self.calls('orbi'), [])
+
+    def test_orbi_fleet_holds_writable_fragments_it_does_not_own(self):
+        for scenario in ('wrong-owner', 'outside-unit-directory', 'wrong-unit-name'):
+            with self.subTest(scenario=scenario):
+                receipt, (path, timer) = self.writable_orbi_templates(
+                    elsewhere=scenario == 'outside-unit-directory', foreign_name=scenario == 'wrong-unit-name')
+                env = {'KIT_INSTALL_REPORT': str(receipt)}
+                if scenario == 'wrong-owner':
+                    # Exercise the real installer without requiring chown privileges.
+                    imports = self.home / 'foreign-owner-imports'
+                    imports.mkdir()
+                    (imports / 'sitecustomize.py').write_text(f'''
+import os
+from pathlib import Path
+original_stat = Path.stat
+
+def stat(path, *args, **kwargs):
+    info = original_stat(path, *args, **kwargs)
+    if str(path) == {str(path)!r}:
+        fields = list(info)
+        fields[4] = 65533 if os.getuid() != 65533 else 65532
+        return os.stat_result(fields)
+    return info
+
+Path.stat = stat
+''')
+                    env['PYTHONPATH'] = str(imports)
+                result = self.install('update', '--only', 'orbi', env=env)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn('Orbi fleet held: unit fragment ownership is unverified', result.stdout)
+                self.assertIn('mode 664 is group-writable', result.stdout)
+                self.assertIn(f'chmod g-w {path}', result.stdout)
+                fleet = next(row['orbi_fleet'] for row in map(json.loads, receipt.read_text().splitlines())
+                             if row['item'] == 'orbi')
+                self.assertFalse(fleet.get('repaired_unit_fragments'))
+                self.assertEqual(path.stat().st_mode & 0o777, 0o664)
+                self.assertEqual(timer.stat().st_mode & 0o777, 0o666)
+                self.assertEqual(self.calls('orbi'), [])
+                path.unlink()
+                timer.unlink()
 
     def test_orbi_full_install_prints_four_short_rows_and_only_counts_in_summary(self):
         self.orbi_fleet_fixture(extra_deployments=(('checkout-a', 'mobile-app', 3), ('checkout-b', 'web-app', 2)))
