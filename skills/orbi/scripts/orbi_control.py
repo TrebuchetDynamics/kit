@@ -3,6 +3,7 @@
 
 `python3 -B orbi_control.py [status|version|setup|start|update|stop|help] [all] [--repo-dir PATH]
 [--config PATH] [--dry-run] [--json] [--wait]`
+`python3 -B orbi_control.py set DEPLOYMENT {slots N | model PROVIDER/MODEL [THINKING]} [--json]`
 
 - `status` (the default) is read-only: local reads, read-only `orbi doctor`
   and explicit `gh`/`systemctl` reads. It never fetches, installs, locks or
@@ -22,6 +23,7 @@
   the resolved commit as `sha:<commit>` and validates non-activating. It starts
   scheduling after validation, even after an earlier `stop`, unless `--stop`
   was requested. It never selects a provider or harness.
+- `set` drains like `update --wait` and applies a backed-up config change without moving the engine pin.
 - `stop` quiesces the same owned units under lock and reports `stopped` only
   after idle readback. Neither action kills or restarts a worker directly.
 
@@ -35,6 +37,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
+from datetime import datetime, timezone
 try:
     import fcntl
 except ModuleNotFoundError:  # pragma: no cover - Windows is unsupported and refused
@@ -307,11 +310,11 @@ def explicit_config_file(value):
     return path
 
 
-def load_deployments(ctx, repo, explicit_config=None):
+def load_deployments(ctx, repo_path, explicit_config=None):
     paths = []
     if explicit_config:
         paths.append(explicit_config_file(explicit_config))
-    paths.append(repo.path / 'orbi.toml')
+    paths.append(repo_path / 'orbi.toml')
     share = data_home(ctx)
     if share.is_dir():
         paths.extend(sorted(share.glob('*/orbi.toml')))
@@ -335,7 +338,7 @@ def load_deployments(ctx, repo, explicit_config=None):
 
 
 def select_target(ctx, repo, explicit_config=None, *, require=False):
-    deployments = load_deployments(ctx, repo, explicit_config)
+    deployments = load_deployments(ctx, repo.path, explicit_config)
     matching = [item for item in deployments if repo.full in item.source_repos]
     if len(matching) > 1:
         paths = ', '.join(str(item.config_path) for item in matching)
@@ -2252,7 +2255,7 @@ def command_setup(ctx, args, *, prepared_binding=None):
         repo = step('resolve_repository', lambda: repo_identity(ctx, args.repo_dir or ctx.cwd))
         current = 'preflight_target'
         target_path = args.config or str(data_home(ctx) / f'orbi-{derive_unit_name(repo.full)}' / 'orbi.toml')
-        deployments = load_deployments(ctx, repo, args.config)
+        deployments = load_deployments(ctx, repo.path, args.config)
         target = select_target(ctx, repo, args.config)
         new = target is None
         if not new:
@@ -2322,7 +2325,7 @@ def command_setup(ctx, args, *, prepared_binding=None):
                                    fix='inspect duplicate/concurrent deployment ownership', exit_code=2)
             if new:
                 # Repeat all unit/ownership checks, without silently adopting new selectors.
-                rechecked, _, _ = plan_new_deployment(ctx, repo, load_deployments(ctx, repo), args)
+                rechecked, _, _ = plan_new_deployment(ctx, repo, load_deployments(ctx, repo.path), args)
                 if rechecked != target:
                     raise ControlError('target_changed', 'new deployment target changed',
                                        fix='inspect concurrent setup changes', exit_code=2)
@@ -3062,7 +3065,7 @@ def require_quiescent(ctx, target, *, known_indices=()):
                            evidence={'scheduler': snapshot, 'pending_services': pending})
 
 
-def wait_for_workers(ctx, target, snapshot):
+def wait_for_workers(ctx, target, snapshot, *, action='update'):
     deadline = time.monotonic() + UPDATE_WAIT_MINUTES * 60
     while pending := update_pending(snapshot):
         workers = sum(item['state'] not in INACTIVE_STATES for item in snapshot['services'].values())
@@ -3071,19 +3074,19 @@ def wait_for_workers(ctx, target, snapshot):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise ControlError('update_busy',
-                               f'Update not applied: {finishing} still finishing after '
+                               f'{action.capitalize()} not applied: {finishing} still finishing after '
                                f'{UPDATE_WAIT_MINUTES} minutes. Scheduling remains paused.',
-                               fix='wait for the remaining work to finish before rerunning /orbi update',
+                               fix=f'wait for the remaining work to finish before rerunning /orbi {action}',
                                evidence={'scheduler': snapshot, 'pending_services': pending})
         # Progress is best-effort and must not corrupt a JSON receipt on stdout.
         with contextlib.suppress(OSError):
-            print(f'Orbi update: Scheduling paused; {finishing} still finishing.', file=ctx.err, flush=True)
+            print(f'Orbi {action}: Scheduling paused; {finishing} still finishing.', file=ctx.err, flush=True)
         snapshot_indices = snapshot['inventory']['additional_instances']
         time.sleep(min(60, remaining))
         snapshot = paused_observation(ctx, target, known_indices=snapshot_indices)
 
 
-def quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current, *, wait=False):
+def quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current, *, wait=False, action='update'):
     """The caller holds the config lock and supplied fresh ownership evidence."""
     disable_owned_timers(ctx, target, snapshot, disabled, steps, current)
     current.clear()
@@ -3114,7 +3117,7 @@ def quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current, *, 
     if wait:
         current.clear()
         current.update(step='wait_for_workers', mutation='none')
-        wait_for_workers(ctx, target, snapshot)
+        wait_for_workers(ctx, target, snapshot, action=action)
         steps.append({'step': 'wait_for_workers', 'status': 'ok'})
         return
     for unit, item in snapshot['services'].items():
@@ -3196,9 +3199,112 @@ def command_update(ctx, args):
     return maintain_existing(ctx, args)
 
 
-def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
+SET_USAGE = ('/orbi set DEPLOYMENT slots N', '/orbi set DEPLOYMENT model PROVIDER/MODEL [THINKING]')
+THINKING_LEVELS = ('off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max')
+
+
+def resolve_set_target(ctx, selector):
+    path = ctx.cwd / Path(selector).expanduser()
+    if path.is_file() or path.suffix == '.toml' or Path(selector).is_absolute():
+        return deployment_from(explicit_config_file(path))
+    matches = [target for target in load_deployments(ctx, ctx.cwd)
+               if selector and (target.prefix.startswith(selector)
+                                or (target.unit_name or '').startswith(selector)
+                                or any(selector.lower() in (repo.lower(), repo.split('/')[-1].lower())
+                                       for repo in target.source_repos))]
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        raise ControlError('ambiguous_deployment', 'deployment matches multiple configs: '
+                           + ', '.join(str(target.config_path) for target in matches),
+                           fix='use the exact deployment config path', exit_code=2)
+    raise ControlError('not_prepared', 'no local deployment matches the selector',
+                       fix='use a unit prefix or repository from `/orbi status all`, or pass its config path',
+                       exit_code=2)
+
+
+def command_set(ctx, args):
+    if args.config is not None or args.repo_dir is not None or args.dry_run:
+        raise ControlError('invalid_set_selection', 'set takes a positional deployment and does not support --dry-run',
+                           fix='use ' + ' or '.join(SET_USAGE), exit_code=2)
+    operands = args.operands
+    if len(operands) not in (3, 4) or operands[1] not in ('slots', 'model'):
+        raise ControlError('invalid_set_selection', 'set requires a deployment and either slots or model',
+                           fix='use ' + ' or '.join(SET_USAGE), exit_code=2)
+    selector, key, value, *thinking = operands
+    if key == 'slots':
+        try:
+            slots = int(value) if re.fullmatch(r'[+]?[0-9]+', value) else 0
+        except ValueError:
+            slots = 0
+        if slots < 1 or thinking:
+            raise ControlError('invalid_set_value', 'slots requires a single positive integer',
+                               fix='pass a positive integer: ' + SET_USAGE[0], exit_code=2)
+        changes = {'max_concurrency': slots}
+    else:
+        provider, _, model = value.partition('/')
+        if not provider.strip() or not model.strip():
+            raise ControlError('invalid_set_value', 'model requires PROVIDER/MODEL',
+                               fix='use a provider and model ID from the deployment catalog', exit_code=2)
+        changes = {'pi_provider': provider, 'pi_model': model}
+        if thinking:
+            if thinking[0] not in THINKING_LEVELS:
+                raise ControlError('invalid_set_value', 'unsupported Pi thinking level',
+                                   fix='omit it to keep the saved value, or use a thinking level: '
+                                       + ', '.join(THINKING_LEVELS), exit_code=2)
+            changes['pi_thinking'] = thinking[0]
+    try:
+        target = resolve_set_target(ctx, selector)
+        repo = repo_identity(ctx, target.repo_dir or target.config_path.parent)
+        if select_target(ctx, repo, str(target.config_path), require=True) != target:
+            raise ControlError('target_changed', 'set target changed during discovery',
+                               fix='inspect the selected config and retry with its exact path', exit_code=2)
+    except (OSError, UnicodeError) as error:
+        raise ControlError('config_invalid', 'cannot read local deployment files (details withheld)',
+                           fix='inspect the deployment files privately and use the exact config path') from error
+    args.config, args.wait = str(target.config_path), True
+    return maintain_existing(ctx, args, repo, target, changes=changes)
+
+
+def setting_replacement(target, text, changes):
+    """Edit single-line literals without reserializing unrelated TOML."""
+    data = target.data.copy()
+    newline = '\r\n' if '\r\n' in text else '\n'
+    for key, value in changes.items():
+        if type(data.get(key)) is type(value) and data[key] == value:
+            continue
+        literal = json.dumps(value, ensure_ascii=False).replace('\x7f', r'\u007f')
+        if key not in data:
+            text = f'{key} = {literal}{newline}' + text
+            data[key] = value
+            continue
+        data[key] = value
+        # Try only assignment values, preserving indent, comments and quotes on keys.
+        # TOML readback distinguishes top-level assignments from lookalikes in tables
+        # or multiline strings and proves no other setting was changed.
+        pattern = re.compile(rf"""^[ \t]*(?:{key}|"{key}"|'{key}')[ \t]*=[ \t]*("(?:[^"\\\r\n]|\\[^\r\n])*"|'[^'\r\n]*'|[+\-\w]+)(?=[ \t]*(?:#|\r?$))""",
+                             re.MULTILINE)
+        for match in pattern.finditer(text):
+            start, end = match.span(1)
+            candidate = text[:start] + literal + text[end:]
+            try:
+                if tomllib.loads(candidate) == data:
+                    text = candidate
+                    break
+            except tomllib.TOMLDecodeError:
+                continue
+        else:
+            raise ControlError('config_invalid', f'{key} is not writable as a top-level literal',
+                               fix=f'declare one top-level {key} assignment on a single line; preserve recovery inputs',
+                               exit_code=2)
+    return text
+
+
+def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes=None):
     """Quiesce as needed, update, and activate only after validation."""
-    action = 'start' if start else 'update'
+    setting = changes is not None
+    action = 'set' if setting else ('start' if start else 'update')
+    change = None
     symlink_error = 'unknown_target' if start else 'unit_conflict'
     steps, disabled, stopped = [], [], []
     mutated = False
@@ -3224,21 +3330,48 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
         require_unit_ownership(ctx, target, symlink_error=symlink_error)
         require_setup_transport(repo, target)
         require_harness(ctx, target)
-        provider = require_provider(target)
+        if setting:
+            require_start_config_binding(target)
+            candidate = deployment_from(target.config_path, {**target.data, **changes})
+            try:
+                provider = require_provider(candidate)
+            except ControlError as error:
+                if 'pi_model' in changes:
+                    error.fix = 'choose a provider/model with verified metadata in the deployment catalog, then retry set'
+                raise
+        else:
+            candidate = target
+            provider = require_provider(target)
         if start:
             current = {'step': 'verify_engine_checkout', 'mutation': 'none'}
             require_engine_checkout(ctx, target, source_repo=repo.path)
             current = {'step': 'preflight', 'mutation': 'none'}
-        require_source(ctx, target)
+        source = require_source(ctx, target)
+        if setting and source['state'] != 'verified':
+            raise ControlError('source_unverified', 'set requires a verified existing engine pin',
+                               fix='pin the deployment in a separate operation; set never moves the engine pin')
         require_clean_checkout(ctx, target)
         previous = {'track': target.pin, 'head': checkout_head(ctx, target)}
         identities = setup_file_identities(target)
-        evidence = prerequisites(ctx, target, action=action, provider=provider,
+        if setting:
+            original = identities[target.config_path][-1].decode('utf-8')
+            try:
+                matches_config = tomllib.loads(original) == target.data
+            except tomllib.TOMLDecodeError:
+                matches_config = False
+            if not matches_config:
+                raise ControlError('target_changed', 'deployment config changed during set preflight',
+                                   fix='inspect concurrent changes before retrying')
+            replacement = setting_replacement(target, original, changes)
+            change = {'old': {key: (target.max_concurrency if key == 'max_concurrency' else target.data.get(key))
+                              for key in changes}, 'new': changes, 'backup': None}
+        evidence = prerequisites(ctx, candidate, action=action, provider=provider,
                                  allow_bootstrap_install=False)
         bound_selectors = (' --repo-dir ' + shlex.quote(str(repo.path))
                            + ' --config ' + shlex.quote(str(target.config_path)))
         start_command = '/orbi start' + bound_selectors
-        resume = ('/orbi ' + action + bound_selectors + (' --stop' if args.stop else '')
+        resume = ('/orbi set ' + shlex.join([str(target.config_path), *args.operands[1:]]) if setting else
+                  '/orbi ' + action + bound_selectors + (' --stop' if args.stop else '')
                   + (' --wait' if args.wait else ''))
         report = new_deployment_report(ctx, target, provider)
         report['source'] = source_evidence(ctx, target)['state']
@@ -3306,16 +3439,18 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
             require_clean_checkout(ctx, target)
             require_setup_transport(repo, target)
             require_harness(ctx, target)
-            provider = require_provider(target)
-            evidence = prerequisites(ctx, target, action=action, provider=provider,
+            provider = require_provider(candidate)
+            evidence = prerequisites(ctx, candidate, action=action, provider=provider,
                                      allow_bootstrap_install=False)
             snapshot = update_observation(ctx, target)
+            known_indices = snapshot['inventory']['additional_instances'] if setting else ()
             activation = 'held' if args.stop else 'pending'
             activation_reason = 'explicit --stop' if args.stop else 'maintenance scheduling request'
             if (not start or update_pending(snapshot)
                     or any(item['enabled'] or item['active'] not in INACTIVE_STATES
                            for item in snapshot['timers'].values())):
-                quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current, wait=args.wait)
+                quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current,
+                               wait=args.wait, action=action)
             current = {'step': 'recheck_target', 'mutation': 'none'}
             if (repo_identity(ctx, repo.path) != repo
                     or select_target(ctx, repo, args.config, require=True) != target
@@ -3326,28 +3461,57 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
             require_unit_ownership(ctx, target, symlink_error=symlink_error)
             require_source(ctx, target)
             require_clean_checkout(ctx, target)
-            require_quiescent(ctx, target)
+            require_quiescent(ctx, target, known_indices=known_indices)
             steps.append({'step': 'recheck_target', 'status': 'ok'})
-            progress = {'engine_update': engine_result}
-            current = {}
 
             def read_target():
                 return select_target(ctx, repo, args.config, require=True)
 
-            try:
-                target, head, validated_identities = apply_release_locked(
-                    ctx, target, read_target, steps, current, progress, repo=repo,
-                    source_track=source_track, verify_head=verify_head)
-            finally:
-                target = progress.get('target', target)
-                engine_result = progress['engine_update']
-            engine_result = 'up_to_date' if head == previous['head'] else 'updated'
+            if setting:
+                if replacement != original:
+                    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+                    backup = target.config_path.with_name(target.config_path.name + '.bak-' + stamp)
+                    current = {'step': 'backup_config', 'mutation': 'possible'}
+                    atomic_publish(backup, original, reuse_only=True)
+                    change['backup'] = str(backup)
+                    steps.append({'step': 'backup_config', 'status': 'ok', 'mutation': 'completed'})
+                    current = {'step': 'write_config', 'mutation': 'possible'}
+                    if file_identity(target.config_path) != identities[target.config_path]:
+                        raise ControlError('target_changed', 'deployment config changed during backup',
+                                           fix='inspect concurrent changes; preserve the backup', exit_code=2)
+                    atomic_publish(target.config_path, replacement)
+                    steps.append({'step': 'write_config', 'status': 'ok', 'mutation': 'completed'})
+                current = {'step': 'validate_non_activating', 'mutation': 'none'}
+                target = read_target()
+                validated_identities = setup_file_identities(target)
+                if target != candidate:
+                    raise ControlError('target_changed', 'deployment did not retain the requested setting',
+                                       fix='inspect concurrent changes; preserve recovery inputs', exit_code=2)
+                run_orbi_check(ctx, target)
+                head = checkout_head(ctx, target)
+                if (read_target() != target or head != previous['head']
+                        or setup_file_identities(target) != validated_identities):
+                    raise ControlError('target_changed', 'deployment changed during set validation',
+                                       fix='inspect concurrent changes; preserve recovery inputs', exit_code=2)
+                steps.append({'step': 'validate_non_activating', 'status': 'ok'})
+                engine_result = 'unchanged'
+            else:
+                progress = {'engine_update': engine_result}
+                current = {}
+                try:
+                    target, head, validated_identities = apply_release_locked(
+                        ctx, target, read_target, steps, current, progress, repo=repo,
+                        source_track=source_track, verify_head=verify_head)
+                finally:
+                    target = progress.get('target', target)
+                    engine_result = progress['engine_update']
+                engine_result = 'up_to_date' if head == previous['head'] else 'updated'
             current = {'step': 'refresh_units', 'mutation': 'none'}
             if args.stop:
                 steps.append({'step': 'refresh_units', 'status': 'deferred',
                               'reason': 'next authorized start installs units; installer activates timers'})
             current = {'step': 'observe_scheduler', 'mutation': 'none'}
-            after = paused_observation(ctx, target)
+            after = paused_observation(ctx, target, known_indices=known_indices)
             if update_pending(after):
                 raise ControlError('update_busy', 'work appeared during update',
                                    fix='inspect pending work and source state before retrying',
@@ -3362,10 +3526,16 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                     ctx, args, repo, target, validated_identities, steps, current, activated,
                     first_tick_request=start)
                 current = {'step': 'verify_activation', 'mutation': 'none'}
-                after = update_observation(ctx, target)
+                after = update_observation(ctx, target, known_indices=known_indices)
                 if not configured_timers_active(target, after):
                     raise ControlError('activation_unverified', 'engine validated but configured timers are not enabled/active',
                                        fix='inspect partial timer state before deliberate start recovery',
+                                       evidence={'scheduler': after})
+                if setting and any(not item['configured'] and
+                                   (item['enabled'] or item['active'] not in INACTIVE_STATES)
+                                   for item in after['timers'].values()):
+                    raise ControlError('activation_unverified', 'surplus timers are still enabled or active',
+                                       fix='inspect the scheduler and backup before deliberate recovery',
                                        evidence={'scheduler': after})
                 activation = 'started'
             current = {'step': 'release_lock', 'mutation': 'possible'}
@@ -3378,13 +3548,14 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                     'steps': steps, 'activated': True, 'activation': activation,
                     'first_tick': first_tick, 'scheduler': after, 'engine_update': engine_result,
                     'disabled_timers': disabled, 'stopped_services': stopped, **start_fields}
-        return {'action': 'update', 'platform': ctx.platform,
-                'status': 'up_to_date' if head == previous['head'] else 'updated',
+        return {'action': action, 'platform': ctx.platform,
+                'status': 'applied' if setting else engine_result,
+                **({'change': change} if setting else {}),
                 'dry_run': False, 'repo': repo.full, 'deployment': report,
                 'previous': previous, 'prerequisites': evidence,
                 'scheduler': after, 'disabled_timers': disabled, 'stopped_services': stopped,
                 'pending_services': update_pending(after),
-                'engine_update': 'up_to_date' if head == previous['head'] else 'updated',
+                'engine_update': engine_result,
                 'unit_refresh': 'deferred' if args.stop else 'refreshed',
                 'unit_refresh_reason': 'next authorized start installs units' if args.stop else 'existing start actions',
                 'scheduler_confirmation': 'stopped' if args.stop else 'enabled_active',
@@ -3393,7 +3564,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                 'steps': steps, 'activated': not args.stop,
                 'warnings': []}
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
-        if not start and not mutated and not steps:
+        if not start and not mutated and not steps and (not setting or isinstance(error, ControlError)):
             # A preflight refusal changed nothing; keep its own precise fix text.
             if isinstance(error, ControlError):
                 error.evidence.setdefault('target', str(target.config_path) if target else args.config)
@@ -3408,7 +3579,8 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                                           'stopped_services': stopped,
                                           'resume_command': resume, 'activation': activation,
                                           'activated_timers': activated, 'engine_update': engine_result,
-                                          'activation_reason': activation_reason, **start_fields},
+                                          'activation_reason': activation_reason, **start_fields,
+                                          **({'change': change} if setting and change else {})},
                                 snapshot_reader=update_observation)
         if engine_result in {'updated', 'up_to_date'}:
             exc.evidence['engine_revision'] = head
@@ -3442,7 +3614,7 @@ def render(ctx, document, json_mode):
     if json_mode:
         ctx.out.write(json.dumps(document, indent=2) + '\n')
         return
-    if document.get('action') == 'update':
+    if document.get('action') in ('set', 'update'):
         target = document.get('deployment', {}).get('config', document.get('target', 'unknown'))
         ctx.out.write(f"{document.get('repo', 'Orbi')}: {target}\n")
         if document.get('dry_run'):
@@ -3454,6 +3626,11 @@ def render(ctx, document, json_mode):
                                           'conditional activation after engine validation and existing-target technical checks.') + '\n')
             ctx.out.write('Next: Run the requested update without --dry-run when ready.\n')
         else:
+            if change := document.get('change'):
+                for key, value in change['new'].items():
+                    ctx.out.write(f'{key}: {json.dumps(change["old"][key])} -> {json.dumps(value)}\n')
+                if change['backup']:
+                    ctx.out.write(f"Backup: {change['backup']}\n")
             if document['stopped_services']:
                 ctx.out.write("Stopped workers: " + ', '.join(document['stopped_services']) + '\n')
             ctx.out.write(f"Engine {document['engine_update']}: {document['deployment']['deployed_commit']}\n")
@@ -4936,10 +5113,12 @@ def command_version(ctx, args):
 
 
 def action_usage():
-    return ('python3 -B orbi_control.py [' + '|'.join(ACTIONS) + '] [all] '
+    prefix = 'python3 -B orbi_control.py '
+    return (prefix + '[' + '|'.join(name for name in ACTIONS if name != 'set') + '] [all] '
             '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] '
             '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] '
-            '[--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait]')
+            '[--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait]\n'
+            + '\n'.join('  ' + prefix + command.removeprefix('/orbi ') + ' [--json]' for command in SET_USAGE))
 
 
 def command_help(ctx, args):
@@ -5042,6 +5221,10 @@ def command_help(ctx, args):
              'outcome': 'Preview timer disable, queued-start cancellation, worker stop, release update and conditional scheduling; no writes or lock.'},
             {'command': '/orbi update --config /path/to/orbi.toml --wait',
              'outcome': 'Use the configured checkout from any directory and wait for workers to finish before syncing.'},
+            {'command': '/orbi set my-repo slots 1',
+             'outcome': 'Wait for workers, back up the config and apply one slot without changing the engine pin.'},
+            {'command': '/orbi set my-repo model PUBLISHED_PROVIDER_ID/PUBLISHED_MODEL_ID high',
+             'outcome': 'Select an existing catalog model and optional thinking level; omission keeps saved thinking.'},
             {'command': '/orbi update --stop',
              'outcome': 'Quiesce owned units and update after idle readback; leave stopped. Unit refresh waits for authorized start.'},
             {'command': '/orbi update',
@@ -5196,6 +5379,15 @@ ACTIONS = {
                 'after engine validation, even after an earlier stop. Explicit --stop leaves stopped. '
                 'No direct kill, restart or background continuation.',
     },
+    'set': {
+        'handler': command_set,
+        'effect': 'Change slots or catalog model, back up the config and apply with the update --wait behavior; do not move the engine pin.',
+        'mutates': 'scheduler',
+        'platforms': ['linux'],
+        'applies': ['--json'],
+        'when': 'Use a unique local unit prefix, repository name, or config path. Slots must be a positive integer. '
+                'An unknown provider/model is refused before writes.',
+    },
     'stop': {
         'handler': command_stop,
         'effect': 'Disable owned timers, cancel verified queued starts, stop owned workers and verify inactivity.',
@@ -5261,7 +5453,7 @@ def parse_args(argv):
                     'help works everywhere; minimum Python 3.11.')
     parser.add_argument('action', nargs='?', default='status',
                         metavar='[' + '|'.join(ACTIONS) + ']')
-    parser.add_argument('scope', nargs='?', choices=('all',), help='status only: accessible local host inventory')
+    parser.add_argument('operands', nargs='*', help='status all or set deployment and values')
     parser.add_argument('--repo-dir', default=None,
                         help='canonical repository checkout (default: current directory)')
     parser.add_argument('--config', default=None,
@@ -5283,7 +5475,13 @@ def parse_args(argv):
     parser.add_argument('--pi-model', help='new setup/absent start or bounded setup resume: model ID with verified metadata')
     parser.add_argument('--pi-thinking', help='new setup/absent start reasoning level, or exact saved setup resume value; '
                         'omitted resume thinking inherits the saved value')
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    args.scope = None
+    if args.action != 'set' and args.operands:
+        if args.operands != ['all']:
+            parser.error('expected literal all for host inventory; see help')
+        args.scope = 'all'
+    return args
 
 
 def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=None):
@@ -5355,7 +5553,7 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             if ctx.platform == 'darwin':
                 raise ControlError(
                     'unsupported_platform',
-                    'macOS supports status/version only; setup/start/update/stop is refused before any '
+                    'macOS supports status/version only; setup/start/update/set/stop is refused before any '
                     'side effect',
                     fix='run `/orbi status` on macOS; use Linux for authorized lifecycle mutations',
                     exit_code=2)
