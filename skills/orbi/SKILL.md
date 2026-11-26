@@ -38,6 +38,7 @@ concrete unmet need, not a fixed sequence of model turns.
    | Public skill arguments | Helper arguments |
    | --- | --- |
    | `status all [--work] [--verbose\|--json]` | `status all [--work] [--verbose\|--json]` |
+   | `update all [--wait-minutes MINUTES] [--dry-run] [--json]` | Pass through unchanged |
    | `set DEPLOYMENT slots N` | Pass through unchanged |
    | `set DEPLOYMENT model PROVIDER/MODEL [THINKING] [--allow-metered]` | Pass through unchanged |
    | `setup` | `start` |
@@ -68,6 +69,14 @@ concrete unmet need, not a fixed sequence of model turns.
    with `--json`. Reject conflicting selectors before probes. Relay partial coverage,
    unavailable GitHub data and observed totals, never an absolute host count.
    For host inventory interpretation, see [host inventory](references/lifecycle.md#host-inventory).
+   **Fleet update:** forward literal `update all` from any directory without
+   `--repo-dir`, `--config`, `--stop` or `--wait`. The helper discovers the same
+   local configs as `status all` and uses each config's own checkout. It lets
+   workers finish without stopping them and restores verified running or stopped
+   scheduling after a successful update or a drain timeout. The shared drain budget
+   is 120 minutes unless `--wait-minutes MINUTES` is supplied. Relay each deployment's version,
+   scheduling and drift, including pending rows and their bound repair commands.
+   See [fleet update recovery](references/lifecycle.md#fleet-update).
    **Prune:** forward `prune [--apply] [--json]` without repo/config selectors.
    On Linux, preview is the default. Both modes fetch the configured base for
    worktree checks; only explicit `--apply` removes verified finished task worktrees
@@ -85,7 +94,8 @@ concrete unmet need, not a fixed sequence of model turns.
    (the Runner's one-tick entry), guess a typo alias or silently select an action.
 2. **Authorize.** Preserve read-only/no-write restrictions and literal `--dry-run`.
    Explicit `/orbi start`, plain `/orbi update`, and `install.sh` with Orbi selected
-   authorize activation. Require verified unit and file ownership, a validated
+   authorize activation; `update all` only restores previously running scheduling.
+   Require verified unit and file ownership, a validated
    release pin and a passing `orbi check`; do not ask for a cutover record or
    separate approval. Public `setup` has the same authority as `start` because it
    maps to it. `setup --prepare-only` and dry-run never activate.
@@ -145,8 +155,8 @@ concrete unmet need, not a fixed sequence of model turns.
    is not worker completion or live delivery. Never retry the timer or configure later slots.
    Exit success is not live qualification; harness resolution is not running-worker evidence.
    Never expose credentials, auth files, environment values or raw child stderr.
-   On failure, stop and return the safe error and repair action. No blind retry,
-   implicit repair, compensating timer changes or worker stops. An unchanged
+   On failure, relay the helper's safe error and repair action. No blind retry,
+   implicit repair, timer changes or worker stops outside the helper. An unchanged
    timeout is not retryable; killed processes have no receipt.
 
 ## Change slots or model
@@ -278,7 +288,7 @@ For host/fixture measurement limits, use the reference's
 - Not `/unblock`: recovery follows [service boundaries](../unblock/references/services.md).
 - Not `/git-commit-push`: no commit, push or PR for the managed repository.
 - Not `/plan-with-me` or `/plan-for-me`: planning grants no live service authority.
-- Not `/update-kit`: update moves one deployment's engine, not Kit or this helper.
+- Not `/update-kit`: update moves deployment engines, not Kit or this helper.
 - Local visibility only: no cross-machine lock or global capacity guarantee.
 
 The standing [Definition of Done](../shared/DEFINITION-OF-DONE.md) applies beyond
