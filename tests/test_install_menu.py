@@ -3630,10 +3630,13 @@ class PullCheckoutTests(unittest.TestCase):
 
     def record_writer(self, pid):
         _, started, _ = checkout_lock.process(pid)
-        checkout_lock.write(self.clone / '.git', {'session': 'fixture-writer', 'pid': pid,
-                                                   'started': started, 'files': ['g']})
+        common = self.run_git('git', '-C', str(self.clone), 'rev-parse',
+                              '--path-format=absolute', '--git-common-dir').stdout.removesuffix('\n')
+        checkout_lock.write(common, {'session': 'fixture-writer', 'pid': pid,
+                                     'started': started, 'files': ['g']})
 
     def test_live_writer_blocks_stash_but_dead_writer_allows_it(self):
+        self.git('init', '--separate-git-dir', str(self.clone.parent / 'metadata with trailing space '))
         self.dirty()
         before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
         owner = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
@@ -3651,6 +3654,19 @@ class PullCheckoutTests(unittest.TestCase):
         self.assertEqual(len(self.stashes()), 1)
         self.assertEqual(self.git('status', '--porcelain'), '')
         self.assertEqual(self.head(self.clone), self.head(self.other))
+
+    def test_writer_that_claims_checkout_during_baseline_blocks_stash(self):
+        self.dirty()
+        before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
+
+        def baseline():
+            self.record_writer(os.getppid())
+            (self.clone / 'g').write_text('live writer edit\n')
+
+        with self.assertRaisesRegex(RuntimeError, r'fixture-writer.*wait.*commit.*--no-pull'):
+            install_menu.pull_checkout(self.clone, before_change=baseline)
+        self.assertEqual((self.head(self.clone), self.stashes(), self.git('status', '--porcelain')), before)
+        self.assertEqual((self.clone / 'g').read_text(), 'live writer edit\n')
 
     def test_local_changes_are_kept_in_an_object_addressed_stash(self):
         self.record_writer(os.getpid())  # a record for the installer itself does not block it

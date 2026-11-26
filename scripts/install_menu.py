@@ -2283,13 +2283,13 @@ def pull_checkout(root, write=print, run=subprocess.run, before_change=None):
         if result.returncode:
             detail = result.stderr.strip() or result.stdout.strip() or f'exit {result.returncode}'
             raise RuntimeError(f'git {shlex.join(args)} failed: {detail}')
-        return result.stdout.strip()
+        return result.stdout
 
     def git(*args):
         return run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=120)
 
     def read(*args):
-        return checked(git(*args), args)
+        return checked(git(*args), args).strip()
 
     if Path(read('rev-parse', '--show-toplevel')).resolve() != root:
         raise RuntimeError('installer path is not the Git checkout root; refusing to change another checkout')
@@ -2309,12 +2309,17 @@ def pull_checkout(root, write=print, run=subprocess.run, before_change=None):
             import checkout_lock
         finally:
             sys.dont_write_bytecode = previous_bytecode
-        common = read('rev-parse', '--path-format=absolute', '--git-common-dir')
-        writer = checkout_lock.read(common)
-        if writer and writer.get('pid') != os.getpid() and not checkout_lock.dead_owner(writer):
-            raise RuntimeError(f'cannot stash local edits: interactive writer session {writer["session"]!r} '
-                               'holds the checkout; wait for the session to finish, have the holder commit '
-                               'the edits, or retry with --no-pull')
+        common_args = ('rev-parse', '--path-format=absolute', '--git-common-dir')
+        common = checked(git(*common_args), common_args).removesuffix('\n')
+
+        def refuse_live_writer():
+            writer = checkout_lock.read(common)
+            if writer and writer.get('pid') != os.getpid() and not checkout_lock.dead_owner(writer):
+                raise RuntimeError(f'cannot stash local edits: interactive writer session {writer["session"]!r} '
+                                   'holds the checkout; wait for the session to finish, have the holder commit '
+                                   'the edits, or retry with --no-pull')
+
+        refuse_live_writer()
     if before_change:
         before_change()  # installed links may consume this checkout before stash/pull
     if dirty:
@@ -2323,6 +2328,8 @@ def pull_checkout(root, write=print, run=subprocess.run, before_change=None):
         # edits in the same second. A sub-second message makes this a new stash.
         message = f'Kit installer: local changes before pull ({time.time_ns()})'
         args = ('stash', 'push', '--include-untracked', '--message', message)
+        # The baseline can run host CLIs; a writer may have claimed the checkout since the first read.
+        refuse_live_writer()
         saved = git(*args)
         current = read('stash', 'list', '--format=%H').splitlines()
         if current and current[1:] == previous:
