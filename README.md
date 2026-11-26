@@ -219,10 +219,12 @@ Update the release and start scheduling in one command (no separate stop or star
 /orbi update
 ```
 
-Update interrupts owned workers without waiting for them to finish naturally.
-It syncs only after verifying inactivity and preserves recovery inputs. Plain
-update enables configured timers only after validation and start’s technical checks.
-Use `--stop` to leave scheduling stopped and skip activating unit refresh.
+From any directory, use `/orbi update --config /path/to/orbi.toml` to select the
+checkout declared in that config. Add `--wait` to let workers finish instead of
+interrupting them. If work remains after 30 minutes, scheduling stays paused and
+no update is applied. Update syncs only after verifying inactivity and enables
+configured timers only after validation and start’s technical checks. Use `--stop`
+to leave scheduling stopped and skip activating unit refresh.
 
 The upstream CLI remains available for diagnostics:
 

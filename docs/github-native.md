@@ -269,9 +269,11 @@ for serialization, legacy/unknown reporting and repair boundaries. Native Pi-Bol
 extensions, streaming/recovery and installed worker/reviewer compatibility remain
 live-unverified; static routing does not qualify delivery.
 
-`update` explicitly requests release maintenance even when scheduling is current:
-under lock it quiesces the deployment,
-then lets `sync-engine-source` resolve the newest official semver release and pins
+`update` explicitly requests release maintenance even when scheduling is current.
+With `--config` and no `--repo-dir` it uses the config's checkout, independent of
+where it is invoked. Under lock it quiesces the deployment; `--wait` lets workers
+finish without interrupting them and leaves scheduling paused on timeout. Then
+`sync-engine-source` resolves the newest official semver release and the helper pins
 it as `sha:<commit>`. After non-activating validation, plain update starts configured
 scheduling through start’s technical checks, even after an earlier `/orbi stop`.
 `update --stop` leaves scheduling stopped and defers unit refresh to the next

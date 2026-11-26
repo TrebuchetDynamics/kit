@@ -6074,6 +6074,110 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assertNotIn('resume_command', doc)
         self.assertNotIn(SECRET, result.stdout + result.stderr)
 
+    def test_config_only_cli_update_uses_config_checkout_from_unrelated_directory(self):
+        config = self.h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace(
+            f'repo_dir = {json.dumps(str(self.h.repo))}',
+            f'repo_dir = {json.dumps(os.path.relpath(self.h.repo, config.parent))}'))
+        # A caller outside Git has no origin to use as a fallback.
+        unrelated = self.h.root / 'unrelated'
+        unrelated.mkdir()
+        self.active_rules(extra=[{'tool': 'git', 'argv_contains': [str(unrelated)], 'exit': 1}])
+        result = subprocess.run([sys.executable, '-B', str(HELPER), 'update', '--config',
+                                 os.path.relpath(config, unrelated), '--json'], cwd=unrelated,
+                                env=self.h.env, capture_output=True, text=True, timeout=45)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        doc = json.loads(result.stdout)
+        self.assertEqual(doc['repo'], REPO)
+        self.assertEqual(doc['deployment']['config'], str(config))
+        self.assertEqual(doc['engine_update'], 'updated')
+        self.assertEqual(doc['scheduler_confirmation'], 'enabled_active')
+        self.assert_a_unchanged()
+
+    def test_wait_update_handles_natural_drain_deadline_and_preview(self):
+        service = f'{self.prefix}@1.service'
+        timer = f'{self.prefix}@1.timer'
+        for scenario in ('finished', 'timeout', 'preview'):
+            with self.subTest(scenario=scenario):
+                self.h = self.fresh('wait-' + scenario)
+                self.active_rules(services={1: 'active'})
+                config = self.h.deploy / 'orbi.toml'
+                log = self.h.deploy / 'lifecycle.log'
+                prior_receipts = log.read_text().splitlines()
+                before = snapshot(self.h.home)
+                out, err = io.StringIO(), io.StringIO()
+                elapsed, sleeps = 0, []
+
+                def sleep(seconds):
+                    nonlocal elapsed
+                    self.assertLess(len(sleeps), 2, 'wait did not finish or honor its deadline')
+                    self.assertTrue((self.h.root / 'paused').exists())
+                    self.assertFalse((self.h.root / 'synced').exists())
+                    lock, = (self.h.home / '.cache/orbi-control').glob('*.lock')
+                    with lock.open('a+') as handle:
+                        with self.assertRaises(BlockingIOError):
+                            helper.fcntl.flock(handle, helper.fcntl.LOCK_EX | helper.fcntl.LOCK_NB)
+                    sleeps.append(seconds)
+                    # Model a slow wakeup so the last sleep must fit the remaining bound.
+                    elapsed += 1790 if scenario == 'timeout' and len(sleeps) == 1 else seconds
+
+                run = helper.Context.run
+
+                def run_with_worker(ctx, argv, **kwargs):
+                    if (scenario == 'finished' and len(sleeps) == 2 and argv[0] == 'systemctl'
+                            and {'show', 'ActiveState', service} <= set(argv)):
+                        return subprocess.CompletedProcess(argv, 0, 'inactive\n', '')
+                    return run(ctx, argv, **kwargs)
+
+                clock = mock.Mock(monotonic=lambda: elapsed, sleep=sleep)
+                with mock.patch.object(helper, 'time', clock, create=True), \
+                        mock.patch.object(helper.Context, 'run', run_with_worker):
+                    code = helper.main(['update', '--config', str(config), '--wait', '--json',
+                                        *(['--dry-run'] if scenario == 'preview' else [])],
+                                       cwd=self.h.root, env=self.h.env, platform='linux',
+                                       stdout=out, stderr=err)
+                doc = json.loads(out.getvalue())
+                calls = [c['argv'] for c in self.h.calls()]
+                self.assertFalse(any({'stop', 'kill', 'restart'} & set(a) for a in calls))
+                self.assert_a_unchanged()
+                if scenario == 'preview':
+                    self.assertEqual(code, 0, doc)
+                    steps = [s['step'] for s in doc['steps']]
+                    self.assertIn('wait_for_workers', steps)
+                    self.assertNotIn('stop_service', steps)
+                    self.assertEqual(sleeps, [])
+                    self.assertEqual(snapshot(self.h.home), before)
+                    continue
+                self.assertGreaterEqual(err.getvalue().count('still finishing'), 2)
+                self.assertIn(timer, doc['disabled_timers'])
+                self.assertEqual(doc['stopped_services'], [])
+                receipts = log.read_text().splitlines()
+                self.assertEqual(receipts[:-1], prior_receipts)
+                self.assertEqual(len(receipts), len(prior_receipts) + 1)
+                entry = json.loads(receipts[-1])
+                self.assertEqual(entry['action'], 'update')
+                self.assertIn('--wait', entry['argv'])
+                self.assertEqual(entry['result'], doc.get('status') or doc['error']['code'])
+                if scenario == 'timeout':
+                    self.assertNotEqual(code, 0, doc)
+                    self.assertEqual(sleeps, [60, 10])
+                    self.assertEqual(doc['error']['code'], 'update_busy')
+                    self.assertIn('Update not applied: 1 worker(s)', doc['error']['message'])
+                    self.assertIn('still finishing', doc['error']['message'])
+                    self.assertIn('--wait', shlex.split(doc['repair_command']))
+                    self.assertEqual(doc['engine_update'], 'not_applied')
+                    self.assertEqual(doc['scheduler']['services'][service]['state'], 'active')
+                    self.assertEqual(doc['scheduler']['timers'][timer]['active'], 'inactive')
+                    self.assertFalse(doc['scheduler']['timers'][timer]['enabled'])
+                    self.assertFalse(any({'sync-engine-source', 'enable'} & set(a) for a in calls))
+                    self.assertEqual(self.h.config()['engine_source_track'], helper.PIN_TRACK)
+                else:
+                    self.assertEqual(code, 0, doc)
+                    self.assertEqual(sleeps, [60, 60])
+                    self.assertEqual(doc['engine_update'], 'updated')
+                    self.assertEqual(doc['scheduler_confirmation'], 'enabled_active')
+                    self.assertEqual(sum('sync-engine-source' in a for a in calls), 1)
+
     def test_missing_duplicate_and_conflicting_config_never_guess_or_pause(self):
         for kind in ('missing', 'duplicate', 'conflicting'):
             with self.subTest(kind=kind):
@@ -6257,6 +6361,10 @@ class LifecycleRecordAndPruneTests(unittest.TestCase):
             path.chmod(0o600)
         return service, timer
 
+    def prune_rules(self, *rules, search=None):
+        self.h.rules({'tool': 'systemctl', 'argv_contains': ['show', 'UnitPath'],
+                      'stdout': str(search or self.h.unit_dir)}, *rules)
+
     def test_prune_cli_previews_then_removes_only_stale_templates(self):
         h = self.h
         h.deploy.mkdir()
@@ -6281,8 +6389,8 @@ class LifecycleRecordAndPruneTests(unittest.TestCase):
             fh.write(f'EnvironmentFile=-{env_file}\n')
         preserved = h.deploy / '.worktrees/retained'
         preserved.mkdir(parents=True)
-        h.rules({'tool': 'systemctl', 'argv_contains': ['list-units', 'orbi-loaded@*'],
-                 'stdout': 'orbi-loaded@95.timer loaded inactive dead unloaded-test\n'},
+        self.prune_rules({'tool': 'systemctl', 'argv_contains': ['list-units', 'orbi-loaded@*'],
+                          'stdout': 'orbi-loaded@95.timer loaded inactive dead unloaded-test\n'},
                 {'tool': 'systemctl', 'argv_contains': ['list-units', 'orbi-worker@*'],
                  'stdout': 'orbi-worker@8.service loaded active running worker-test\n'},
                 {'tool': 'systemctl', 'argv_contains': ['list-jobs'],
@@ -6317,9 +6425,9 @@ class LifecycleRecordAndPruneTests(unittest.TestCase):
         h = self.h
         paths = self.templates('orbi-stale', h.deploy / 'absent.toml')
         marker = h.root / 'inventoried'
-        h.rules({'tool': 'systemctl', 'argv_contains': ['list-units'],
-                 'if_exists': str(marker), 'exit': 1, 'stderr': SECRET},
-                {'tool': 'systemctl', 'argv_contains': ['list-units'], 'write': {str(marker): '1'}})
+        self.prune_rules({'tool': 'systemctl', 'argv_contains': ['list-units'],
+                          'if_exists': str(marker), 'exit': 1, 'stderr': SECRET},
+                         {'tool': 'systemctl', 'argv_contains': ['list-units'], 'write': {str(marker): '1'}})
         applied = self.cli('prune', '--apply')
         self.assertNotEqual(applied.returncode, 0)
         error = json.loads(applied.stdout)['error']
@@ -6330,6 +6438,22 @@ class LifecycleRecordAndPruneTests(unittest.TestCase):
         self.assertTrue(all(path.is_file() for path in paths))
         self.assertFalse([c for c in h.calls() if 'daemon-reload' in c['argv']])
 
+    def test_prune_reports_removed_files_when_reload_fails(self):
+        h = self.h
+        paths = self.templates('orbi-stale', h.deploy / 'absent.toml')
+        self.prune_rules({'tool': 'systemctl', 'argv_contains': ['daemon-reload'],
+                          'exit': 1, 'stderr': SECRET})
+        applied = self.cli('prune', '--apply')
+        self.assertNotEqual(applied.returncode, 0)
+        self.assertNotIn(SECRET, applied.stdout + applied.stderr)
+        receipt = json.loads(applied.stdout)
+        error = receipt['error']
+        self.assertEqual(error['code'], 'daemon_reload_unverified')
+        self.assertTrue(error['mutated'])
+        self.assertIn('systemctl --user daemon-reload', error['fix'])
+        self.assertCountEqual(receipt['removed'], [str(path) for path in paths])
+        self.assertTrue(all(not path.exists() for path in paths))
+
     def test_prune_keeps_instance_loaded_during_apply(self):
         h = self.h
         paths = self.templates('orbi-stale', h.deploy / 'absent.toml')
@@ -6337,7 +6461,10 @@ class LifecycleRecordAndPruneTests(unittest.TestCase):
         inventories = iter(['', 'orbi-stale@9.timer loaded active waiting Timer\n'])
 
         def run(_ctx, argv, **_kwargs):
-            self.assertIn(argv[2], {'list-units', 'list-unit-files', 'list-jobs'})
+            self.assertIn(argv[2], {'list-units', 'list-unit-files', 'list-jobs', 'show'})
+            if argv[2] == 'show':
+                self.assertEqual(argv[3:], ['-p', 'UnitPath', '--value'])
+                return subprocess.CompletedProcess(argv, 0, str(h.unit_dir), '')
             return subprocess.CompletedProcess(argv, 0, next(inventories) if argv[2] == 'list-units' else '', '')
 
         with mock.patch.object(helper.Context, 'run', run):
@@ -6345,6 +6472,56 @@ class LifecycleRecordAndPruneTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertEqual(json.loads(out.getvalue())['error']['code'], 'prune_target_changed')
         self.assertTrue(all(path.is_file() for path in paths))
+
+    def test_prune_refuses_effective_config_overrides(self):
+        h = self.h
+        h.deploy.mkdir()
+        config = h.deploy / 'healthy.toml'
+        config.write_text('source_repos = ["example/kit"]\n')
+        missing = h.deploy / 'absent.toml'
+        inline, _ = self.templates('orbi-inline', missing)
+        with inline.open('a') as stream:
+            stream.write(f'  Environment = "ORBI_CONFIG={config}"\n')
+        continued, _ = self.templates('orbi-continued', missing)
+        with continued.open('a') as stream:
+            stream.write('Environment= \\\n' + f'  "ORBI_CONFIG={config}"\n')
+        self.templates('orbi-overridden', missing)
+        search = h.root / 'runtime-unit-path'
+        dropin = search / 'orbi-.service.d' / 'override.conf'
+        dropin.parent.mkdir(parents=True)
+        dropin.write_text(f'[Service]\nEnvironment="ORBI_CONFIG={config}"\n')
+        # Keep the cases separate so the shared drop-in cannot mask a parser regression.
+        before = snapshot(h.home)
+        for unit_path in (h.unit_dir, search):
+            with self.subTest(unit_path=unit_path):
+                self.prune_rules(search=unit_path)
+                preview = self.cli('prune')
+                self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
+                self.assertEqual([row['prefix'] for row in json.loads(preview.stdout)['candidates']],
+                                 ['orbi-overridden'] if unit_path == h.unit_dir else [])
+        self.assertEqual(snapshot(h.home), before)
+        applied = self.cli('prune', '--apply')
+        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        self.assertEqual(json.loads(applied.stdout)['removed'], [])
+        self.assertEqual(snapshot(h.home), before)
+
+    def test_busy_lifecycle_log_warns_without_waiting_indefinitely(self):
+        h = self.h
+        h.add_deployment_a()
+        setup = self.cli('setup', '--repo-dir', str(h.repo))
+        self.assertEqual(setup.returncode, 0, setup.stdout + setup.stderr)
+        log = h.deploy / 'lifecycle.log'
+        before = log.read_bytes()
+        h.rules(*h.scheduler_rules())
+        fd = os.open(h.deploy, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            helper.fcntl.flock(fd, helper.fcntl.LOCK_EX | helper.fcntl.LOCK_NB)
+            stopped = self.cli('stop', '--repo-dir', str(h.repo))
+        finally:
+            os.close(fd)
+        self.assertEqual(stopped.returncode, 0, stopped.stdout + stopped.stderr)
+        self.assertIn('warning=lifecycle_log_unavailable', stopped.stderr)
+        self.assertEqual(log.read_bytes(), before)
 
     def test_partial_stop_records_error_and_unwritable_log_does_not_change_result(self):
         h = self.h
@@ -6483,6 +6660,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                 '--config': ['status', 'version', 'setup', 'start', 'update', 'stop'],
                                 '--dry-run': ['setup', 'start', 'update', 'stop', 'prune'],
                                 '--stop': ['update'],
+                                '--wait': ['update'],
                                 '--apply': ['prune'],
                                 '--json': list(expected),
                                 '--pi-providers': ['setup', 'start'],
