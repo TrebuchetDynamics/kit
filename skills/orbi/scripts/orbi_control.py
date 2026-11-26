@@ -2039,7 +2039,7 @@ def service_binding(ctx, unit, manager='user'):
     return dict(line.split('=', 1) for line in proc.stdout.splitlines() if '=' in line)
 
 
-def current_run(ctx, target, repo, unit, *, manager='user'):
+def current_run(ctx, target, repos, unit, *, manager='user'):
     """Only this live service invocation can establish identity, never newest files.
 
     Journal's PID + InvocationID bind a run_start scene to the current owned
@@ -2051,6 +2051,7 @@ def current_run(ctx, target, repo, unit, *, manager='user'):
                'reason': 'current invocation/deployment/run binding is missing or conflicting',
                'next_action': 'Inspect owned service invocation and deployment logs read-only; '
                               'restore readable bindings before attributing an issue. Do not requeue or restart.'}
+    configured_names = {name.lower(): name for name in repos}
     try:
         binding_args = (ctx, unit) if manager == 'user' else (ctx, unit, manager)
         binding = service_binding(*binding_args)
@@ -2093,13 +2094,14 @@ def current_run(ctx, target, repo, unit, *, manager='user'):
                     if key in fields:  # conflicting/torn scenes are not identity
                         return unknown
                     fields[key] = value
-            reference = fields.get('issue', '')
-            if not re.fullmatch(re.escape(repo.full) + r'#[1-9][0-9]*', reference):
+            name, _, number = fields.get('issue', '').rpartition('#')
+            repo = configured_names.get(name.lower())
+            if repo is None or not re.fullmatch(r'[1-9][0-9]*', number):
                 return unknown
             run = fields.get('run', match[1])
             if run != match[1]:
                 return unknown
-            candidate = (int(reference.rsplit('#', 1)[1]), run)
+            candidate = (repo, int(number), run)
             if identity is not None and identity != candidate:
                 return unknown
             if match[2] == 'run_start':
@@ -2116,9 +2118,9 @@ def current_run(ctx, target, repo, unit, *, manager='user'):
                     details[key] = value
         if identity is None or ended or service_binding(*binding_args) != binding:
             return unknown
-        number, run = identity
+        repo, number, run = identity
         return {'state': 'running', 'issue': {'number': number,
-                'url': f'https://github.com/{repo.full}/issues/{number}'},
+                'url': f'https://github.com/{repo}/issues/{number}'},
                 'run_id': run, 'provenance': 'current owned service InvocationID + MainPID journal run_start',
                 **details}
     except (ControlError, OSError, UnicodeError, ValueError, TypeError, AttributeError):
@@ -2132,7 +2134,7 @@ def activity_linux(ctx, target, repo, snapshot):
         if not service['owned'] or not service['installed']:
             item = {'state': 'unknown', 'reason': 'no verified owned service binding'}
         elif state == 'active':
-            item = current_run(ctx, target, repo, unit)
+            item = current_run(ctx, target, (repo.full,), unit)
         elif state in {'activating', 'reloading', 'deactivating'}:
             item = {'state': 'draining' if state == 'deactivating' else 'starting'}
         elif state in INACTIVE_STATES:
@@ -6471,9 +6473,7 @@ def host_status_snapshot(ctx):
                 row.update({key: deployment[key] for key in config_fields})
                 binding = worker_bindings.get((row['manager'], row['unit']))
                 if binding is not None:
-                    if row['repo']:
-                        repo = Repo(target.repo_dir or target.deploy_home, row['repo'], *row['repo'].split('/', 1), None)
-                        row['worker'] = current_run(ctx, target, repo, row['unit'], manager=row['manager'])
+                    row['worker'] = current_run(ctx, target, target.source_repos, row['unit'], manager=row['manager'])
                     if row['worker']['state'] == 'active/issue unknown':
                         if worker := host_worker_issue(ctx, row, target, binding):
                             row['worker'] = worker

@@ -14,9 +14,9 @@ REPO = 'other/repo-a'
 HEAD = '1' * 40
 
 
-def issue(number, *labels):
+def issue(number, *labels, repo=REPO):
     return {'number': number, 'title': f'Issue {number}',
-            'html_url': f'https://github.com/{REPO}/issues/{number}',
+            'html_url': f'https://github.com/{repo}/issues/{number}',
             'labels': [{'name': name} for name in labels]}
 
 
@@ -98,6 +98,8 @@ class UnblockInventoryTests(unittest.TestCase):
         return result, json.loads(result.stdout)
 
     def test_cli_inventories_pages_markers_prs_and_verified_worker(self):
+        config = self.h.data_home / 'orbi-a/orbi.toml'
+        config.write_text(config.read_text().replace('["other/repo-a"]', '["Other/Repo-A", "second/repo"]'))
         older = marker('failure', schema=1, reason_code='provider_quota', action_code='wait_quota',
                        retry_safe=True, outcome='blocked')
         latest = marker('failure', schema=1, reason_code='review_budget_exhausted', action_code='decide',
@@ -138,9 +140,11 @@ class UnblockInventoryTests(unittest.TestCase):
             self.api(REPO, 'issues/42/comments?per_page=100', []),
             self.api(REPO, 'pulls?state=open&per_page=100', [self.pr(22)], [self.pr(11)]),
             *self.pr_reads(22, bucket=None), *self.pr_reads(11),
-            *(self.api('second/repo', path, []) for path in ('issues?state=open&per_page=100',
-                                                            'issues?state=closed&per_page=100',
-                                                            'pulls?state=open&per_page=100')))
+            self.api('second/repo', 'issues?state=open&per_page=100',
+                     [issue(42, 'ai-in-progress', repo='second/repo')]),
+            self.api('second/repo', 'issues/42/comments?per_page=100', []),
+            self.api('second/repo', 'issues?state=closed&per_page=100', []),
+            self.api('second/repo', 'pulls?state=open&per_page=100', []))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(doc['schema_version'], 1)
         self.assertEqual([r['repo'] for r in doc['repositories']], [REPO, 'second/repo'])
@@ -148,9 +152,10 @@ class UnblockInventoryTests(unittest.TestCase):
         self.assertEqual(next(d for d in first['deployments'] if d['unit'] == self.worker)['state'],
                          'running')
         self.assertIn('prepared-only', {d['state'] for d in first['deployments']})
-        self.assertEqual(second['deployments'][0]['config'], str(self.extra))
-        self.assertEqual(second['deployments'][0]['state'], 'prepared-only')
-        self.assertEqual(second['open_issues'], [])
+        prepared = next(d for d in second['deployments'] if d['config'] == str(self.extra))
+        self.assertEqual(prepared['state'], 'prepared-only')
+        second_issue, = second['open_issues']
+        self.assertIs(second_issue['live_local_worker'], False)
         by_number = {i['number']: i for i in first['open_issues']}
         self.assertEqual(list(by_number), [1, 2, 3, 4, 7, 42])
         self.assertEqual(by_number[1]['failure'], {'reason_code': 'review_budget_exhausted', 'action_code': 'decide'})

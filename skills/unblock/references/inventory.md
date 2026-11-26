@@ -41,9 +41,10 @@ question. These markers are observations, not a verdict on answer authority or
 retry safety.
 `live_local_worker` is `true` for a verified local issue binding, `false` when no
 worker was observed with readable local evidence, or `null` when a worker could
-not be attributed or local observation is incomplete. macOS reports running
-jobs but cannot attribute them to an issue. This is not a fleet-wide ownership
-guarantee.
+not be attributed or local observation is incomplete. For a deployment with
+multiple repositories, a verified worker is attributed only to the repository
+named in its live evidence. macOS reports running jobs but cannot attribute
+them to an issue. This is not a fleet-wide ownership guarantee.
 
 `required_checks` contains `result` and `checks`. The latter contains reported
 required checks with `name`, `state`, `bucket` and `link`. The result is `fail`
