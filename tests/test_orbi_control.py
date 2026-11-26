@@ -3967,7 +3967,7 @@ class HostStatusTests(unittest.TestCase):
             if tool == 'systemctl':
                 self.assertIn(argv[1], ('list-units', 'list-unit-files', 'show'))
             elif tool == 'git':
-                self.assertTrue(any(part in argv for part in ('rev-parse', 'show', 'diff')))
+                self.assertTrue(any(part in argv for part in ('rev-parse', 'show', 'diff', 'symbolic-ref')))
             else:
                 self.assertIn('-n', argv)
                 self.assertIn('100', argv)
@@ -4098,11 +4098,45 @@ class HostStatusTests(unittest.TestCase):
                          ('example', 'model-id', 'high', 2))
         self.assertFalse(any('@.' in name for name in show))
 
+    def test_template_config_specifier_is_only_resolved_for_the_instance(self):
+        config = self.h.root / 'worker-17' / 'native.toml'
+        config.parent.mkdir()
+        config.write_text('source_repos = ["native/repo"]\n')
+        template = self.h.unit_dir / 'delivery@.service'
+        unit = 'delivery@17.service'
+        listings = {'list-units': [self.unit(unit)],
+                    'list-unit-files': [{'unit_file': template.name, 'state': 'enabled'}]}
+
+        def fake_run(ctx, argv, **kwargs):
+            if argv[:3] == ['systemctl', '--user', 'show']:
+                self.assertEqual(argv[3], unit)
+                return subprocess.CompletedProcess(
+                    argv, 0, f'Id={unit}\nFragmentPath={template}\nWorkingDirectory={config.parent}\n', '')
+            if argv[:2] == ['systemctl', '--user']:
+                return subprocess.CompletedProcess(argv, 0, json.dumps(listings[argv[2]]), '')
+            return subprocess.CompletedProcess(argv, 0, '[]', '')
+
+        for directive in (f'ExecStart=/bin/orbi --config {self.h.root}/worker-%i/native.toml',
+                          f'WorkingDirectory={self.h.root}/worker-%i\nExecStart=/bin/orbi --config native.toml'):
+            with self.subTest(directive=directive):
+                template.write_text(f'[Service]\n{directive}\n')
+                with (
+                    mock.patch.object(helper.Context, 'run', fake_run),
+                    mock.patch.object(helper, 'host_definition_dirs',
+                                      side_effect=lambda ctx, manager: [self.h.unit_dir] if manager == 'user' else []),
+                ):
+                    _, doc, _ = self.invoke()
+                rows = {row['unit']: row for row in doc['rows']}
+                self.assertEqual(rows[unit]['repo'], 'native/repo')
+                self.assertEqual(rows[template.name]['kind'], 'template')
+                self.assertEqual(doc['coverage']['state'], 'ok', doc['coverage']['problems'])
+
     def test_active_worker_falls_back_to_live_slot_then_worktree_branch(self):
         a = self.h.add_deployment_a()
         repo = self.h.root / 'repo-a'
         worktree = repo / '.worktrees' / 'live-branch-checkout'
-        worktree.mkdir(parents=True)
+        nested = worktree / 'src' / 'package'
+        nested.mkdir(parents=True)
         (worktree / '.git').write_text('gitdir: ../linked-worktree-metadata\n')
         unit, pid = 'orbi-a@17.service', '222'
         proc = self.h.root / 'proc'
@@ -4111,7 +4145,7 @@ class HostStatusTests(unittest.TestCase):
         (main / 'fdinfo').mkdir()
         child = proc / '333'
         child.mkdir()
-        (child / 'cwd').symlink_to(worktree)
+        (child / 'cwd').symlink_to(nested)
         slots = repo / '.orbi/slots'
         slots.mkdir(parents=True)
         slot = slots / 'slot-1'
@@ -4128,8 +4162,9 @@ class HostStatusTests(unittest.TestCase):
                      ControlGroup=f'/pool.slice/{unit}')
         self.h.rules(*self.lists('--system'), *self.lists('--user', [self.unit(unit, 'active')]),
                      self.detail('--user', unit, **props),
-                     {'tool': 'git', 'argv_contains': [str(worktree), 'symbolic-ref', '--short', 'HEAD'],
-                      'stdout': 'orbi/other-repo-a-issue-308\n'})
+                     {'tool': 'git', 'argv_contains': [str(worktree), 'symbolic-ref', '--quiet', 'HEAD'],
+                      'stdout': 'refs/heads/orbi/other-repo-a-issue-308\n'})
+        before = snapshot(self.h.home)
         with mock.patch.object(helper, 'HOST_PROC', proc), mock.patch.object(
                 helper, 'HOST_CGROUP', cgroups):
             _, bound, _ = self.invoke()
@@ -4143,6 +4178,7 @@ class HostStatusTests(unittest.TestCase):
             worker = next(r['worker'] for r in doc['rows'] if r['unit'] == unit)
             self.assertEqual(worker.get('issue', {}).get('number'), number)
             self.assertEqual(worker['state'], 'active/issue unknown' if number is None else 'running')
+        self.assert_read_only(before)
 
     def test_worker_kind_uses_execution_evidence_and_inactive_timer_is_stopped(self):
         config = self.h.root / 'native.toml'

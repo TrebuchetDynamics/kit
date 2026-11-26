@@ -3634,7 +3634,7 @@ def host_resolve_configs(references, cwd=None, *, verify_paths=False):
 
 
 def host_definition(ctx, path, *, working_directory=None, instance=None, manager='user', user_home=None,
-                    verify_paths=False):
+                    verify_paths=False, template=False):
     """Extract config references only; never return commands or environment contents."""
     text = bounded_text(path)
     references = []
@@ -3653,6 +3653,8 @@ def host_definition(ctx, path, *, working_directory=None, instance=None, manager
         references.append(str(Path(cwd) / 'orbi.toml'))
     expanded = []
     for value in references:
+        if template and re.search(r'%[iI]', str(Path(cwd or '.') / value)):
+            continue  # A bare template has no instance-specific config to verify.
         # %h belongs to the manager, not the invoking user. Do not attribute a
         # system unit to the caller's home when the manager home is unobserved.
         if manager == 'user':
@@ -3660,7 +3662,7 @@ def host_definition(ctx, path, *, working_directory=None, instance=None, manager
         if instance is not None:
             value = value.replace('%i', instance)
         expanded.append(value)
-    return {'configs': host_resolve_configs(expanded, cwd, verify_paths=verify_paths), 'referenced': bool(references),
+    return {'configs': host_resolve_configs(expanded, cwd, verify_paths=verify_paths), 'referenced': bool(expanded),
             'runner': runner, 'orbi': orbi, 'command': bool(commands)}
 
 
@@ -3792,7 +3794,7 @@ def host_linux(ctx, coverage):
         metadata = {}
         for name, path in definitions.items():
             try:
-                item = host_definition(ctx, path, manager=manager)
+                item = host_definition(ctx, path, manager=manager, template=name.endswith(('@.service', '@.timer')))
                 if 'orbi' in name.lower() or item['configs'] or item['orbi']:
                     metadata[name] = item
                     installed.setdefault(name, {'state': 'unknown'})
@@ -3848,7 +3850,7 @@ def host_linux(ctx, coverage):
                 try:
                     instance = name.split('@', 1)[1].rsplit('.', 1)[0] if '@' in name and '@.' not in name else None
                     item = host_definition(ctx, source, working_directory=values.get('WorkingDirectory'),
-                                           instance=instance, manager=manager)
+                                           instance=instance, manager=manager, template=name in templates)
                     refs.update(item['configs'])
                     runner |= item['runner']
                     command |= item['command']
@@ -4936,25 +4938,28 @@ def host_worktree_branches(ctx, repo_dir, group, pid):
         return set()
     if pid not in pids:
         return set()
+    root = repo_dir / '.worktrees'
     worktrees = set()
     for child in pids:
         if not re.fullmatch(r'[1-9][0-9]*', child):
             continue
         try:
-            cwd = (HOST_PROC / child / 'cwd').readlink()
-            if cwd.parent == repo_dir / '.worktrees' and (cwd / '.git').is_file():
-                worktrees.add(cwd)
-        except OSError:
+            parts = (HOST_PROC / child / 'cwd').readlink().relative_to(root).parts
+            if parts:
+                worktree = root / parts[0]
+                if (worktree / '.git').is_file():
+                    worktrees.add(worktree)
+        except (OSError, ValueError):
             continue
     branches = set()
-    for cwd in sorted(worktrees)[:HOST_DETAIL_LIMIT]:
+    for worktree in sorted(worktrees)[:HOST_DETAIL_LIMIT]:
         try:
-            proc = ctx.run(['git', '-C', str(cwd), 'symbolic-ref', '--quiet', '--short', 'HEAD'],
+            proc = ctx.run(['git', '-C', str(worktree), 'symbolic-ref', '--quiet', 'HEAD'],
                            env={k: v for k, v in ctx.env.items() if not k.startswith('GIT_')}, allow_failure=True)
-        except ControlError:
+        except (ControlError, OSError, UnicodeError):
             continue
-        if not proc.returncode and len(proc.stdout) <= 1024:
-            branches.add(proc.stdout.strip())
+        if not proc.returncode and len(proc.stdout) <= 1024 and proc.stdout.startswith('refs/heads/'):
+            branches.add(proc.stdout.removeprefix('refs/heads/').rstrip('\n'))
     return branches
 
 

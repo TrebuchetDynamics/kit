@@ -92,9 +92,11 @@ Kit mutations are Linux-only; `--dry-run` previews them. On an error inspect the
 
 ## Inspect observable local host services with Kit
 
-From any working directory, invoke `/orbi status all` or `/orbi status all --json`.
-Portable and native command routes preserve the literal arguments in one helper
-call. Scripts can use the absolute loaded helper path:
+From any working directory, invoke `/orbi status all` for one row per deployment,
+`/orbi status all --verbose` for per-unit text and coverage details, or
+`/orbi status all --json` for structured per-unit inventory. Portable and native
+command routes preserve the literal arguments in one helper call. Scripts can use
+the absolute loaded helper path:
 
 ```sh
 python3 -B /path/to/kit/skills/orbi/scripts/orbi_control.py status all --json
@@ -122,8 +124,9 @@ resolved config binding, repo, deployed engine version/revision or explicit
 unknown, current issue when locally bound and next trigger when available.
 Config-only rows are prepared-only. Engine metadata is shared per resolved config;
 no bootstrap CLI, provider/env/session reads, per-deployment queue/doctor or
-network calls. Linux live issue attribution reuses the invocation-bound evidence
-above; macOS live issue identity and next trigger remain unknown.
+network calls. Linux live issue attribution prefers the invocation-bound evidence
+above, then checks the live worker's locked slot and worktree branch. macOS live
+issue identity and next trigger remain unknown.
 
 Successful empty listings mean zero **observed** workers. Failed/denied managers,
 unreadable configs, conflicting bindings and scan limits yield partial coverage
