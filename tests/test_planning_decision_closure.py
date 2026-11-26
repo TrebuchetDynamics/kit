@@ -111,8 +111,12 @@ class PlanningDecisionClosureTests(unittest.TestCase):
         anchor = 'PLANNING-CRAFT.md#check-issue-contracts-before-publication'
         contract = section(craft, 'Check issue contracts before publication')
         for rule in ('declared Verification read-only on current `main`',
+                     'bound its runtime with a timeout',
                      'Record the revision, command and result in Sources',
-                     'exact reason it could not run', 'direct test fixtures and generators',
+                     'exact reason it could not run', 'command only exercises the old rule',
+                     'source evidence to compare `main` against the proposed rule',
+                     'Trace each Acceptance criterion to the files that must change',
+                     'direct test fixtures and generators',
                      'Exclusions forbid any change needed by Acceptance',
                      'add the authorized repair to Scope', 'native `blockedBy` prerequisite',
                      'narrow the proposed check within accepted intent',

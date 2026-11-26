@@ -328,23 +328,28 @@ Apply this check to each draft, even if it needs no separate builder review.
 1. **Baseline.** If the draft adds or widens a guard, gate, ratchet or check, run
    its declared Verification read-only on current `main`. Use the
    [freshness rules](COMMON-CONTRACT.md#standalone-planner-freshness) to verify
-   the revision; do not substitute a dirty tree or stale ref. Record the
-   revision, command and result in Sources, or the exact reason it could not run
-   (for example, the command does not exist on `main`). Mark unrun checks as
-   unverified and use available source evidence. This step grants no sync,
-   code-edit or live execution authority.
-2. **Scope.** Exact file lists also cover direct test fixtures and generators
-   used by those files' tests, unless an Exclusion names them with a reason.
-   List known writes explicitly. Check whether Exclusions forbid any change needed
-   by Acceptance, including a prerequisite that Verification exposes.
-3. **Disposition.** If Verification fails on `main` for files the draft does not
-   repair, add the authorized repair to Scope and reconcile Exclusions, add the
-   repair issue as a native `blockedBy` prerequisite, or narrow the proposed check
-   within accepted intent. Preserve existing guard and test rules. A copy pin or
-   guard issue is blocked by the copy repair issues, not the reverse. Report any
-   unresolved failure or Scope/Exclusions conflict as a planning finding with its
-   evidence and resume condition; hold the affected draft out of publication.
-   Continue independent buildable work.
+   the revision; do not substitute a dirty tree or stale ref. Inspect the command
+   for side effects and bound its runtime with a timeout. Record the revision,
+   command and result in Sources, or the exact reason it could not run. Mark the
+   proposed check unverified if it cannot run on `main` or the command only
+   exercises the old rule. Use available source evidence to compare `main` against
+   the proposed rule. This step grants no sync, code-edit or live execution authority.
+2. **Scope.** Trace each Acceptance criterion to the files that must change.
+   Exact file lists also cover direct test fixtures and generators used by those
+   files' tests, unless an Exclusion names them with a reason. Include required
+   writes in Scope or identify the native prerequisite that supplies them.
+   Check whether Exclusions forbid any change needed by Acceptance, including
+   a prerequisite that Verification exposes.
+3. **Disposition.** If Verification fails on `main` or source evidence shows the
+   proposed check would fail there, identify the files at fault. For files the
+   draft does not repair, add the authorized repair to Scope and reconcile
+   Exclusions, add the repair issue as a native `blockedBy` prerequisite, or
+   narrow the proposed check within accepted intent.
+   Preserve existing guard and test rules. A copy pin or guard issue is blocked
+   by the copy repair issues, not the reverse. Report any unresolved failure or
+   Scope/Exclusions conflict as a planning finding with its evidence and resume
+   condition; hold the affected draft out of publication. Continue independent
+   buildable work.
 
 ## Builder check before handoff
 
