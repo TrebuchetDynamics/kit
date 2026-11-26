@@ -75,6 +75,12 @@ OFFICIAL_REPO = 'orbi-build/orbi'
 # `git@github.com:` rewrite reports the official HTTPS clone over SSH.
 OFFICIAL_ORIGINS = frozenset({OFFICIAL_ORIGIN, OFFICIAL_ORIGIN + '.git',
                               f'git@github.com:{OFFICIAL_REPO}', f'git@github.com:{OFFICIAL_REPO}.git'})
+# Pi subscription provider IDs (including legacy OAuth IDs). Other IDs,
+# including API gateways such as openrouter and custom providers, are metered.
+SUBSCRIPTION_PROVIDERS = frozenset({
+    'openai-codex', 'anthropic', 'github-copilot', 'google-gemini-cli',
+    'google-antigravity', 'kimi-coding', 'meta', 'xai',
+})
 MAX_INSTANCES = 5
 NODE_FLOOR = (22, 19)
 PROBE_TIMEOUT = 20
@@ -279,6 +285,11 @@ def deployment_from(config_path, data=None):
             raise ControlError('config_invalid', f'{path} has a non-string {key}',
                                fix='repair the native config deliberately; preserve recovery inputs',
                                exit_code=2)
+    if 'allowed_providers' in data:
+        allowed = data['allowed_providers']
+        if not isinstance(allowed, list) or not all(isinstance(item, str) and item.strip() for item in allowed):
+            raise ControlError('config_invalid', f'{path} has an invalid allowed_providers',
+                               fix='set allowed_providers to an array of provider IDs', exit_code=2)
     source_repos = data.get('source_repos')
     if (not isinstance(source_repos, list) or not source_repos
             or not all(isinstance(item, str) and '/' in item for item in source_repos)):
@@ -825,6 +836,26 @@ def provider_evidence(deployment):
             'reason': f'model {model} has no verified metadata for provider {provider}'}
 
 
+def require_allowed_provider(deployment, provider, model):
+    allowed = deployment.data.get('allowed_providers')
+    if allowed is not None and provider not in allowed:
+        raise ControlError('provider_not_allowed',
+                           f'{provider}/{model} is not permitted by allowed_providers in {deployment.config_path}',
+                           fix='select an allowed provider or deliberately update allowed_providers in orbi.toml; '
+                               '--allow-metered does not override this policy', exit_code=2)
+
+
+def guard_provider_selection(deployment, provider, model, *, allow_metered, bootstrap=False):
+    require_allowed_provider(deployment, provider, model)
+    saved = deployment.data.get('pi_provider')
+    if (not allow_metered and provider not in SUBSCRIPTION_PROVIDERS
+            and (not saved or saved in SUBSCRIPTION_PROVIDERS)):
+        retry = ('use `/orbi set DEPLOYMENT model PROVIDER/MODEL --allow-metered` to change the saved selection'
+                 if bootstrap and saved else 'rerun with --allow-metered to confirm')
+        raise ControlError('metered_confirmation_required', f'{provider}/{model} is metered',
+                           fix=f'keep a subscription provider or {retry}', exit_code=2)
+
+
 def require_provider(deployment):
     evidence = provider_evidence(deployment)
     if evidence['state'] != 'ok':
@@ -834,6 +865,7 @@ def require_provider(deployment):
             + evidence.get('reason', 'unknown reason'),
             fix='configure pi_providers/pi_provider/pi_model with published model metadata, '
                 'then run `/orbi setup --prepare-only` for non-activating validation')
+    require_allowed_provider(deployment, evidence['provider'], evidence['model'])
     return evidence
 
 
@@ -1358,6 +1390,7 @@ def plan_new_deployment(ctx, repo, deployments, args):
             **deployment.data, 'pi_providers': str(checked_path(args.pi_providers, 'provider file')),
             'pi_provider': args.pi_provider, 'pi_model': args.pi_model})
         provider = require_provider(selection)
+        guard_provider_selection(deployment, args.pi_provider, args.pi_model, allow_metered=args.allow_metered)
         provider['thinking'] = args.pi_thinking
         metadata = load_provider_metadata(selection)
     else:
@@ -2063,10 +2096,13 @@ def local_deployment_summary(ctx, target, *, metadata_only=False):
     source = source_evidence(ctx, target)
     harness = harness_evidence(ctx, target)
     usable = harness['state'] == 'verified' or (harness['management'] == 'legacy' and harness['state'] == 'unknown')
+    provider = provider_evidence(target)
+    if (provider_id := target.data.get('pi_provider')) and (model := target.data.get('pi_model')):
+        provider.update(provider=provider_id, model=model, metered=provider_id not in SUBSCRIPTION_PROVIDERS)
     return {'config': str(target.config_path), 'deploy_home': str(target.deploy_home),
             'unit_name': target.unit_name, 'pin': target.pin, 'source': source['state'],
             'bootstrap': bootstrap_evidence(ctx, target)[0] if usable else 'unavailable',
-            'provider': provider_evidence(target), 'slots': target.max_concurrency,
+            'provider': provider, 'slots': target.max_concurrency,
             'harness': harness, 'engine': engine_summary(ctx, target, source),
             'last_lifecycle': last_lifecycle(target)}
 
@@ -2328,9 +2364,11 @@ def command_setup(ctx, args, *, prepared_binding=None):
         if not new:
             if not args.resume_setup and any(getattr(args, key) is not None for key in
                    ('pi_providers', 'pi_provider', 'pi_model', 'pi_thinking')):
+                guard_provider_selection(target, args.pi_provider, args.pi_model,
+                                         allow_metered=args.allow_metered, bootstrap=True)
                 raise ControlError(
                     'provider_override_refused', 'bootstrap inputs cannot replace an existing selection',
-                    fix='omit --pi-* bootstrap inputs to reuse the existing deployment; '
+                    fix='omit --pi-* bootstrap inputs to reuse the existing deployment; use `/orbi set` to change models; '
                         'for a legacy missing local provider use explicit --config --resume-setup '
                         'with the complete matching selectors; otherwise repair deliberately', exit_code=2)
             validate_target(target, repo)
@@ -2692,8 +2730,11 @@ def command_start(ctx, args):
         selectors = any(getattr(args, key) is not None for key in
                         ('pi_providers', 'pi_provider', 'pi_model', 'pi_thinking', 'harness'))
         if target is not None and selectors:
+            if args.pi_provider is not None:
+                guard_provider_selection(target, args.pi_provider, args.pi_model,
+                                         allow_metered=args.allow_metered, bootstrap=True)
             raise ControlError('bootstrap_override_refused', 'start selectors are only for absent preparation',
-                               fix='omit --pi-* and --harness to reuse the saved selection; '
+                               fix='omit --pi-* and --harness to reuse the saved selection; use `/orbi set` to change models; '
                                    'use deliberate setup/repair for partial deployments', exit_code=2)
         if target is not None:
             require_start_config_binding(target)
@@ -3310,7 +3351,7 @@ def command_update(ctx, args):
     return maintain_existing(ctx, args)
 
 
-SET_USAGE = ('/orbi set DEPLOYMENT slots N', '/orbi set DEPLOYMENT model PROVIDER/MODEL [THINKING]')
+SET_USAGE = ('/orbi set DEPLOYMENT slots N', '/orbi set DEPLOYMENT model PROVIDER/MODEL [THINKING] [--allow-metered]')
 THINKING_LEVELS = ('off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max')
 
 
@@ -3346,6 +3387,9 @@ def command_set(ctx, args):
                            fix='use ' + ' or '.join(SET_USAGE), exit_code=2)
     selector, key, value, *thinking = operands
     if key == 'slots':
+        if args.allow_metered:
+            raise ControlError('invalid_metered_selection', '--allow-metered does not apply to slots',
+                               fix='omit --allow-metered', exit_code=2)
         try:
             slots = int(value) if re.fullmatch(r'[+]?[0-9]+', value) else 0
         except ValueError:
@@ -3447,6 +3491,9 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
         require_harness(ctx, target)
         if setting:
             require_start_config_binding(target)
+            if 'pi_provider' in changes:
+                guard_provider_selection(target, changes['pi_provider'], changes['pi_model'],
+                                         allow_metered=args.allow_metered)
             candidate = deployment_from(target.config_path, {**target.data, **changes})
             try:
                 provider = require_provider(candidate)
@@ -3487,7 +3534,8 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
         bound_selectors = (' --repo-dir ' + shlex.quote(str(repo.path))
                            + ' --config ' + shlex.quote(str(target.config_path)))
         start_command = '/orbi start' + bound_selectors
-        resume = ('/orbi set ' + shlex.join([str(target.config_path), *args.operands[1:]]) if setting else
+        resume = ('/orbi set ' + shlex.join([str(target.config_path), *args.operands[1:]])
+                  + (' --allow-metered' if args.allow_metered else '') if setting else
                   '/orbi ' + action + bound_selectors + (' --stop' if args.stop else '')
                   + (' --wait' if args.wait else ''))
         report = new_deployment_report(ctx, target, provider)
@@ -3776,13 +3824,15 @@ def render(ctx, document, json_mode, *, verbose=False):
         ctx.out.write(f"Host Orbi: coverage={document['coverage']['state']}; observed workers="
                       f"{document['totals']['observed_workers']} (not an absolute host total)\n")
         for row in document['rows']:
+            model = (f" model={row['provider']}/{row['model']}" + (' (metered)' if row['metered'] else '')
+                     if row.get('provider') and row.get('model') else '')
             ctx.out.write(f"{row['manager'] or 'local-config'} {row['unit'] or row['binding']['config']} "
                           f"repo={row['repo'] or 'unknown'} Orbi={row['engine'].get('version') or 'unknown'} "
                           f"{row['kind']} timers={','.join(row.get('timers', {})) or 'none'} "
                           f"loaded={row['loaded']} installed={row['installed']} "
                           f"state={row['state']} scheduler={row['scheduler']} worker={row['worker']['state']} "
                           f"issue={row['worker'].get('issue', {}).get('url', 'unknown')} "
-                          f"next={row['next_trigger'] or 'unknown'} binding={row['binding']['state']}\n")
+                          f"next={row['next_trigger'] or 'unknown'} binding={row['binding']['state']}{model}\n")
             if row.get('last_lifecycle'):
                 ctx.out.write(lifecycle_text(row['last_lifecycle']) + '\n')
         for line in flatten(document['coverage'], 'coverage.'):
@@ -3800,6 +3850,9 @@ def render(ctx, document, json_mode, *, verbose=False):
         ctx.out.write(f"Orbi: {engine.get('version') or 'unknown'} "
                       f"revision={engine.get('revision') or 'unknown'} "
                       f"({engine.get('state', 'unknown')}; {engine.get('provenance', 'no deployment metadata')})\n")
+        provider = document.get('deployment', {}).get('provider', {})
+        if provider.get('metered'):
+            ctx.out.write(f"Model: {provider['provider']}/{provider['model']} (metered)\n")
         cli = engine.get('bootstrap_cli', {})
         ctx.out.write(f"Bootstrap CLI: {cli.get('version') or 'unknown'} "
                       f"({cli.get('state', 'unavailable')}; {cli.get('comparison', 'unknown')})\n")
@@ -3868,6 +3921,8 @@ def render_host_compact(ctx, document):
                         if re.match(r'^\S+ \d{4}-\d\d-\d\d ', timer['next_trigger'] or '')),
                        key=lambda stamp: stamp.split(' ', 1)[1], default='unknown')
         selection = '/'.join(first.get(key) or 'unknown' for key in ('provider', 'model', 'thinking'))
+        if first.get('metered'):
+            selection += ' (metered)'
         repos = ','.join(first.get('repos', [])) or config
         line = (f"{repos} slots={len(busy)}/{first.get('max_concurrency', '?')} {selection} "
                 f"state={state} issues={','.join(numbers) or '-'} next={next_run}")
@@ -4089,11 +4144,13 @@ def host_configs(ctx, paths, coverage):
                 continue
             target = deployment_from(path, tomllib.loads(bounded_text(path)))
             summary = local_deployment_summary(ctx, target, metadata_only=True)
+            provider, model = target.data.get('pi_provider'), target.data.get('pi_model')
             deployments[key] = {'binding': {'state': 'verified', 'config': key},
                                 'last_lifecycle': last_lifecycle(target),
                                 'repo': target.source_repos[0] if len(target.source_repos) == 1 else None,
                                 'repos': list(target.source_repos), 'target': target, 'engine': summary['engine'],
-                                'provider': target.data.get('pi_provider'), 'model': target.data.get('pi_model'),
+                                'provider': provider, 'model': model,
+                                'metered': bool(provider and model and provider not in SUBSCRIPTION_PROVIDERS),
                                 'thinking': target.data.get('pi_thinking'), 'max_concurrency': target.max_concurrency}
         except (OSError, ValueError, UnicodeError, RuntimeError, ControlError):
             deployments[key] = {'binding': {'state': 'unreadable', 'config': key},
@@ -5667,7 +5724,7 @@ def command_status_all(ctx):
     else:
         rows, paths = host_darwin(ctx, coverage)
     deployments = host_configs(ctx, paths, coverage)
-    config_fields = ('repos', 'provider', 'model', 'thinking', 'max_concurrency')
+    config_fields = ('repos', 'provider', 'model', 'metered', 'thinking', 'max_concurrency')
     bound = set()
     for row in rows:
         config = row['binding']['config']
@@ -5733,7 +5790,7 @@ def action_usage():
     prefix = 'python3 -B orbi_control.py '
     return (prefix + '[' + '|'.join(name for name in ACTIONS if name != 'set') + '] [all] '
             '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] [--verbose] '
-            '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] '
+            '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL] [--allow-metered]] '
             '[--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait] [--apply]\n'
             + '\n'.join('  ' + prefix + command.removeprefix('/orbi ') + ' [--json]' for command in SET_USAGE))
 
@@ -5755,6 +5812,8 @@ def command_help(ctx, args):
         '--pi-provider': 'explicit provider ID; requires --pi-providers and --pi-model',
         '--pi-model': 'model ID with verified metadata; requires --pi-providers and --pi-provider',
         '--pi-thinking': 'reasoning for new setup/absent start; setup resume must match saved value (omission inherits)',
+        '--allow-metered': 'confirm explicit metered bootstrap or a model switch from subscription to metered; '
+                           'does not override allowed_providers or replace a saved selection during setup/start',
     }
     return {
         'action': 'help',
@@ -5855,7 +5914,9 @@ def command_help(ctx, args):
                        'separately; inspect saved routing/launcher drift deliberately. No install/fallback here.',
             'provider': 'provider_unavailable/auth_unverified: supply --pi-providers PATH --pi-provider ID '
                         '--pi-model ID for absent preparation, or provision the exact named existing catalog/auth '
-                        'or service reference separately; never invent capabilities or copy credentials.',
+                        'or service reference separately; never invent capabilities or copy credentials. '
+                        'metered_confirmation_required: keep a subscription provider or explicitly pass --allow-metered. '
+                        'provider_not_allowed: choose a provider permitted by allowed_providers in orbi.toml.',
             'config_missing': '--config must name an existing native config. Correct the path; omit --config '
                               'only for genuinely absent preparation, not to bypass partial/foreign state.',
             'partial_setup': 'Preserve config, pin, provider, env, launcher and attempts. Inspect the failed step; '
@@ -5973,7 +6034,7 @@ ACTIONS = {
         'mutates': 'staging',
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json',
-                    '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--resume-setup', '--harness'],
+                    '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--allow-metered', '--resume-setup', '--harness'],
         'when': 'Run to prepare one unambiguous repository deployment with verified '
                 'prerequisites, preserving existing pins and active workers.',
     },
@@ -5983,7 +6044,7 @@ ACTIONS = {
         'mutates': 'scheduler',
         'platforms': ['linux'],
         'applies': ['--repo-dir', '--config', '--dry-run', '--json',
-                    '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--harness'],
+                    '--pi-providers', '--pi-provider', '--pi-model', '--pi-thinking', '--allow-metered', '--harness'],
         'when': 'Prepare only if genuinely absent with no explicit --config. Existing targets quiesce as needed '
                 'and sync, pin and validate before activation. No changes if current with configured timers enabled '
                 'and active. On failure report the specific check and next safe action.',
@@ -6004,7 +6065,7 @@ ACTIONS = {
         'effect': 'Change slots or catalog model, back up the config and apply with the update --wait behavior; do not move the engine pin.',
         'mutates': 'scheduler',
         'platforms': ['linux'],
-        'applies': ['--json'],
+        'applies': ['--json', '--allow-metered'],
         'when': 'Use a unique local unit prefix, repository name, or config path. '
                 f'Slots must be a positive integer from 1 to {MAX_INSTANCES}. '
                 'An unknown provider/model is refused before writes.',
@@ -6107,6 +6168,8 @@ def parse_args(argv):
     parser.add_argument('--pi-model', help='new setup/absent start or bounded setup resume: model ID with verified metadata')
     parser.add_argument('--pi-thinking', help='new setup/absent start reasoning level, or exact saved setup resume value; '
                         'omitted resume thinking inherits the saved value')
+    parser.add_argument('--allow-metered', action='store_true',
+                        help='confirm an explicit metered provider selection for model set or new setup/start')
     args = parser.parse_args(argv)
     args.scope = None
     if args.action != 'set' and args.operands:
@@ -6146,7 +6209,8 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
         if args.scope is not None and (args.action != 'status' or any(
                 (args.repo_dir is not None, args.config is not None, args.dry_run, args.stop, args.wait, args.apply,
                  args.resume_setup, args.harness is not None, args.pi_providers is not None,
-                 args.pi_provider is not None, args.pi_model is not None, args.pi_thinking is not None))):
+                 args.pi_provider is not None, args.pi_model is not None, args.pi_thinking is not None,
+                 args.allow_metered))):
             raise ControlError('invalid_host_selection',
                                'literal all requires status with no repo/config or mutation selectors',
                                fix='use /orbi status all without selectors', exit_code=2)
@@ -6190,6 +6254,11 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                     fix='supply all three selectors and optionally --pi-thinking for a new '
                         'deployment, or omit all bootstrap inputs to reuse existing metadata',
                     exit_code=2)
+        if args.allow_metered and args.action not in ('set', 'help') and (
+                args.action not in ('setup', 'start') or args.pi_provider is None):
+            raise ControlError('invalid_metered_selection',
+                               '--allow-metered requires set model or explicit setup/start provider inputs',
+                               fix='omit --allow-metered unless selecting a model or bootstrap provider', exit_code=2)
         entry = ACTIONS[args.action]
         if 'all' not in entry['platforms'] and ctx.platform not in entry['platforms']:
             if ctx.platform == 'darwin':

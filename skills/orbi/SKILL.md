@@ -39,7 +39,7 @@ concrete unmet need, not a fixed sequence of model turns.
    | --- | --- |
    | `status all [--verbose\|--json]` | `status all [--verbose\|--json]` |
    | `set DEPLOYMENT slots N` | Pass through unchanged |
-   | `set DEPLOYMENT model PROVIDER/MODEL [THINKING]` | Pass through unchanged |
+   | `set DEPLOYMENT model PROVIDER/MODEL [THINKING] [--allow-metered]` | Pass through unchanged |
    | `setup` | `start` |
    | `setup --dry-run` | `start --dry-run` |
    | `setup --prepare-only` | `setup` |
@@ -47,7 +47,8 @@ concrete unmet need, not a fixed sequence of model turns.
    | `setup --prepare-only --resume-setup` | `setup --resume-setup` |
 
    Remove only `--prepare-only` for public setup; preserve all other supported
-   arguments literally, regardless of flag order. `--prepare-only` is public
+   arguments literally, regardless of flag order. Never add `--allow-metered` on the
+   operator's behalf. `--prepare-only` is public
    setup-only: reject it on other actions, never forward it to the helper.
    Reject `setup --resume-setup` before invoking the helper unless `--prepare-only`
    is explicit; give the corrected `setup --prepare-only --resume-setup` command
@@ -148,7 +149,7 @@ concrete unmet need, not a fixed sequence of model turns.
 
 ```text
 /orbi set sdrhf slots 1
-/orbi set sdrhf model PROVIDER/MODEL [THINKING]
+/orbi set sdrhf model PROVIDER/MODEL [THINKING] [--allow-metered]
 ```
 
 Select a prepared local deployment by a unique unit name prefix, repository
@@ -158,6 +159,12 @@ scheduler range. Use a provider and model already listed in that deployment's
 Pi metadata; an unknown model is refused before any writes. Omit `THINKING` to
 keep the saved value, or pass `off`, `minimal`, `low`, `medium`, `high`, `xhigh`,
 or `max`.
+
+A move from a subscription provider to a metered provider (such as OpenRouter)
+requires explicit `--allow-metered`. It also applies to an explicit metered
+provider on first setup/start. A deployment's optional `allowed_providers`
+list in `orbi.toml` still applies, even with the flag. Status marks metered models.
+See [provider selection policy](references/lifecycle.md#provider-selection-policy).
 
 Like `update --wait`, `set` pauses owned timers and gives workers up to 30 minutes
 to finish without stopping them. If they don't finish, scheduling stays paused and
