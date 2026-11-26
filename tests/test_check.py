@@ -459,6 +459,30 @@ class C(B, Mixin):
                                      'test_inherited.C.test_x', 'test_inherited.C.test_y',
                                      'test_inherited.C.test_z'])
 
+    def test_shards_run_class_assigned_methods_once(self):
+        fixture = self.write('tests/test_assigned.py', '''import unittest
+class Original(unittest.TestCase):
+    def test_original(self):
+        print('RAN', self.id())
+
+class Aliases(unittest.TestCase):
+    test_alias = Original.test_original
+    test_chained = helper = Original.test_original
+    test_annotated: object = Original.test_original
+''')
+        spec = importlib.util.spec_from_file_location(fixture.stem, fixture)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        # A fresh loader is not filtered by the outer unittest invocation's -k.
+        expected = [case.id() for suite in unittest.TestLoader().loadTestsFromModule(module)
+                    for case in suite]
+        seen = []
+        for i in range(1, 5):
+            result = self.run_check('tests/test_assigned.py', '--shard', f'{i}/4')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            seen.extend(re.findall(r'^RAN (\S+)$', result.stdout, re.MULTILINE))
+        self.assertCountEqual(seen, expected)
+
     def test_shards_run_module_with_unresolved_base_whole_on_first_shard(self):
         self.write('tests/support.py', '''import unittest
 class External(unittest.TestCase):
