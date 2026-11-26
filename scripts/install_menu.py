@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the full Kit suite with verbose output by default.
+"""Install the full Kit suite with live progress and exact commands.
 
     install.sh                every available component, live output and exact commands
     install.sh --menu         a checkbox menu on a terminal (arrows, Space, Enter)
@@ -86,8 +86,9 @@ class Output:
     COLORS = {'heading': '1;36', 'installed': '32', 'failed': '31',
               'skipped': '33', 'warning': '33', 'planned': '36', 'command': '2'}
 
-    def __init__(self, color='auto', verbosity=2):
+    def __init__(self, color='auto', verbosity=2, *, verbose_hermes=False):
         self.verbosity = verbosity
+        self.verbose_hermes = verbose_hermes
         self.color = color == 'always' or (color == 'auto' and sys.stdout.isatty()
                       and os.environ.get('TERM') != 'dumb' and not os.environ.get('NO_COLOR'))
 
@@ -100,13 +101,14 @@ class Output:
         print(message, end='', flush=True)
 
 
-def run_command(argv, output, extra_env=None, timeout=None, receipt=None):
+def run_command(argv, output, extra_env=None, timeout=None, receipt=None, *, receipt_via_fd=False):
     """Stream both child channels, including prompts without a trailing newline.
 
     Keep a bounded diagnostic tail for quiet failures; stdin remains inherited.
     Quiet mode still shows native prompts/output when input is a terminal.
     """
     env = dict(os.environ, PYTHONUNBUFFERED='1', **(extra_env or {}))
+    env.pop('KIT_INSTALL_HERMES_RECEIPT_FD', None)
     if not extra_env or 'KIT_INSTALL_LOCK_FD' not in extra_env:
         env.pop('KIT_INSTALL_LOCK_FD', None)
     if not output.color:
@@ -115,8 +117,11 @@ def run_command(argv, output, extra_env=None, timeout=None, receipt=None):
     decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
     tail = ''
     # Native receipts can exceed the diagnostic tail (many profiles/commands).
-    # Spool only when requested; ordinary commands retain bounded diagnostics.
+    # Setup can write directly to the spool instead of publishing JSON to the terminal.
     captured = tempfile.TemporaryFile(mode='w+', encoding='utf-8') if receipt is not None else None
+    receipt_fd = captured.fileno() if receipt_via_fd and captured is not None else None
+    if receipt_fd is not None:
+        env['KIT_INSTALL_HERMES_RECEIPT_FD'] = str(receipt_fd)
     terminal = None
     previous_ttou = None
     if timeout is not None:
@@ -143,7 +148,7 @@ def run_command(argv, output, extra_env=None, timeout=None, receipt=None):
         # A process group bounds descendants too, without detaching /dev/tty prompts.
         with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
                               preexec_fn=prepare_child if timeout is not None else None,
-                              pass_fds=tuple(fd for fd in (terminal,
+                              pass_fds=tuple(fd for fd in (terminal, receipt_fd,
                                   int(env['KIT_INSTALL_LOCK_FD']) if env.get('KIT_INSTALL_LOCK_FD') else None)
                                   if fd is not None)) as child:
             try:
@@ -157,13 +162,13 @@ def run_command(argv, output, extra_env=None, timeout=None, receipt=None):
                         if not chunk:
                             break
                         text = decoder.decode(chunk)
-                        if captured is not None:
+                        if captured is not None and receipt_fd is None:
                             captured.write(text)
                         tail = (tail + text)[-16384:]
                         if stream:
                             output.raw(text)
                 text = decoder.decode(b'', final=True)
-                if captured is not None:
+                if captured is not None and receipt_fd is None:
                     captured.write(text)
                 tail = (tail + text)[-16384:]
                 if stream:
@@ -227,9 +232,9 @@ def terminal_receipt(text):
     return receipt
 
 
-def failure_summary(text):
-    """Extract a final structured receipt, not its closing brace, from native logs."""
-    receipt = terminal_receipt(text)
+def failure_summary(text, receipt=None):
+    """Prefer a native receipt over the bounded log tail."""
+    receipt = receipt or terminal_receipt(text)
     if receipt is not None:
         parts = [receipt.get(key) for key in ('status', 'error')]
         # Scoped/recovery receipts keep per-profile diagnostics.
@@ -2090,14 +2095,18 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                             output.line('  ' + message)
                         break
                     if item.key == 'hermes':
-                        env = {'KIT_INSTALL_DEFER_SERVICES': '1'}
+                        env = {'KIT_INSTALL_DEFER_SERVICES': '1',
+                               'KIT_INSTALL_HERMES_SUMMARY': '0' if output.verbose_hermes else '1'}
                         if skip_orbi or 'orbi' in chosen:
                             # Explicit opt-out or let the outer Orbi item own the one fleet refresh.
                             env['KIT_INSTALL_SKIP_ORBI'] = '1'
                         if lock_fd is not None:
                             env['KIT_INSTALL_LOCK_FD'] = str(lock_fd)
                         native = {}
-                        code, text = run_command(step.argv, output, extra_env=env, receipt=native, timeout=1800)
+                        setup_summary = (not output.verbose_hermes and len(step.argv) > 1
+                                         and Path(step.argv[1]).name == 'setup_bundle.py')
+                        code, text = run_command(step.argv, output, extra_env=env, receipt=native, timeout=1800,
+                                                 receipt_via_fd=setup_summary)
                         native = native or terminal_receipt(text)
                     else:
                         code, text = run_command(step.argv, output)
@@ -2112,7 +2121,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                             output.line('  ' + message)
                             break
                         outcome, exit_code = 'failed', code
-                        cause = failure_summary(text)
+                        cause = failure_summary(text, native)
                         detail.append(f'{cause} (exit {code})')
                         output.line(f'  FAILED: {step.describe} (exit {code})', 'failed')
                         break
@@ -2468,7 +2477,7 @@ def main(argv=None):
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
     parser.add_argument('--menu', action='store_true', help='choose components using the checkbox menu')
     verbosity = parser.add_mutually_exclusive_group()
-    verbosity.add_argument('-v', '--verbose', action='store_true', help='show exact commands as well as live output (default)')
+    verbosity.add_argument('-v', '--verbose', action='store_true', help='include individual Hermes skill skips and native profile receipts')
     verbosity.add_argument('-q', '--quiet', action='store_true', help='show summary and failures only (native terminal prompts remain visible)')
     parser.add_argument('--color', choices=('auto', 'always', 'never'), default='auto',
                         help='color output (default: auto; respects NO_COLOR)')
@@ -2485,7 +2494,7 @@ def main(argv=None):
         if unknown:
             parser.error(f'unknown item(s): {", ".join(unknown)}; choose from {", ".join(ITEM_KEYS)}')
 
-    output = Output(args.color, 0 if args.quiet else 2)
+    output = Output(args.color, 0 if args.quiet else 2, verbose_hermes=args.verbose)
     if (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
             or os.environ.get('KIT_INSTALL_NO_PULL') or not has_checkout(ROOT)):
         result = run_suite(args, parser, output)
