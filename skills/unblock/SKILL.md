@@ -10,9 +10,9 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md),
 [communication rules](../shared/COMMUNICATION.md) and
 [GitHub handoff](../shared/PLAN-HANDOFF.md).
 
-`/unblock [repo|all]` diagnoses the current repository by default. `all` must
-name an explicit set of repositories; it is not permission to discover or operate
-an entire host fleet. Editing this skill does not invoke recovery.
+`/unblock [repo|all]` diagnoses the current repository by default. `all` means
+only the repositories in local Orbi deployment configs.
+Editing this skill does not invoke recovery.
 
 GitHub Issues and Orbi are the only executable backlog and delivery executor.
 Preserve existing tasks, worktrees, attempts and
@@ -122,8 +122,12 @@ on the revised requirement. A comment or label alone is not evidence of resumpti
 
 ## Recover, verify, continue
 
-1. **Bind and inventory.** For each bound `repo=OWNER/REPO`, list issue metadata
-   from all pages before reading individual issues:
+1. **Bind and inventory.** For `all`, first run
+   `timeout 15m python3 -B <this-skill>/scripts/inventory.py --json` with
+   `<this-skill>` set to this skill's directory. Use `repositories` as the scope and
+   its issue and PR rows as the starting snapshot. Use each repository's `owner_tasks`
+   for the receipt. Report [inventory gaps](references/inventory.md) without widening
+   discovery. For one bound `repo=OWNER/REPO`, list issue metadata from all pages:
 
    ```sh
    timeout 60 gh api --paginate --jq '.[] | select(.pull_request == null) | {number, html_url, created_at, labels: [.labels[].name]}' \
@@ -131,14 +135,15 @@ on the revised requirement. A comment or label alone is not evidence of resumpti
    ```
 
    Set aside `owner-task` issues before reading bodies, comments or attempts, even
-   when they also carry an `ai-*` label. Count them and find the oldest by
-   `created_at`. Apply this exclusion in PR and dependency follow-ups too: a worker
-   may wait on an owner task, but the owner task is not a repair target.
-   Read the remaining issues, native dependencies, linked PRs, CI/review results
-   and actual ownership. Use read-only `orbi status` and
+   when they also carry an `ai-*` label. In a single-repository scan, count them
+   and find the oldest by `created_at`. Apply this exclusion in PR and dependency
+   follow-ups too: check labels before issue details. A worker may wait on an
+   owner task, but the owner task is not a repair target.
+   Read any remaining worker issues, native dependencies, linked PRs, CI/review
+   results and actual ownership. Use read-only `orbi status` and
    `orbi doctor` with the target's configuration if installed. A failed read is
-   unavailable evidence, not an empty queue. Include every unresolved decision,
-   not only the dashboard's displayed questions. For open PRs, follow
+   unavailable evidence, not an empty queue. Include every unresolved worker
+   decision, not only the dashboard's displayed questions. For open PRs, follow
    [owner-first repair records](#blocked-prs-owner-first-repair-records) below.
 2. **Diagnose.** Read repository policy, accepted scope, latest attempts and failed
    operation logs. Distinguish dependency, active ownership, failed check,
@@ -167,8 +172,8 @@ on the revised requirement. A comment or label alone is not evidence of resumpti
    completion signal within a bounded wait; do not loop unchanged retries.
    Do not create backlog work merely to make an idle deployment busy.
 
-For a genuine owner gate, ask the smallest concrete question, with a recommendation
-and the effect on dependent work. Continue independent authorized repairs.
+For a missing owner decision on worker work, ask the smallest concrete question,
+with a recommendation and the effect on dependent work. Continue independent authorized repairs.
 A planning closure or an evidenced wait is not recovery. Apply the
 [Definition of Done](../shared/DEFINITION-OF-DONE.md) to actual delivery claims.
 
@@ -275,6 +280,6 @@ If no task resumed, say "No work resumed."
 
 **Receipt:** outcomes per repository, actual transitions, repairs, checks and
 commits, plus exact remaining gates. Report `Owner tasks: N` separately, adding the
-oldest issue link and creation date if any. If issue inventory failed, report
-coverage unavailable rather than a zero count. Distinguish local commit,
+oldest issue link and creation date if any. If open issue inventory failed,
+report coverage unavailable rather than a zero count. Distinguish local commit,
 integration, publication, installed activation and live acceptance.

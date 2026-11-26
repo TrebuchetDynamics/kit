@@ -12,7 +12,8 @@ issues, it publishes readiness after confirming the plan is complete or the
 blocker is repaired (both when both labels apply). It verifies whether work
 resumed. Read-only requests, explicit pauses,
 existing PR ownership and human gates remain binding; the skill does not grant
-GitHub access or activate Orbi.
+GitHub access or activate Orbi. `/unblock all` starts with the
+[read-only inventory of repositories in local Orbi deployment configs](../skills/unblock/references/inventory.md).
 
 When requirements change, [hand the retained work back on the same issue](../skills/unblock/SKILL.md#changed-requirements-hand-back-on-the-same-issue).
 Name the commit, the missing behavior, and how to verify it. A handoff is not

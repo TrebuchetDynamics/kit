@@ -48,8 +48,9 @@ class UnblockSkillTests(unittest.TestCase):
 
     def test_owner_tasks_are_inventory_only_including_during_followups(self):
         text = (ROOT / 'skills/unblock/SKILL.md').read_text()
-        inventory = text.split('**Bind and inventory.**', 1)[1].split('**Diagnose.**', 1)[0]
+        inventory = ' '.join(text.split('**Bind and inventory.**', 1)[1].split('**Diagnose.**', 1)[0].split())
         self.assertRegex(inventory, r'timeout [1-9]\d* gh api --paginate')
+        self.assertIn("repository's `owner_tasks` for the receipt", inventory)
         self.assertIn('Set aside `owner-task` issues before reading bodies', inventory)
         self.assertIn('Apply this exclusion in PR and dependency follow-ups', inventory)
         receipt = text.split('**Receipt:**', 1)[1]
