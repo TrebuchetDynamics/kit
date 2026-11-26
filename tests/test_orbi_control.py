@@ -3123,6 +3123,20 @@ class LifecycleSequenceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(json.loads(result.stdout)['deployment']['config'], str(h.deploy / 'orbi.toml'))
 
+    def test_invalid_discovered_config_without_stderr_does_not_block_status(self):
+        h = self.fresh()
+        config = h.data_home / 'orbi-other/orbi.toml'
+        config.parent.mkdir()
+        config.write_text('source_repos = ["other/project",')
+        h.rules(*h.scheduler_rules())
+        out = io.StringIO()
+        # Python sets both stderr streams to None when fd 2 is closed at startup.
+        with mock.patch.object(sys, 'stderr', None), mock.patch.object(sys, '__stderr__', None):
+            code = helper.main(['status', '--repo-dir', str(h.repo), '--json'],
+                               env=h.env, platform='linux', stdout=out)
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertEqual(json.loads(out.getvalue())['deployment']['config'], str(h.deploy / 'orbi.toml'))
+
     def test_invalid_discovered_config_preserves_strict_binding_failures(self):
         h = self.fresh()
         config = h.data_home / 'orbi-0-other/orbi.toml'

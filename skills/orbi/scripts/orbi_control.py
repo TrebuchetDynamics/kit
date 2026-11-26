@@ -379,6 +379,8 @@ def load_deployments(ctx, repo_path, explicit_config=None, *, repo_full=None):
                 raw = ''
             if repo_name.search(raw):
                 raise exc
+            if ctx.err is None:
+                continue
             warning = f'warning=invalid_discovered_config path={path} fix=repair or remove the config\n'
             with contextlib.suppress(OSError, ValueError):
                 if ctx.err is sys.__stderr__:
