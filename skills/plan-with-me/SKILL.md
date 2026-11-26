@@ -158,6 +158,8 @@ unverified assumptions. A refined prompt alone is not the writable-mode delivera
 in no-write mode return it in chat instead. Run the
 [builder check](../shared/PLANNING-CRAFT.md#builder-check-before-handoff) and resolve
 material findings before publication. Reuse the answers and evidence already gathered.
+Before previewing a writable batch, [check each issue contract](../shared/PLANNING-CRAFT.md#check-issue-contracts-before-publication)
+and keep drafts with unresolved findings out of publication.
 
 Follow Plan Handoff's [publication and dependencies](../shared/PLAN-HANDOFF.md#publication-and-dependencies),
 [persistence rules](../shared/PLAN-HANDOFF.md#persistence-not-local-main-admission)

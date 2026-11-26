@@ -87,14 +87,14 @@ on the revised requirement. A comment or label alone is not evidence of resumpti
    from all pages before reading individual issues:
 
    ```sh
-   gh api --paginate --jq '.[] | select(.pull_request == null) | {number, html_url, created_at, labels: [.labels[].name]}' \
+   timeout 60 gh api --paginate --jq '.[] | select(.pull_request == null) | {number, html_url, created_at, labels: [.labels[].name]}' \
      "repos/$repo/issues?state=open&per_page=100"
    ```
 
    Set aside `owner-task` issues before reading bodies, comments or attempts, even
    when they also carry an `ai-*` label. Count them and find the oldest by
-   `created_at`. They are not stalled work and get no recovery or label changes.
-   A worker issue waiting on one still has a real native dependency.
+   `created_at`. Apply this exclusion in PR and dependency follow-ups too: a worker
+   may wait on an owner task, but the owner task is not a repair target.
    Read the remaining issues, native dependencies, linked PRs, CI/review results
    and actual ownership. Use read-only `orbi status` and
    `orbi doctor` with the target's configuration if installed. A failed read is
