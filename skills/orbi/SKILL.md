@@ -29,7 +29,8 @@ scope, restrictions and authorization. No separate model routes, validates, poll
 or paraphrases a routine command. Extra reasoning or clarification requires a
 concrete unmet need, not a fixed sequence of model turns.
 
-1. **Resolve intent.** `/orbi [status|version|setup|start|update|stop|prune|help]` uses
+1. **Resolve intent.** `/orbi [status|version|setup|start|update|stop|prune|help]`
+   and `/orbi set DEPLOYMENT ...` use
    `python3 -B <this-skill>/scripts/orbi_control.py` with the mapping below on **every host**.
    These are public skill arguments, not direct Python helper syntax; all unlisted
    actions pass through unchanged.
@@ -37,6 +38,8 @@ concrete unmet need, not a fixed sequence of model turns.
    | Public skill arguments | Helper arguments |
    | --- | --- |
    | `status all [--verbose\|--json]` | `status all [--verbose\|--json]` |
+   | `set DEPLOYMENT slots N` | Pass through unchanged |
+   | `set DEPLOYMENT model PROVIDER/MODEL [THINKING]` | Pass through unchanged |
    | `setup` | `start` |
    | `setup --dry-run` | `start --dry-run` |
    | `setup --prepare-only` | `setup` |
@@ -65,7 +68,9 @@ concrete unmet need, not a fixed sequence of model turns.
    **Prune:** forward `prune [--apply] [--json]` without repo/config selectors.
    Preview is the default; remove stale unloaded Linux user templates only when
    `--apply` is explicit. Do not infer apply authority from a preview.
-   For repository lifecycle actions, use the requested
+   For `set`, pass the deployment selector literally; do not inject `--repo-dir`
+   or `--config`. See [change slots or model](#change-slots-or-model).
+   For other repository lifecycle actions, use the requested
    repo/config or known current checkout. For `update --config PATH` without
    `--repo-dir`, let the config select its checkout; do not inject the current one.
    The helper resolves the canonical worktree and verifies GitHub origin,
@@ -98,6 +103,8 @@ concrete unmet need, not a fixed sequence of model turns.
    workers finish naturally for up to 30 minutes, leaving scheduling paused if
    they do not finish. Preserve attempts, worktrees and recovery inputs; no direct
    kill or restart.
+   Explicit `set` authorizes applying the requested configuration and restoring
+   scheduling after the same technical checks, without updating the engine.
    Other mutations require their own accepted scope. Offline checks grant none.
 3. **Invoke once.** Preserve literal argument values, quoting, paths, provider/model
    IDs, `--config`, `--repo-dir` and all restrictions. Build argv, never interpolate
@@ -136,6 +143,30 @@ concrete unmet need, not a fixed sequence of model turns.
    On failure, stop and return the safe error and repair action. No blind retry,
    implicit repair, compensating timer changes or worker stops. An unchanged
    timeout is not retryable; killed processes have no receipt.
+
+## Change slots or model
+
+```text
+/orbi set sdrhf slots 1
+/orbi set sdrhf model PROVIDER/MODEL [THINKING]
+```
+
+Select a prepared local deployment by a unique unit name prefix, repository
+name, or path to its `orbi.toml`. Use the exact config path if a name is
+ambiguous. Slots must be a positive integer from 1 to 5, the supported Orbi
+scheduler range. Use a provider and model already listed in that deployment's
+Pi metadata; an unknown model is refused before any writes. Omit `THINKING` to
+keep the saved value, or pass `off`, `minimal`, `low`, `medium`, `high`, `xhigh`,
+or `max`.
+
+Like `update --wait`, `set` pauses owned timers and gives workers up to 30 minutes
+to finish without stopping them. If they don't finish, scheduling stays paused and
+the config is unchanged. Under the same lifecycle lock, the helper saves the old
+config as `orbi.toml.bak-<UTC timestamp>` beside the config before replacing it
+atomically. It validates the new config and starts only its configured timers,
+without syncing or changing the engine pin. The receipt shows old and new values
+and the backup path. If applying fails after the write, preserve the backup and
+inspect the failed step before retrying; there is no automatic rollback.
 
 ## Deployed engine and current work
 

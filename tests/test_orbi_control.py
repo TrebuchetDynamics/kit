@@ -6720,6 +6720,217 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assertFalse(any(set(c['argv']) & {'start', 'stop', 'restart', 'kill'} for c in self.h.calls()))
 
 
+class SetTests(unittest.TestCase):
+    setUp = UpdateTests.setUp
+    fresh = PauseUpdateTests.fresh
+    a_units = UpdateTests.a_units
+    assert_a_unchanged = UpdateTests.assert_a_unchanged
+
+    def set_command(self, *args, json_mode=True):
+        out, err = io.StringIO(), io.StringIO()
+        code = helper.main(['set', *map(str, args), *(['--json'] if json_mode else [])],
+                           env=self.h.env, platform='linux', cwd=self.h.root,
+                           stdout=out, stderr=err)
+        return code, json.loads(out.getvalue()) if json_mode else out.getvalue(), err.getvalue()
+
+    def test_cli_shrinks_five_slots_to_one_with_backup_and_no_engine_sync(self):
+        config = self.h.deploy / 'orbi.toml'
+        before = config.read_text().replace('max_concurrency = 1', 'max_concurrency = 5 # keep this')
+        config.write_text(before)
+        config.chmod(0o640)
+        slots = dict.fromkeys(range(1, 6), 'active')
+        PauseUpdateTests.pause_rules(self, timers=slots, enabled=dict.fromkeys(slots, True),
+                                     extra=self.h.enable_timer_rules(f'{self.prefix}@1.timer'))
+        result = subprocess.run([sys.executable, '-B', str(HELPER), 'set', 'kit', 'slots', '1', '--json'],
+                                cwd=self.h.root, env=self.h.env, capture_output=True, text=True, timeout=45)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        doc = json.loads(result.stdout)
+        self.assertEqual(doc['action'], 'set')
+        self.assertEqual(doc['change']['old'], {'max_concurrency': 5})
+        self.assertEqual(doc['change']['new'], {'max_concurrency': 1})
+        backup = Path(doc['change']['backup'])
+        self.assertEqual(backup.parent, config.parent)
+        self.assertRegex(backup.name, r'^orbi\.toml\.bak-\d{8}T\d{6}\d*Z$')
+        self.assertEqual(backup.read_text(), before)
+        self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(config.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(config.read_text(), before.replace('max_concurrency = 5', 'max_concurrency = 1'))
+        timers = doc['scheduler']['timers']
+        self.assertEqual({name for name, item in timers.items() if item['active'] == 'active' or item['enabled']},
+                         {f'{self.prefix}@1.timer'})
+        self.assertEqual(set(doc['disabled_timers']), {f'{self.prefix}@{i}.timer' for i in slots})
+        calls = [call['argv'] for call in self.h.calls()]
+        self.assertNotIn('sync-engine-source', [argv[0] for argv in calls if argv])
+        self.assertIn(['check', '--config', str(config)], calls)
+        self.assert_a_unchanged()
+
+    def test_model_change_drains_under_lock_then_checks_the_saved_selection(self):
+        config = self.h.deploy / 'orbi.toml'
+        config.write_bytes(config.read_bytes() + b'\n[unrelated]\npi_model = "nested"\n')
+        before = config.read_bytes()
+        metadata = self.h.deploy / '.orbi/pi-providers.json'
+        catalog = json.loads(metadata.read_text())
+        model = 'vendor/another-model'
+        provider = catalog['providers']['openrouter']
+        catalog['providers']['alternate'] = {**provider, 'models': [{**provider['models'][0], 'id': model}]}
+        metadata.write_text(json.dumps(catalog))
+        service = f'{self.prefix}@1.service'
+        PauseUpdateTests.pause_rules(self, timers={1: 'active'}, enabled={1: True}, services={1: 'active'},
+                                     extra=self.h.enable_timer_rules(f'{self.prefix}@1.timer'))
+        run = helper.Context.run
+        sleeps = []
+
+        def assert_locked():
+            lock, = (self.h.home / '.cache/orbi-control').glob('*.lock')
+            with lock.open('a+') as handle:
+                with self.assertRaises(BlockingIOError):
+                    helper.fcntl.flock(handle, helper.fcntl.LOCK_EX | helper.fcntl.LOCK_NB)
+
+        def sleep(seconds):
+            self.assertFalse(sleeps, 'workers did not drain')
+            self.assertEqual(config.read_bytes(), before)
+            self.assertTrue((self.h.root / 'paused').exists())
+            self.assertFalse(list(config.parent.glob('orbi.toml.bak-*')))
+            assert_locked()
+            sleeps.append(seconds)
+
+        def fake_run(ctx, argv, **kwargs):
+            if sleeps and argv[0] == 'systemctl' and {'show', 'ActiveState', service} <= set(argv):
+                return subprocess.CompletedProcess(argv, 0, 'inactive\n', '')
+            if 'check' in argv and Path(argv[0]).name == 'orbi':
+                assert_locked()
+                self.assertEqual(self.h.config()['pi_model'], model)
+                self.assertEqual(self.h.config()['pi_thinking'], 'high')
+                backup, = config.parent.glob('orbi.toml.bak-*')
+                self.assertEqual(backup.read_bytes(), before)
+            if argv[0] == 'systemctl':
+                self.assertFalse({'stop', 'restart', 'kill'} & set(argv))
+            return run(ctx, argv, **kwargs)
+
+        with mock.patch.object(helper, 'time', mock.Mock(sleep=sleep, monotonic=lambda: 0)), \
+                mock.patch.object(helper.Context, 'run', fake_run):
+            code, text, err = self.set_command(self.prefix, 'model', f'alternate/{model}', 'high', json_mode=False)
+        self.assertEqual(code, 0, text + err)
+        self.assertIn('pi_provider: "openrouter" -> "alternate"', text)
+        self.assertIn('pi_model: "vendor/model-a" -> "vendor/another-model"', text)
+        self.assertEqual(sleeps, [60])
+        self.assertEqual(self.h.config()['unrelated'], {'pi_model': 'nested'})
+        self.assertEqual(self.h.config()['engine_source_track'], helper.PIN_TRACK)
+
+    def test_unknown_model_and_invalid_values_do_not_write(self):
+        config = self.h.deploy / 'orbi.toml'
+        before = snapshot(self.h.home)
+        result = subprocess.run([sys.executable, '-B', str(HELPER), 'set', str(config),
+                                 'model', 'openrouter/unknown', '--json'],
+                                cwd=self.h.root, env=self.h.env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        error = json.loads(result.stdout)['error']
+        self.assertEqual(error['code'], 'provider_unavailable')
+        self.assertIn('model unknown has no verified metadata', error['message'])
+        self.assertIn('deployment catalog', error['fix'])
+        self.assertFalse(error['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        for args, fix in ((('slots', '0'), 'from 1 to 5'),
+                          (('slots', '6'), 'from 1 to 5'),
+                          (('model', 'openrouter/vendor/model-a', 'invalid'), 'thinking level')):
+            with self.subTest(args=args):
+                code, doc, err = self.set_command(config, *args)
+                self.assertNotEqual(code, 0, doc)
+                self.assertEqual(doc['error']['code'], 'invalid_set_value')
+                self.assertIn(fix, doc['error']['fix'])
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+        self.assertFalse(any(call['tool'] == 'systemctl' for call in self.h.calls()))
+
+    def test_ambiguous_repo_name_refuses_but_literal_config_path_selects(self):
+        other = self.a['deploy'] / 'orbi.toml'
+        other.write_text(other.read_text().replace('other/repo-a', 'other/kit'))
+        before = snapshot(self.h.home)
+        code, doc, err = self.set_command('kit', 'slots', '1')
+        self.assertNotEqual(code, 0, doc)
+        self.assertEqual(doc['error']['code'], 'ambiguous_deployment')
+        self.assertIn(str(other), doc['error']['message'])
+        self.assertIn('config path', doc['error']['fix'])
+        self.assertEqual(snapshot(self.h.home), before)
+        PauseUpdateTests.pause_rules(self, extra=self.h.enable_timer_rules(f'{self.prefix}@1.timer'))
+        config = self.h.deploy / 'orbi.toml'
+        config.write_text(config.read_text() + 'pi_thinking = "low"\n')
+        code, doc, err = self.set_command(os.path.relpath(config, self.h.root), 'model', 'openrouter/vendor/model-a')
+        self.assertEqual(code, 0, doc)
+        self.assertEqual(doc['deployment']['config'], str(config))
+        self.assertEqual(self.h.config()['pi_thinking'], 'low')
+        self.assertIsNone(doc['change']['backup'])
+
+    def test_repo_basename_ending_in_toml_resolves_as_a_name(self):
+        config = self.h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace(f'"{REPO}"', f'"{REPO}.toml"'))
+        ctx = helper.Context(env=self.h.env, platform='linux', cwd=self.h.root)
+        self.assertEqual(helper.resolve_set_target(ctx, 'kit.toml').config_path, config)
+
+    def test_drain_timeout_leaves_config_unchanged_and_timers_paused(self):
+        config = self.h.deploy / 'orbi.toml'
+        before = config.read_bytes()
+        PauseUpdateTests.pause_rules(self, timers={1: 'active'}, enabled={1: True}, services={1: 'active'})
+        with mock.patch.object(helper, 'time', mock.Mock(
+                monotonic=mock.Mock(side_effect=[0, helper.UPDATE_WAIT_MINUTES * 60]),
+                sleep=mock.Mock(side_effect=AssertionError('max wait exceeded')))):
+            code, text, err = self.set_command(config, 'slots', '2', json_mode=False)
+        self.assertNotEqual(code, 0, text + err)
+        self.assertIn('Failed step: wait_for_workers.', err)
+        self.assertIn('Scheduling remains paused.', err)
+        self.assertIn('before rerunning /orbi set', err)
+        self.assertEqual(config.read_bytes(), before)
+        self.assertFalse(list(config.parent.glob('orbi.toml.bak-*')))
+        self.assertFalse(any({'enable', 'stop', 'restart', 'kill'} & set(call['argv'])
+                             for call in self.h.calls() if call['tool'] == 'systemctl'))
+
+    def test_failed_atomic_replace_retains_original_and_backup_without_activating(self):
+        config = self.h.deploy / 'orbi.toml'
+        before = config.read_bytes()
+        PauseUpdateTests.pause_rules(self, timers={1: 'active'}, enabled={1: True})
+        real_replace = os.replace
+        failed = mock.Mock(side_effect=OSError('private file error'))
+
+        def replace(source, destination):
+            return (failed if destination == config else real_replace)(source, destination)
+
+        with mock.patch.object(helper.os, 'replace', side_effect=replace):
+            code, doc, err = self.set_command(config, 'slots', '2')
+        self.assertNotEqual(code, 0, doc)
+        self.assertEqual(doc['error']['code'], 'filesystem_error')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['steps'][-1]['step'], 'write_config')
+        self.assertEqual(doc['repair_command'], '/orbi set ' + shlex.quote(str(config)) + ' slots 2')
+        failed.assert_called_once()
+        temp, destination = failed.call_args.args
+        self.assertEqual(temp.parent, config.parent)
+        self.assertEqual(destination, config)
+        self.assertFalse(temp.exists())
+        self.assertEqual(config.read_bytes(), before)
+        self.assertEqual(Path(doc['change']['backup']).read_bytes(), before)
+        self.assertFalse(any('enable' in call['argv'] or (call['tool'] == 'orbi' and
+                             call['argv'][:1] in (['check'], ['sync-engine-source'])) for call in self.h.calls()))
+        self.assertNotIn('private file error', json.dumps(doc) + err)
+
+    def test_set_check_failure_reports_saved_change_and_leaves_timers_paused(self):
+        config = self.h.deploy / 'orbi.toml'
+        before = config.read_bytes()
+        PauseUpdateTests.pause_rules(self, timers={1: 'active'}, enabled={1: True}, extra=[
+            {'tool': 'orbi', 'argv_contains': ['check'], 'exit': 1, 'stderr': SECRET}])
+        code, doc, err = self.set_command(config, 'slots', '2')
+        self.assertNotEqual(code, 0, doc)
+        self.assertEqual(doc['error']['code'], 'validation_failed')
+        self.assertTrue(doc['error']['mutated'])
+        self.assertEqual(doc['steps'][-1]['step'], 'validate_non_activating')
+        self.assertEqual(doc['activation'], 'none')
+        self.assertEqual(doc['change']['new'], {'max_concurrency': 2})
+        self.assertEqual(Path(doc['change']['backup']).read_bytes(), before)
+        self.assertEqual(self.h.config()['max_concurrency'], 2)
+        self.assertFalse(doc['scheduler']['timers'][f'{self.prefix}@1.timer']['enabled'])
+        self.assertFalse(any('enable' in call['argv'] for call in self.h.calls()))
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+
+
 class LifecycleRecordAndPruneTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -7081,7 +7292,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
             scratch.mkdir()
             before = snapshot(h.home)
             expected = {'status': 'none', 'version': 'none', 'setup': 'staging', 'start': 'scheduler',
-                        'update': 'scheduler', 'stop': 'scheduler', 'prune': 'scheduler with --apply', 'help': 'none'}
+                        'update': 'scheduler', 'set': 'scheduler', 'stop': 'scheduler', 'prune': 'scheduler with --apply', 'help': 'none'}
             for options in ([], ['--repo-dir', '/missing/repo', '--config',
                                   '/missing/config', '--dry-run']):
                 for json_mode in (True, False):
