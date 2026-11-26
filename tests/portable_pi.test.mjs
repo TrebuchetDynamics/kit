@@ -219,7 +219,8 @@ test('Orbi dispatch forwards lifecycle arguments and queues in a busy session', 
   const hostFile = new URL('../adapters/skills/COMMON.md', import.meta.url);
   const host = await readFile(hostFile, 'utf8');
   for (const raw of [
-    '', 'status', 'status all', 'status all --json', 'help', 'setup', 'setup --dry-run', 'start --dry-run',
+    '', 'status', 'status all', 'status all --json', 'status all --verbose',
+    'help', 'setup', 'setup --dry-run', 'start --dry-run',
     'setup --prepare-only', 'setup --prepare-only --dry-run',
     'setup --resume-setup --config "/tmp/literal $(config).toml"',
     'setup --prepare-only --resume-setup --config "/tmp/literal $(config).toml"',

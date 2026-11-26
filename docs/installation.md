@@ -345,6 +345,15 @@ coverage for other accounts, inaccessible managers, ambiguous unit/config/owner
 bindings or missing noninteractive write access hold the entire Orbi fleet
 before any stop.
 
+Each manager may list up to 2048 installed or loaded services and timers. The
+installer checks only units whose manager-reported command, environment,
+working directory or unit paths mention Orbi; it does not parse unrelated unit
+files. At most 256 Orbi units per manager are checked in detail. A drop-in is
+treated as an override, except a root-owned vendor file in
+`/usr/lib/systemd/{system,user}/service.d/` that only sets
+`TimeoutStopFailureMode` or `TimeoutStartFailureMode` in `[Service]`, such as
+Fedora's `10-timeout-abort.conf`.
+
 The deployment file and engine execution owner must match the installing account;
 Kit does not switch users, invoke sudo or make access changes. The installer
 checks the current exact engine pin and runs `orbi check` before any stop, then

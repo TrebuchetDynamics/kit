@@ -52,6 +52,11 @@ legacy `deployment`, `scheduler`, `queue` and `doctor` fields and adds:
   evidence separately. `bootstrap_cli` is the bootstrap executable's unscoped
   `--version`, explicitly unverified as deployment proof, with match/mismatch/unknown
   comparison. Neither CLI version nor source metadata proves live delivery.
+- `deployment.last_lifecycle`: newest local Kit receipt, or null when unavailable.
+  It contains `timestamp` (UTC), `action`, `argv` (action and flag names only),
+  `user` (host account) and `result` (status or error code). `status all` returns
+  the same `last_lifecycle` on bound deployment rows. This is not live state or
+  a record of operations performed outside the Kit helper.
 - `activity.slots`: one record per observed owned scheduler slot (including observed
   surplus instances). `running` has `issue.number`, `issue.url`, title when available,
   `run_id` and observed phase/last activity. Other states are `idle`, `starting`,
@@ -88,13 +93,20 @@ tick, activates/repairs anything or updates a stale installed helper.
 | `stop` | Under the config lock, disable owned timers, cancel verified queued starts, stop owned non-idle workers with `systemctl --user stop` and verify inactivity. Report `stopped` with `disabled_timers` and `stopped_services`. No direct kill, restart, issue cancellation or recovery-input removal. |
 | `update` | Quiesce as for `stop`, then sync/pin/check the release and start configured scheduling through start's technical checks, even after a previous `stop`, and confirm enabled/active timers (`activation: started`). `update --stop` updates and leaves stopped (`activation: held`). Quiesce failure is nonzero, preserves partial scheduler evidence and blocks engine sync. Dry-run does not mutate or lock. |
 
+`/orbi prune [--apply] [--json]` is host-scoped and Linux-only. JSON returns
+`candidates` with unit paths, config and stale reason, and `removed` with paths
+actually removed. Without `--apply`, `removed` is empty. See the
+[stale templates rules](skills/orbi/references/lifecycle.md#lifecycle-history-and-stale-templates).
+
 Kit mutations are Linux-only; `--dry-run` previews them. On an error inspect the JSON `error.code`, `error.fix` and `error.mutated`: nonzero exit does not mean nothing changed. Use the helper for lifecycle changes, not hand-written unit commands.
 
 ## Inspect observable local host services with Kit
 
-From any working directory, invoke `/orbi status all` or `/orbi status all --json`.
-Portable and native command routes preserve the literal arguments in one helper
-call. Scripts can use the absolute loaded helper path:
+From any working directory, invoke `/orbi status all` for one row per deployment,
+`/orbi status all --verbose` for per-unit text and coverage details, or
+`/orbi status all --json` for structured per-unit inventory. Portable and native
+command routes preserve the literal arguments in one helper call. Scripts can use
+the absolute loaded helper path:
 
 ```sh
 python3 -B /path/to/kit/skills/orbi/scripts/orbi_control.py status all --json
@@ -122,8 +134,9 @@ resolved config binding, repo, deployed engine version/revision or explicit
 unknown, current issue when locally bound and next trigger when available.
 Config-only rows are prepared-only. Engine metadata is shared per resolved config;
 no bootstrap CLI, provider/env/session reads, per-deployment queue/doctor or
-network calls. Linux live issue attribution reuses the invocation-bound evidence
-above; macOS live issue identity and next trigger remain unknown.
+network calls. Linux live issue attribution prefers the invocation-bound evidence
+above, then checks the live worker's locked slot and worktree branch. macOS live
+issue identity and next trigger remain unknown.
 
 Successful empty listings mean zero **observed** workers. Failed/denied managers,
 unreadable configs, conflicting bindings and scan limits yield partial coverage

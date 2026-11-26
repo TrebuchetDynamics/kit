@@ -205,12 +205,13 @@ Do not serve one repository from multiple deployments or machines.
 
 ### Kit lifecycle skill
 
-Use [`/orbi [status|version|setup|start|update|stop|help]`](../skills/orbi/SKILL.md) for one
-repository's deployment. `/orbi status all [--json]` instead inventories observable
-local host services from any directory, without repo/config selectors, GitHub auth
+Use [`/orbi [status|version|setup|start|update|stop|prune|help]`](../skills/orbi/SKILL.md)
+to inspect or manage deployments. `/orbi status all [--verbose|--json]` summarizes observable
+local deployments from any directory, without repo/config selectors, GitHub auth
 or network fan-out. Preserve literal `all` in one helper call and never inject
 `--repo-dir`; partial/denied manager coverage is not an empty host. See
 [host inventory](../skills/orbi/references/lifecycle.md#host-inventory).
+For `prune` previews and explicit `--apply`, see [stale templates](../skills/orbi/references/lifecycle.md#lifecycle-history-and-stale-templates).
 `/orbi version [--json]` identifies the selected deployment engine release/revision
 and verification evidence without full status, bootstrap or network probes. Missing
 deployment is unconfigured; unverifiable metadata is unknown, never the global CLI.

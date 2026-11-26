@@ -1,6 +1,6 @@
 ---
 name: orbi
-description: "Prepare, start, inspect or stop one Orbi deployment."
+description: "Prepare, start, inspect, stop or prune Orbi deployments."
 license: MIT
 ---
 
@@ -9,7 +9,7 @@ license: MIT
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) and
 [shared communication rules](../shared/COMMUNICATION.md) within this workflow's
 scope. The [GitHub-native contract](../../docs/github-native.md) owns delivery
-gates. This skill is a lifecycle client with read-only local host inventory, not an executor.
+gates. This skill is a lifecycle client, not an executor.
 
 ## Intent and state: fast path
 
@@ -29,7 +29,7 @@ scope, restrictions and authorization. No separate model routes, validates, poll
 or paraphrases a routine command. Extra reasoning or clarification requires a
 concrete unmet need, not a fixed sequence of model turns.
 
-1. **Resolve intent.** `/orbi [status|version|setup|start|update|stop|help]`
+1. **Resolve intent.** `/orbi [status|version|setup|start|update|stop|prune|help]`
    and `/orbi set DEPLOYMENT ...` use
    `python3 -B <this-skill>/scripts/orbi_control.py` with the mapping below on **every host**.
    These are public skill arguments, not direct Python helper syntax; all unlisted
@@ -37,7 +37,7 @@ concrete unmet need, not a fixed sequence of model turns.
 
    | Public skill arguments | Helper arguments |
    | --- | --- |
-   | `status all [--json]` | `status all [--json]` |
+   | `status all [--verbose\|--json]` | `status all [--verbose\|--json]` |
    | `set DEPLOYMENT slots N` | Pass through unchanged |
    | `set DEPLOYMENT model PROVIDER/MODEL [THINKING]` | Pass through unchanged |
    | `setup` | `start` |
@@ -60,10 +60,14 @@ concrete unmet need, not a fixed sequence of model turns.
    it needs no repository, config, environment or scheduler reads.
    **Host inventory:** preserve literal
    `status all` in one helper invocation, from any working directory. Do not inject
-   `--repo-dir` or `--config`, resolve a checkout or run GitHub probes. Only `--json`
-   may accompany `all`; conflicting selectors are refused before probes. Relay
-   partial manager/config coverage and observed totals, never an absolute host count.
+   `--repo-dir` or `--config`, resolve a checkout or run GitHub probes. Return the
+   compact deployment rows by default, per-unit text with `--verbose`, or structured
+   inventory with `--json`. Reject conflicting selectors before probes. Relay partial
+   coverage and observed totals, never an absolute host count.
    For host inventory interpretation, see [host inventory](references/lifecycle.md#host-inventory).
+   **Prune:** forward `prune [--apply] [--json]` without repo/config selectors.
+   Preview is the default; remove stale unloaded Linux user templates only when
+   `--apply` is explicit. Do not infer apply authority from a preview.
    For `set`, pass the deployment selector literally; do not inject `--repo-dir`
    or `--config`. See [change slots or model](#change-slots-or-model).
    For other repository lifecycle actions, use the requested
@@ -107,7 +111,8 @@ concrete unmet need, not a fixed sequence of model turns.
    user text as shell code; shell-only hosts must safely quote every argv element.
    After the public mapping, pass supported flags unchanged; add a known `--repo-dir`
    only when needed to bind the requested repository. Use `--json` for structured receipts unless the
-   requested text/help output is preferable. Do not add/remove `--dry-run`, expand
+   requested text/help output is preferable. For `status all`, pass only the user's
+   requested output flag, if any. Do not add/remove `--dry-run`, expand
    a literal path's shell substitutions, invent selectors or copy credentials.
    The existing ACTIONS-backed helper owns deterministic checks and action composition.
 
@@ -148,10 +153,11 @@ concrete unmet need, not a fixed sequence of model turns.
 
 Select a prepared local deployment by a unique unit name prefix, repository
 name, or path to its `orbi.toml`. Use the exact config path if a name is
-ambiguous. Slots must be a positive integer. Use a provider and model already
-listed in that deployment's Pi metadata; an unknown model is refused before any
-writes. Omit `THINKING` to keep the saved value, or pass `off`, `minimal`, `low`,
-`medium`, `high`, `xhigh`, or `max`.
+ambiguous. Slots must be a positive integer from 1 to 5, the supported Orbi
+scheduler range. Use a provider and model already listed in that deployment's
+Pi metadata; an unknown model is refused before any writes. Omit `THINKING` to
+keep the saved value, or pass `off`, `minimal`, `low`, `medium`, `high`, `xhigh`,
+or `max`.
 
 Like `update --wait`, `set` pauses owned timers and gives workers up to 30 minutes
 to finish without stopping them. If they don't finish, scheduling stays paused and
@@ -173,7 +179,8 @@ No deployment means unconfigured. An observed revision is not a verified release
 unverifiable pin, manifest or clean source means unknown with a reason.
 
 Status leads with the repository, deployment-bound package version/revision and
-provenance, scheduler state and each observed slot. Relay `deployment.engine`
+provenance, scheduler state and each observed slot. Relay `last_lifecycle` as the
+last recorded Kit helper action, not proof of the current scheduler state. Relay `deployment.engine`
 separately from selected source/pin and `bootstrap_cli`: a matching CLI version
 is unverified runtime evidence; a mismatch never replaces the deployed version.
 Missing, modified or unpinned package/revision metadata leaves the version unknown.
