@@ -52,6 +52,11 @@ legacy `deployment`, `scheduler`, `queue` and `doctor` fields and adds:
   evidence separately. `bootstrap_cli` is the bootstrap executable's unscoped
   `--version`, explicitly unverified as deployment proof, with match/mismatch/unknown
   comparison. Neither CLI version nor source metadata proves live delivery.
+- `deployment.last_lifecycle`: newest local Kit receipt, or null when unavailable.
+  It contains `timestamp` (UTC), `action`, `argv` (action and flag names only),
+  `user` (host account) and `result` (status or error code). `status all` returns
+  the same `last_lifecycle` on bound deployment rows. This is not live state or
+  a record of operations performed outside the Kit helper.
 - `activity.slots`: one record per observed owned scheduler slot (including observed
   surplus instances). `running` has `issue.number`, `issue.url`, title when available,
   `run_id` and observed phase/last activity. Other states are `idle`, `starting`,
@@ -87,6 +92,11 @@ tick, activates/repairs anything or updates a stale installed helper.
 | `start` | Prepares if genuinely absent. For an existing target, reports `already-running` without mutation when the newest official release is pinned and configured timers are enabled and active. Otherwise, quiesces as needed, syncs/pins/checks under the config lock, repairs units via shared setup/install steps and confirms enabled/active scheduling. Sync or check failure starts nothing and reports a bound `repair_command`. |
 | `stop` | Under the config lock, disable owned timers, cancel verified queued starts, stop owned non-idle workers with `systemctl --user stop` and verify inactivity. Report `stopped` with `disabled_timers` and `stopped_services`. No direct kill, restart, issue cancellation or recovery-input removal. |
 | `update` | Quiesce as for `stop`, then sync/pin/check the release and start configured scheduling through start's technical checks, even after a previous `stop`, and confirm enabled/active timers (`activation: started`). `update --stop` updates and leaves stopped (`activation: held`). Quiesce failure is nonzero, preserves partial scheduler evidence and blocks engine sync. Dry-run does not mutate or lock. |
+
+`/orbi prune [--apply] [--json]` is host-scoped and Linux-only. JSON returns
+`candidates` with unit paths, config and stale reason, and `removed` with paths
+actually removed. Without `--apply`, `removed` is empty. See the
+[stale templates rules](skills/orbi/references/lifecycle.md#lifecycle-history-and-stale-templates).
 
 Kit mutations are Linux-only; `--dry-run` previews them. On an error inspect the JSON `error.code`, `error.fix` and `error.mutated`: nonzero exit does not mean nothing changed. Use the helper for lifecycle changes, not hand-written unit commands.
 
