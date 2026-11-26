@@ -64,6 +64,10 @@ def latest_failure(comments):
             failure = {key: record[key] for key in ('reason_code', 'action_code')}
             if not all(isinstance(code, str) and code for code in failure.values()):
                 raise ValueError('invalid failure codes')
+            if failure['reason_code'] == 'base_ci_red':
+                # Point to the same comment as the failure marker, not an older
+                # base-red record. Trust and readback belong to the recovery skill.
+                failure['comment_url'] = comment.get('html_url')
             return failure
     return None
 
@@ -103,12 +107,19 @@ def issue_number(row):
 
 
 def issues(ctx, repo, state, live, uncertain, errors):
-    items = {}
+    items, owners = {}, {}
     try:
         for row in pages(ctx, repo, f'issues?state={state}&per_page=100'):
             if 'pull_request' in row:  # REST treats PRs as issues too.
                 continue
             labels = {label['name'] for label in row['labels']}
+            if 'owner-task' in labels:
+                if state == 'open':
+                    number, created_at = issue_number(row), row['created_at']
+                    if not isinstance(created_at, str) or not created_at:
+                        raise ValueError('invalid owner task creation date')
+                    owners[number] = {'url': row['html_url'], 'created_at': created_at}
+                continue
             if state == 'open':
                 selected = labels & OPEN_STATES or ('ai-planning' in labels and 'ai-epic' not in labels)
             else:
@@ -119,10 +130,10 @@ def issues(ctx, repo, state, live, uncertain, errors):
                                  'labels': sorted(labels)}
     except ValueError as exc:
         errors.append(f'{state} issues: {exc}')
-        return None
+        return None, None
     except (KeyError, TypeError):
         errors.append(f'{state} issues: invalid GitHub issue data')
-        return None
+        return None, None
     result = [items[n] for n in sorted(items)]
     if state == 'open':
         for item in result:
@@ -139,7 +150,8 @@ def issues(ctx, repo, state, live, uncertain, errors):
                     item[key] = read(comments)
                 except (ValueError, KeyError, TypeError, AttributeError):
                     errors.append(f'issue #{number}: invalid {key} marker or comment data')
-    return result
+    oldest = owners[min(owners, key=lambda n: (owners[n]['created_at'], n))] if owners else None
+    return result, {'count': len(owners), 'oldest': oldest}
 
 
 def required_checks(ctx, number, repo):
@@ -234,12 +246,13 @@ def inventory(ctx):
     sheets = []
     for repo, rows in sorted(repos.items()):
         errors = []
-        opened = issues(ctx, repo, 'open', live.get(repo, ()), global_uncertain or repo in uncertain, errors)
-        closed = issues(ctx, repo, 'closed', (), False, errors)
+        opened, owner_tasks = issues(ctx, repo, 'open', live.get(repo, ()),
+                                     global_uncertain or repo in uncertain, errors)
+        closed, _ = issues(ctx, repo, 'closed', (), False, errors)
         prs = pull_requests(ctx, repo, errors)
         sheets.append({'repo': repo, 'deployments': sorted(rows, key=lambda row: (
             row['config'], row['manager'] or '', row['unit'] or '')), 'open_issues': opened,
-            'closed_issues': closed, 'open_prs': prs, 'errors': errors})
+            'owner_tasks': owner_tasks, 'closed_issues': closed, 'open_prs': prs, 'errors': errors})
     return {'schema_version': 1, 'local_coverage': local, 'repositories': sheets}
 
 

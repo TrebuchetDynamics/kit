@@ -4,7 +4,7 @@
 
 - Before changing a public contract, read the [README](README.md) and [product scope](docs/project.md).
 - GitHub Issues are the only executable backlog. Do not sync a local task store or `tasks/`.
-  All issues default to `ai-ready`, regardless of author. Publish the label last, after the issue content and native `blockedBy` dependencies are complete. Epics and incomplete plans do not execute.
+  Ordinary issues default to `ai-ready`, regardless of author. Publish the label last, after the issue content and native `blockedBy` dependencies are complete. Owner tasks, epics and incomplete plans do not execute.
 - `/plan-with-me` and `/plan-for-me` stop after issue publication. Orbi owns automatic delivery: Pi implementation, tests, PR, independent review and merge gates. Only [explicit Orbi lifecycle commands](docs/github-native.md#kit-lifecycle-skill) authorize activation after technical checks; they do not qualify live delivery. Do not activate it as part of other work.
 - For issue publication or delivery, follow the [GitHub-native rules](docs/github-native.md). Preserve existing tasks, worktrees, attempts and recovery evidence; never remove an active attempt or its recovery inputs. Reconcile still-required outcomes into GitHub Issues.
 - For accepted implementation, the [standing decision policy](docs/autonomy.md) permits reversible changes and scoped commits. Retained fix/apply modes keep their ownership, review and PR gates. Respect exclusions, pauses, access controls and human-only gates. Leave service configuration, schedules, profiles and other live state alone unless explicitly in scope.

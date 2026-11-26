@@ -156,8 +156,9 @@ the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-
 
 1. **Plan:** `/plan-with-me` resolves missing intent; `/plan-for-me` investigates and
    decides within accepted scope. Both publish complete GitHub Issues.
-2. **Publish:** create the entire batch under `ai-planning`, link native `blockedBy`
-   dependencies and optional `ai-epic` sub-issues, verify, then add `ai-ready` last.
+2. **Publish:** create worker issues under `ai-planning` and human-only work under
+   `owner-task`. Link native `blockedBy` dependencies and optional `ai-epic`
+   sub-issues, verify, then add `ai-ready` last to eligible worker issues.
 3. **Deliver:** one Orbi deployment per repository owns Pi → tests → PR → independent
    review → merge gates.
 4. **Observe:** GitHub Issues/PRs and read-only
@@ -165,9 +166,9 @@ the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-
 5. **Reconcile:** `/docs-sync` updates current requirements and issue evidence without
    duplicating the backlog or restarting a scheduler.
 
-All issues default to `ai-ready`, regardless of author. Publish readiness last,
-after complete content and native `blockedBy` prerequisites exist. Epics do not
-execute; explicit pauses and incomplete planning stay undispatched. An existing
+Ordinary issues default to `ai-ready`, regardless of author. Publish readiness last,
+after complete content and native `blockedBy` prerequisites exist. Owner tasks,
+epics, explicit pauses and incomplete planning stay undispatched. An existing
 Orbi deployment may pick up newly ready issues immediately, but a label is not
 pickup, passing tests, independent review or protected merge.
 
