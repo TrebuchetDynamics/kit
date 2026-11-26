@@ -3972,8 +3972,12 @@ def host_linux(ctx, coverage):
                 host_problem(coverage, manager, 'installed definition directory unreadable: ' + str(folder))
         if count > HOST_LIST_LIMIT:
             host_problem(coverage, manager, 'installed definition scan truncated')
+        masked_templates = {name for name, item in installed.items()
+                            if name.endswith(('@.service', '@.timer')) and item.get('state') in {'masked', 'masked-runtime'}}
         metadata = {}
         for name, path in definitions.items():
+            if name in masked_templates:
+                continue
             try:
                 item = host_definition(ctx, path, manager=manager, template=name.endswith(('@.service', '@.timer')))
                 if 'orbi' in name.lower() or item['configs'] or item['orbi']:
@@ -3983,7 +3987,8 @@ def host_linux(ctx, coverage):
             except (OSError, UnicodeError, ValueError):
                 if 'orbi' in name.lower():
                     metadata[name] = {'configs': [], 'unreadable': True}
-                    host_problem(coverage, manager, 'installed definition unreadable: ' + name)
+                    if not name.endswith(('@.service', '@.timer')):
+                        host_problem(coverage, manager, 'installed definition unreadable: ' + name)
         for name in definitions:
             if name.endswith('.timer') and name[:-6] + '.service' in metadata:
                 metadata.setdefault(name, {'configs': [], 'runner': False})
@@ -3996,7 +4001,7 @@ def host_linux(ctx, coverage):
             host_problem(coverage, manager, f'unit detail limit {HOST_DETAIL_LIMIT}; remaining identities unobserved')
             query_names = sorted(query_names, key=lambda n: ('orbi' not in n.lower() and n not in metadata, n))[:HOST_DETAIL_LIMIT]
         # A bare template has no runtime properties; inspect its fragment instead.
-        details = {name: {} for name in templates}
+        details = {name: {} for name in names if name in templates}
         failures = {}
         for name in query_names:
             values = {}
@@ -4022,7 +4027,8 @@ def host_linux(ctx, coverage):
             # Read actual fragments/drop-ins; do not trust basename or unit_name.
             refs, unreadable, runner, referenced, command, orbi = set(), False, False, False, False, False
             fragment = values.get('FragmentPath') or definitions.get(name)
-            sources = [str(fragment)] if fragment else []
+            masked_template = name in masked_templates
+            sources = [str(fragment)] if fragment and not masked_template else []
             try:
                 sources.extend(shlex.split(values.get('DropInPaths', '')))
             except ValueError:
@@ -4039,9 +4045,12 @@ def host_linux(ctx, coverage):
                     referenced |= item['referenced']
                 except (OSError, UnicodeError, ValueError):
                     unreadable = True
-            if not sources and name in metadata:
+            if not sources and name in metadata and not masked_template:
                 refs.update(metadata[name]['configs'])
                 unreadable = metadata[name].get('unreadable', False)
+            if name in templates and not masked_template and (not sources or unreadable):
+                failures[name] = 'template fragment unreadable'
+                unreadable = True
             paths.update(refs)
             metadata[name] = {'configs': sorted(refs), 'unreadable': unreadable,
                               'runner': runner, 'referenced': referenced, 'command': command, 'orbi': orbi}
@@ -4050,8 +4059,8 @@ def host_linux(ctx, coverage):
                         (details[n].get('Unit') or details[n].get('Triggers') or n[:-6] + '.service') in relevant)
         for name, failure in failures.items():
             # An unreadable arbitrary unit still cannot certify complete coverage.
-            host_problem(coverage, manager, 'unit details ' + failure + ': ' + name,
-                         non_orbi=name not in relevant)
+            reason = failure if name in templates else 'unit details ' + failure
+            host_problem(coverage, manager, reason + ': ' + name, non_orbi=name not in relevant)
         # Pair by exact service identity/explicit timer target, not slot number.
         pairs = {}
         for name in sorted(relevant):
@@ -4073,7 +4082,9 @@ def host_linux(ctx, coverage):
             unreadable = any(metadata[n].get('unreadable') for n in members)
             unresolved = any(metadata[n].get('referenced') and not metadata[n]['configs'] for n in members)
             binding = 'conflicting' if len(refs) > 1 else 'unreadable' if unreadable or unresolved else 'verified' if refs else 'unknown'
-            if binding in {'conflicting', 'unreadable'}:
+            # Template fragment failures already have a per-unit diagnostic above.
+            if binding == 'conflicting' or unresolved or any(
+                    metadata[n]['unreadable'] for n in members if n not in templates):
                 host_problem(coverage, manager, binding + ' config binding: ' + unit)
             kind = ('template' if '@.' in unit else 'timer' if unit.endswith('.timer') else
                     'runner' if metadata.get(unit, {}).get('runner') or

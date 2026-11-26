@@ -4380,6 +4380,20 @@ class HostStatusTests(unittest.TestCase):
                 self.assertEqual(rows[template.name]['kind'], 'template')
                 self.assertEqual(doc['coverage']['state'], 'ok', doc['coverage']['problems'])
 
+    def test_missing_template_fragment_is_partial_without_querying_template_runtime(self):
+        unit = 'vendor@.service'
+        self.h.rules(*self.lists('--user', [], [{'unit_file': unit, 'state': 'disabled'},
+                                               {'unit_file': 'masked@.timer', 'state': 'masked'}]),
+                     *self.lists('--system'))
+        with mock.patch.object(helper, 'host_definition_dirs', return_value=[]):
+            code, doc, err = self.invoke()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertEqual([p['reason'] for p in doc['coverage']['problems']],
+                         [f'template fragment unreadable: {unit}'])
+        self.assertFalse(any(call['argv'][1] == 'show' for call in self.h.calls()
+                             if call['tool'] == 'systemctl'))
+
     def test_active_worker_falls_back_to_live_slot_then_worktree_branch(self):
         a = self.h.add_deployment_a()
         repo = self.h.root / 'repo-a'
@@ -6761,6 +6775,9 @@ class LifecycleRecordAndPruneTests(unittest.TestCase):
         self.assertEqual(host.returncode, 0, host.stdout + host.stderr)
         rows = json.loads(host.stdout)['rows']
         self.assertTrue(any(row.get('last_lifecycle') == latest for row in rows if row['repo'] == REPO))
+        verbose = self.cli('status', 'all', '--verbose', json_mode=False)
+        self.assertEqual(verbose.returncode, 0, verbose.stderr)
+        self.assertIn(f"Last lifecycle: {latest['timestamp']} /orbi start", verbose.stdout)
         before = log.read_bytes()
         for args in (('stop', '--dry-run'), ('start',)):
             result = self.cli(*args, '--repo-dir', str(h.repo))

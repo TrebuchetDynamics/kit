@@ -109,8 +109,9 @@ unavailable.
 
 ## Lifecycle history and stale templates
 
-`status` and `status all` show the latest available `last_lifecycle` entry for
-bound deployments. Kit keeps up to 200 JSON lines in `<deploy_home>/lifecycle.log`:
+Repository `status` and the detailed host views (`status all --verbose` and
+`status all --json`) show the latest available `last_lifecycle` entry for bound
+deployments. Kit keeps up to 200 JSON lines in `<deploy_home>/lifecycle.log`:
 UTC time, helper action and flag names (no argument values), host account and
 result. Previews, preflight refusals and no-op setup/start calls do not replace the latest
 entry. This is best-effort history for the Kit helper, not evidence of direct
@@ -606,7 +607,8 @@ slots; explicit timer targets take precedence over matching stems. A config
 reference, not a basename or Kit unit naming convention, establishes repository
 attribution. Conflicting/unreadable bindings remain unknown while healthy rows
 survive. Templates are inspected via their installed fragments, not runtime
-`systemctl show`. Templates and nonrunner services are distinct from worker
+`systemctl show`; a missing or unreadable fragment still means partial coverage.
+Templates and nonrunner services are distinct from worker
 instances. Config-only rows mean prepared metadata, not installed or active scheduling.
 Worker classification uses the service command where readable; a templated
 exporter is not a worker, and a directly evidenced singleton tick is. Enabled
