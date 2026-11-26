@@ -2,7 +2,7 @@
 """Orbi repository lifecycle controls, read-only host inventory and local user template maintenance.
 
 `python3 -B orbi_control.py [status|version|setup|start|update|stop|prune|help] [all] [--repo-dir PATH]
-[--config PATH] [--dry-run] [--wait] [--apply] [--json] [--verbose]`
+[--config PATH] [--dry-run] [--wait] [--apply] [--json] [--verbose] [--work]`
 `python3 -B orbi_control.py set DEPLOYMENT {slots N | model PROVIDER/MODEL [THINKING]} [--json]`
 
 - `status` (the default) is read-only: local reads, read-only `orbi doctor`
@@ -10,7 +10,8 @@
   creates a receipt.
 - `version` reads one deployment identity and engine release/revision without bootstrap, scheduler or network probes.
 - `status all` inventories accessible local managers/configs without repo binding,
-  GitHub, provider/env/session reads or scheduler actions; partial coverage is explicit.
+  provider/env/session reads or scheduler actions; partial coverage is explicit.
+  Reports GitHub API budget and, with `--work`, per-repo labeled issue counts.
 - `setup` prepares one repository deployment without activating a timer:
   repository identity, native config, `.orbi/env` isolation, provider metadata
   reuse and a non-activating `orbi check`.
@@ -78,6 +79,7 @@ OFFICIAL_ORIGINS = frozenset({OFFICIAL_ORIGIN, OFFICIAL_ORIGIN + '.git',
 MAX_INSTANCES = 5
 NODE_FLOOR = (22, 19)
 PROBE_TIMEOUT = 20
+HOST_WORK_LIMIT = 1000  # GitHub search result ceiling
 MUTATION_TIMEOUT = 600
 CHECK_TIMEOUT = 300
 START_JOB_TYPES = frozenset({'start', 'restart', 'reload-or-start'})
@@ -1617,7 +1619,7 @@ def github_read(ctx, argv):
                                     and isinstance(value, dict) and value.get('errors')):
             return None
         return value
-    except (ControlError, ValueError):
+    except (ControlError, OSError, ValueError):
         return None
 
 
@@ -3733,6 +3735,12 @@ def lifecycle_text(entry):
             f"user={entry['user']} result={entry['result']}")
 
 
+def work_count_text(count):
+    if count is None:
+        return 'unknown'
+    return f'{count}+' if count == HOST_WORK_LIMIT else str(count)
+
+
 def render(ctx, document, json_mode, *, verbose=False):
     if json_mode:
         ctx.out.write(json.dumps(document, indent=2) + '\n')
@@ -3770,23 +3778,37 @@ def render(ctx, document, json_mode, *, verbose=False):
             ctx.out.write(f"Next: {document['next_action']}\n")
         return
     if document.get('scope') == 'host':
-        if not verbose:
+        if verbose:
+            ctx.out.write(f"Host Orbi: coverage={document['coverage']['state']}; observed workers="
+                          f"{document['totals']['observed_workers']} (not an absolute host total)\n")
+            for row in document['rows']:
+                ctx.out.write(f"{row['manager'] or 'local-config'} {row['unit'] or row['binding']['config']} "
+                              f"repo={row['repo'] or 'unknown'} Orbi={row['engine'].get('version') or 'unknown'} "
+                              f"{row['kind']} timers={','.join(row.get('timers', {})) or 'none'} "
+                              f"loaded={row['loaded']} installed={row['installed']} "
+                              f"state={row['state']} scheduler={row['scheduler']} worker={row['worker']['state']} "
+                              f"issue={row['worker'].get('issue', {}).get('url', 'unknown')} "
+                              f"next={row['next_trigger'] or 'unknown'} binding={row['binding']['state']}\n")
+                if row.get('last_lifecycle'):
+                    ctx.out.write(lifecycle_text(row['last_lifecycle']) + '\n')
+            for line in flatten(document['coverage'], 'coverage.'):
+                ctx.out.write(line + '\n')
+            for repo, count in document.get('work', {}).items():
+                ctx.out.write(f"Work {' '.join(repo.splitlines())}: {work_count_text(count)}\n")
+        else:
             render_host_compact(ctx, document)
-            return
-        ctx.out.write(f"Host Orbi: coverage={document['coverage']['state']}; observed workers="
-                      f"{document['totals']['observed_workers']} (not an absolute host total)\n")
-        for row in document['rows']:
-            ctx.out.write(f"{row['manager'] or 'local-config'} {row['unit'] or row['binding']['config']} "
-                          f"repo={row['repo'] or 'unknown'} Orbi={row['engine'].get('version') or 'unknown'} "
-                          f"{row['kind']} timers={','.join(row.get('timers', {})) or 'none'} "
-                          f"loaded={row['loaded']} installed={row['installed']} "
-                          f"state={row['state']} scheduler={row['scheduler']} worker={row['worker']['state']} "
-                          f"issue={row['worker'].get('issue', {}).get('url', 'unknown')} "
-                          f"next={row['next_trigger'] or 'unknown'} binding={row['binding']['state']}\n")
-            if row.get('last_lifecycle'):
-                ctx.out.write(lifecycle_text(row['last_lifecycle']) + '\n')
-        for line in flatten(document['coverage'], 'coverage.'):
-            ctx.out.write(line + '\n')
+        budget = document['github_budget']
+        parts = []
+        for key in ('graphql', 'rest'):
+            value = budget[key]
+            name = 'GraphQL' if key == 'graphql' else 'REST'
+            parts.append(f"{name} {value['remaining']}/{value['limit']} (resets {value['reset']})"
+                         if value is not None else f'{name} unknown')
+        ctx.out.write('GitHub API budget: ' + '; '.join(parts) + '\n')
+        if None in budget.values() or None in document.get('work', {}).values():
+            ctx.out.write('For unavailable GitHub data, check gh auth status, repository access and connectivity.\n')
+        for suggestion in document.get('suggestions', ()):
+            ctx.out.write(suggestion + '\n')
         return
     if document.get('action') == 'version':
         engine = document['deployment']['engine']
@@ -3868,9 +3890,12 @@ def render_host_compact(ctx, document):
                         if re.match(r'^\S+ \d{4}-\d\d-\d\d ', timer['next_trigger'] or '')),
                        key=lambda stamp: stamp.split(' ', 1)[1], default='unknown')
         selection = '/'.join(first.get(key) or 'unknown' for key in ('provider', 'model', 'thinking'))
-        repos = ','.join(first.get('repos', [])) or config
-        line = (f"{repos} slots={len(busy)}/{first.get('max_concurrency', '?')} {selection} "
+        repos = first.get('repos', [])
+        line = (f"{','.join(repos) or config} slots={len(busy)}/{first.get('max_concurrency', '?')} {selection} "
                 f"state={state} issues={','.join(numbers) or '-'} next={next_run}")
+        if 'work' in document:
+            counts = ','.join(work_count_text(document['work'].get(repo)) for repo in repos)
+            line += f" work={counts or 'unknown'}"
         ctx.out.write(' '.join(line.splitlines()) + '\n')
     problems = coverage['problems']
     other = [p for p in problems if not p.get('non_orbi')]
@@ -5658,7 +5683,38 @@ def command_prune(ctx, args):
             'candidates': [row for row, _, _ in candidates], 'removed': removed}
 
 
-def command_status_all(ctx):
+def github_budget(ctx):
+    data = github_read(ctx, ['api', 'rate_limit'])
+    budget = {}
+    for name, resource in (('graphql', 'graphql'), ('rest', 'core')):
+        budget[name] = None
+        try:
+            info = data['resources'][resource]
+            remaining, limit, reset = (info[key] for key in ('remaining', 'limit', 'reset'))
+            if not all(type(value) is int and value >= 0 for value in (remaining, limit, reset)):
+                continue
+            stamp = datetime.fromtimestamp(reset, timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+            budget[name] = {'remaining': remaining, 'limit': limit, 'reset': stamp}
+        except (KeyError, TypeError, OverflowError, OSError, ValueError):
+            continue  # A missing resource must not hide the other one or the inventory.
+    return budget
+
+
+def host_work_count(ctx, repo):
+    if not re.fullmatch(r'[a-zA-Z0-9-]+/[a-zA-Z0-9_.-]+', repo):
+        return None
+    # --label filters are ANDed. The comma in the search qualifier means OR.
+    issues = github_read(ctx, ['issue', 'list', '--repo', repo, '--state', 'open',
+                               '--search', 'label:ai-ready,ai-fix-needed',
+                               '--limit', str(HOST_WORK_LIMIT), '--json', 'number'])
+    if isinstance(issues, list) and all(isinstance(issue, dict) and
+                                        type(issue.get('number')) is int and issue['number'] > 0
+                                        for issue in issues):
+        return len({issue['number'] for issue in issues})
+    return None
+
+
+def command_status_all(ctx, *, work):
     coverage = {'state': 'ok', 'managers': {}, 'problems': [],
                 'scope': 'observed local managers only; other users, namespaces, containers and remote hosts unobserved'}
     worker_bindings = {}
@@ -5697,15 +5753,30 @@ def command_status_all(ctx):
                          'last_lifecycle': item.get('last_lifecycle'),
                          'worker': {'state': 'not observed'}, 'next_trigger': None,
                          **{key: item[key] for key in config_fields if key in item}})
-    return {'action': 'status', 'scope': 'host', 'platform': ctx.platform, 'coverage': coverage,
-            'totals': {'observed_workers': sum(r['kind'] == 'runner' and r['loaded'] is True for r in rows),
-                       'observed_running_services': sum(r['kind'] == 'runner' and r['scheduler'] in ACTIVE_STATES for r in rows),
-                       'discoverable_configs': len(deployments)}, 'rows': rows}
+    document = {'action': 'status', 'scope': 'host', 'platform': ctx.platform, 'coverage': coverage,
+                'totals': {'observed_workers': sum(r['kind'] == 'runner' and r['loaded'] is True for r in rows),
+                           'observed_running_services': sum(r['kind'] == 'runner' and r['scheduler'] in ACTIVE_STATES for r in rows),
+                           'discoverable_configs': len(deployments)}, 'rows': rows}
+    if work:
+        repos = sorted({repo for item in deployments.values() for repo in item.get('repos', [])})
+        # GitHub repo names are case-insensitive; retain the config spelling in the receipt.
+        repo_counts = {repo: host_work_count(ctx, repo) for repo in sorted({repo.lower() for repo in repos})}
+        counts = {repo: repo_counts[repo.lower()] for repo in repos}
+        scheduled_or_busy = {row['binding']['config'] for row in rows if row['kind'] == 'runner'
+                             and (row['scheduler'] in ACTIVE_STATES or any(
+                                 timer['state'] in ACTIVE_STATES for timer in row.get('timers', {}).values()))}
+        document['work'] = counts
+        document['suggestions'] = [f'no work: consider /orbi stop {repo} or set {repo} slots 1'
+                                   for config, item in deployments.items() if config in scheduled_or_busy
+                                   and (repo := item['repo']) and counts[repo] == 0]
+    # Report what remains after any opt-in issue lookups have consumed budget.
+    document['github_budget'] = github_budget(ctx)
+    return document
 
 
 def command_status(ctx, args):
     if args.scope == 'all':
-        return command_status_all(ctx)
+        return command_status_all(ctx, work=args.work)
     repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
     if ctx.platform == 'linux':
         return status_linux(ctx, repo, args.config)
@@ -5732,7 +5803,7 @@ def command_version(ctx, args):
 def action_usage():
     prefix = 'python3 -B orbi_control.py '
     return (prefix + '[' + '|'.join(name for name in ACTIONS if name != 'set') + '] [all] '
-            '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] [--verbose] '
+            '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] [--verbose] [--work] '
             '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] '
             '[--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait] [--apply]\n'
             + '\n'.join('  ' + prefix + command.removeprefix('/orbi ') + ' [--json]' for command in SET_USAGE))
@@ -5746,6 +5817,7 @@ def command_help(ctx, args):
         '--dry-run': 'preview without locking, writing, installing or activating',
         '--json': 'print one JSON document',
         '--verbose': 'status all only: print per-unit rows and full coverage details in text',
+        '--work': 'status all only: count open ai-ready or ai-fix-needed issues per repo and suggest where to cut idle capacity',
         '--stop': 'update only: compatibility opt-out: quiesce, update and leave stopped',
         '--wait': f'update only: wait up to {UPDATE_WAIT_MINUTES} minutes for workers to finish; leave paused on timeout',
         '--apply': 'prune only: remove verified stale user unit templates and reload the user manager',
@@ -5768,8 +5840,9 @@ def command_help(ctx, args):
                                           if flag in entry['applies']]}
                     for flag, effect in options.items()},
         'quickstart': [
-            '/orbi status all shows one row per deployment without a checkout or GitHub auth. '
-            'Use --verbose for per-unit text or --json for structured inventory. '
+            '/orbi status all shows local deployments and the GitHub CLI account API budget. '
+            'No checkout required; local inventory survives unavailable GitHub data. '
+            'Add --work for per-repo labeled issue counts; use --verbose for per-unit text or --json for structured inventory. '
             'Preserve literal status all in one helper call; never inject --repo-dir or --config. '
             'Other lifecycle/mutation selectors conflict and are refused before probes. Coverage and totals are observed, not an absolute host census.',
             'Bare /orbi or status inspects only. For a genuinely absent deployment with no explicit --config, '
@@ -5949,13 +6022,13 @@ ACTIONS = {
         'handler': command_status,
         'effect': 'Inspect deployment release/revision with provenance, scheduler and per-slot running issues; '
                   'queue order is not pickup. Missing live bindings mean active/issue unknown, not idle. '
-                  'Literal status all inspects accessible local host services without repository binding or network.',
+                  'Literal status all inspects accessible local host services and GitHub API budget without repository binding.',
         'mutates': 'none',
         'platforms': ['linux', 'darwin'],
-        'applies': ['--repo-dir', '--config', '--json', '--verbose'],
+        'applies': ['--repo-dir', '--config', '--json', '--verbose', '--work'],
         'when': 'Run by default to inspect a canonical GitHub checkout; no deployment is required '
                 '(an absent deployment is reported as absent). Use status all for host inventory from any directory; '
-                'only --json or --verbose may accompany all.',
+                'only --json, --verbose and --work may accompany all.',
     },
     'version': {
         'handler': command_version,
@@ -6092,6 +6165,7 @@ def parse_args(argv):
                         help='show the plan without locking, writing, installing or activating')
     parser.add_argument('--json', action='store_true', help='print one JSON document')
     parser.add_argument('--verbose', action='store_true', help='status all only: show per-unit text and coverage details')
+    parser.add_argument('--work', action='store_true', help='status all only: count open ai-ready or ai-fix-needed issues')
     parser.add_argument('--apply', action='store_true', help='prune only: remove stale unit templates')
     parser.add_argument('--stop', action='store_true',
                         help='update only: compatibility opt-out: quiesce, update and leave stopped')
@@ -6153,6 +6227,9 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
         if args.verbose and args.scope != 'all':
             raise ControlError('invalid_host_selection', '--verbose requires status all',
                                fix='use /orbi status all --verbose, or omit --verbose', exit_code=2)
+        if args.work and args.scope != 'all':
+            raise ControlError('invalid_host_selection', '--work requires status all',
+                               fix='use /orbi status all --work, or omit --work', exit_code=2)
         if args.apply and args.action != 'prune':
             raise ControlError('invalid_apply_selection', '--apply requires prune',
                                fix='use /orbi prune to preview before applying', exit_code=2)
