@@ -1,8 +1,9 @@
 """Repository-scoped Orbi lifecycle controls (Issue #18).
 
 The helper is exercised through real subprocess boundaries (argv only) with
-temporary homes and fake `git|uv|gh|pi|node|orbi|systemctl` tools. No real
-scheduler, credentials or host deployment is touched. The fixture deployment
+temporary homes and fake `git|uv|gh|pi|node|orbi|systemctl` tools. The prune
+fixture uses real Git with a local remote. No real scheduler, credentials or
+host deployment is touched. The fixture deployment
 "A" stands for an unrelated running deployment that every scenario must
 preserve.
 """
@@ -7574,6 +7575,153 @@ class LifecycleRecordAndPruneTests(unittest.TestCase):
                          [['--user', 'daemon-reload']])
         self.assertFalse([c for c in h.calls() if c['tool'] != 'systemctl'])
 
+    def git_worktree_fixture(self):
+        h = self.h
+        (h.bin / 'git').unlink()  # the CLI must use real Git, including fetch/remove/-d
+        h.env.update(GIT_AUTHOR_NAME='Fixture', GIT_COMMITTER_NAME='Fixture',
+                     GIT_AUTHOR_EMAIL='fixture@example.invalid', GIT_COMMITTER_EMAIL='fixture@example.invalid',
+                     GIT_CONFIG_NOSYSTEM='1')
+        origin = h.root / 'origin.git'
+        self.fixture_git('init', '-q', '--bare', str(origin))
+        self.fixture_git('init', '-q', '-b', 'main')
+        self.fixture_git('remote', 'add', 'origin', f'https://github.com/{REPO}.git')
+        self.fixture_git('config', f'url.{origin}.insteadOf', f'https://github.com/{REPO}.git')
+        (h.repo / '.gitignore').write_text('.worktrees/\n.orbi/\n')
+        (h.repo / 'nested').mkdir()
+        (h.repo / 'nested/payload').write_bytes(b'fixture\n' * 1024)
+        self.fixture_git('add', '.')
+        self.fixture_git('commit', '-qm', 'initial checkout')
+        self.fixture_git('push', '-q', 'origin', 'HEAD:release')
+        h.deploy.mkdir()
+        (h.deploy / 'orbi.toml').write_text(f'source_repos = ["{REPO}"]\nrepo_dir = "{h.repo}"\n'
+                                             'base_branch = "release"\n')
+        return origin
+
+    def fixture_git(self, *args, cwd=None, check=True):
+        return subprocess.run(['git', *args], cwd=cwd or self.h.repo, env=self.h.env,
+                              capture_output=True, check=check, text=True, timeout=10)
+
+    def fixture_worktree(self, number, path):
+        branch = f'orbi/example-kit-issue-{number}'
+        self.fixture_git('worktree', 'add', '-qb', branch, str(path))
+        return branch
+
+    def fixture_issues(self, *issues):
+        self.prune_rules({'tool': 'systemctl', 'argv_contains': ['--output=json'], 'stdout': '[]'}, *[
+            {'tool': 'gh', 'argv_contains': ['issue', 'view', f' {number} ', f'--repo github.com/{REPO}'],
+             'stdout': json.dumps({'number': number, 'state': state})} for number, state in issues])
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'cwd evidence is Linux procfs')
+    def test_prune_worktrees_and_report_disk_use_through_cli(self):
+        self.git_worktree_fixture()
+        h = self.h
+        root = h.repo / '.worktrees'
+        paths = {n: root / f'issue {n}' for n in range(1, 6)}
+        paths[6] = h.root / 'outside'
+        paths[7] = root / 'slot-owned'
+        paths[8] = root / 'unknown-issue'
+        branches = {n: self.fixture_worktree(n, path) for n, path in paths.items()}
+        # A stale local HEAD and stale origin/release must not determine eligibility.
+        self.fixture_git('commit', '--allow-empty', '-qm', 'delivered', cwd=paths[1])
+        self.fixture_git('push', '-q', 'origin', 'HEAD:release', cwd=paths[1])
+        self.fixture_git('push', '-qu', 'origin', branches[1], cwd=paths[1])
+        self.fixture_git('push', '-q', 'origin', '--delete', branches[1])
+        self.fixture_git('update-ref', 'refs/remotes/origin/release', 'HEAD')
+        self.fixture_git('commit', '--allow-empty', '-qm', 'unmerged', cwd=paths[4])
+        (paths[3] / 'untracked').write_text('keep')
+        self.fixture_issues(*[(n, 'OPEN' if n == 2 else 'CLOSED') for n in paths if n != 8])
+        slot = h.repo / '.orbi/slots/slot-1'
+        slot.parent.mkdir(parents=True)
+        held = slot.open('w+')
+        self.addCleanup(held.close)
+        held.write(f'{os.getpid()}\n{REPO}#7\n')
+        held.flush()
+        helper.fcntl.flock(held, helper.fcntl.LOCK_EX | helper.fcntl.LOCK_NB)
+        proc = subprocess.Popen(['sleep', '100'], cwd=paths[5] / 'nested')
+        try:
+            preview = self.cli('prune')
+            self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
+            row, = json.loads(preview.stdout)['worktrees']
+            self.assertEqual(row['repo'], REPO)
+            self.assertEqual([item['issue'] for item in row['candidates']], [1])
+            self.assertEqual(row['removed'], [])
+            self.assertEqual({item['issue']: item['reason'] for item in row['kept']}, {
+                2: 'issue open', 3: 'worktree dirty', 4: 'branch not merged into origin/release',
+                5: 'process cwd in worktree', 7: 'worktree issue has a live Orbi slot',
+                8: 'issue state unavailable; check gh auth status and repository access'})
+            self.assertTrue(all(path.is_dir() for path in paths.values()))
+            self.assertFalse([call for call in h.calls() if call['tool'] == 'gh' and '6' in call['argv']])
+
+            status = self.cli('status', '--repo-dir', str(h.repo))
+            self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+            usage = json.loads(status.stdout)['deployment']['worktree_usage']
+            expected = int(subprocess.check_output(['du', '-sk', str(root)], timeout=5).split()[0]) * 1024
+            self.assertEqual(usage, {'bytes': expected})
+            host = self.cli('status', 'all', json_mode=False)
+            self.assertEqual(host.returncode, 0, host.stdout + host.stderr)
+            self.assertIn(f'worktrees={expected} bytes', host.stdout)
+
+            removed_bytes = int(subprocess.check_output(['du', '-sk', str(paths[1])], timeout=5).split()[0]) * 1024
+            applied = self.cli('prune', '--apply')
+            self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+            row, = json.loads(applied.stdout)['worktrees']
+            removed, = row['removed']
+            self.assertEqual((removed['issue'], removed['branch_deleted']), (1, True))
+            self.assertEqual(row['bytes_freed'], removed_bytes)
+            self.assertGreater(row['bytes_freed'], 0)
+            self.assertFalse(paths[1].exists())
+            for n in paths.keys() - {1}:
+                self.assertTrue(paths[n].is_dir())
+                self.assertTrue(self.fixture_git('branch', '--list', branches[n]).stdout)
+            self.assertEqual(self.fixture_git('branch', '--list', branches[1]).stdout, '')
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
+
+    def test_prune_worktrees_keeps_stale_ref_when_fetch_fails(self):
+        origin = self.git_worktree_fixture()
+        path = self.h.repo / '.worktrees/issue-1'
+        branch = self.fixture_worktree(1, path)
+        self.fixture_issues((1, 'CLOSED'))
+        origin.rename(origin.with_suffix('.offline'))
+        result = self.cli('prune', '--apply', json_mode=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Kept', result.stdout)
+        self.assertIn('base fetch failed; check origin and access, then preview again', result.stdout)
+        self.assertTrue(path.is_dir())
+        self.assertIn(branch, self.fixture_git('branch', '--list', branch).stdout)
+
+    def test_prune_worktrees_respects_runner_base_lock(self):
+        self.git_worktree_fixture()
+        config = self.h.root / 'custom-deployment.toml'
+        (self.h.deploy / 'orbi.toml').rename(config)
+        with config.open('a') as handle:
+            handle.write('unit_name = "fixture"\n')
+        self.templates('orbi-fixture', config)
+        path = self.h.repo / '.worktrees/issue-1'
+        self.fixture_worktree(1, path)
+        self.fixture_issues((1, 'CLOSED'))
+        lock = self.h.repo / '.orbi/base-sync.lock'
+        lock.parent.mkdir()
+        with lock.open('w') as held:
+            helper.fcntl.flock(held, helper.fcntl.LOCK_EX | helper.fcntl.LOCK_NB)
+            result = self.cli('prune', '--apply')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        row, = json.loads(result.stdout)['worktrees']
+        self.assertEqual(row['removed'], [])
+        self.assertIn('Orbi base sync is busy', row['kept'][0]['reason'])
+        self.assertTrue(path.is_dir())
+
+    def test_prune_status_reports_disk_usage_timeout(self):
+        self.git_worktree_fixture()
+        path = self.h.repo / '.worktrees/issue-1'
+        self.fixture_worktree(1, path)
+        (self.h.bin / 'du').symlink_to(self.h.bin / '_fake.py')
+        self.prune_rules({'tool': 'du', 'argv_contains': ['-sk'], 'sleep': 5})
+        status = self.cli('status', '--repo-dir', str(self.h.repo), json_mode=False)
+        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+        self.assertIn('Worktrees: unavailable (du timed out after 3s)', status.stdout)
+
     def test_prune_revalidates_and_fails_closed(self):
         h = self.h
         paths = self.templates('orbi-stale', h.deploy / 'absent.toml')
@@ -7782,7 +7930,8 @@ class InterfaceAndSkillTests(unittest.TestCase):
             scratch.mkdir()
             before = snapshot(h.home)
             expected = {'status': 'none', 'version': 'none', 'setup': 'staging', 'start': 'scheduler',
-                        'update': 'scheduler', 'set': 'scheduler', 'stop': 'scheduler', 'prune': 'scheduler with --apply', 'help': 'none'}
+                        'update': 'scheduler', 'set': 'scheduler', 'stop': 'scheduler',
+                        'prune': 'worktrees and scheduler with --apply (base fetch in both modes)', 'help': 'none'}
             for options in ([], ['--repo-dir', '/missing/repo', '--config',
                                   '/missing/config', '--dry-run']):
                 for json_mode in (True, False):
