@@ -3156,6 +3156,7 @@ class LifecycleSequenceTests(unittest.TestCase):
         code, doc, err = h.run('stop')
         self.assertNotEqual(code, 0, (doc, err))
         self.assertEqual(doc['error']['code'], 'unit_conflict')
+        self.assertFalse(doc['error']['mutated'], doc)
         self.assertFalse(any(set(c['argv']) & {'disable', 'stop', 'kill', 'restart', 'cancel'}
                              for c in h.calls() if c['tool'] == 'systemctl'))
 
@@ -3250,6 +3251,7 @@ class LifecycleSequenceTests(unittest.TestCase):
         code, doc, err = h.run('stop')
         self.assertNotEqual(code, 0, (doc, err))
         self.assertEqual(doc['error']['code'], 'command_failed')
+        self.assertTrue(doc['error']['mutated'], doc)
         self.assertEqual(doc['steps'][-1]['unit'], timer)
         self.assertNotIn(timer, doc['disabled_timers'])
         self.assertTrue(doc['scheduler']['timers'][timer]['enabled'])
@@ -3381,7 +3383,8 @@ class LifecycleSequenceTests(unittest.TestCase):
                 if observation_fails:
                     self.assertNotEqual(code, 0, (doc, err))
                     self.assertEqual(doc['error']['code'], 'scheduler_unavailable')
-                    self.assertTrue(doc['error']['mutated'])
+                    # This read-only refusal made no change to the deployment.
+                    self.assertFalse(doc['error']['mutated'], doc)
                     self.assertEqual(doc['steps'][-1]['step'], 'observe_scheduler')
                     self.assertEqual(doc['disabled_timers'], [])
                 else:
