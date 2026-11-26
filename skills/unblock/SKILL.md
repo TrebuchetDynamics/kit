@@ -25,8 +25,9 @@ Invoking `/unblock` authorizes routine recovery decisions, same-issue recovery c
 and scoped label changes using the caller’s existing GitHub access. Do the repair in
 this run; do not ask “may I fix or requeue it?” Read-only restrictions still win.
 Inventory all pages of open issues and PRs, not just `ai-blocked`: missing labels,
-failed checks and unresolved prerequisites can hide stalled work. Fix an actionable
-prerequisite first and keep moving on independent issues.
+failed checks and unresolved prerequisites can hide stalled work. Check
+[stale issue state](#stale-issue-state) before the general requeue below. Fix an
+actionable prerequisite first and keep moving on independent issues.
 
 **Reconcile labels after fixing the cause.** Immediately re-read the issue, latest
 attempt, linked PR/head, dependencies and current labels. If another worker claimed
@@ -37,8 +38,9 @@ it or the evidence changed, leave its state alone. Evaluate every open issue tag
   repository policy. Verify the issue's scope, acceptance, checks and native
   dependencies, and the complete batch if publication is in progress. Do not race
   the publishing planner. Unresolved intent or an explicit no-dispatch request holds publication.
-- `ai-blocked` → `ai-ready`: verify the cause was fixed and the same-issue retry
-  is safe. Use the deployment's supported requeue; preserve its recovery evidence.
+- `ai-blocked` → `ai-ready`: for blockers other than base-red, verify the cause
+  was fixed and the same-issue retry is safe. Use the deployment's supported
+  requeue; preserve its recovery evidence.
 - If both labels apply, require both conditions. For each eligible unowned issue,
   publish `ai-ready` last, after the eligibility checks. Confirm readiness before
   removing resolved state labels. Preserve unrelated labels; read back the result
@@ -55,6 +57,57 @@ If it already landed, resume at the next missing step. If absent, an authorized
 normal push of that exact candidate may repair publication; keep hooks enabled and
 allow time for them. If the remote diverged, preserve both heads and reconcile with
 the owner. A timeout alone neither proves the push failed nor authorizes force-push.
+
+## Stale issue state
+
+### Closed issues
+
+Include all pages of closed issues carrying **any** of the four labels below.
+Re-read each candidate's state and labels immediately before editing. Proceed only
+if the issue is still `CLOSED`. Remove only the labels present from this set:
+`ai-blocked`, `ai-fix-needed`, `ai-in-progress` and `ai-pr-opened`. Keep `ai-merged`
+and unrelated labels. Read back `CLOSED` and the remaining labels to confirm the
+cleanup; if the issue reopened or readback fails, report the observed state or
+read error instead of making further label changes.
+
+### Base-red blocks
+
+1. **Compare.** For an open `ai-blocked` issue, read the latest trusted failure.
+   When it records that the check also fails on the base (Orbi: `base_ci_red`),
+   bind the blocked base branch and SHA, named checks and retained PR from that
+   evidence. Compare the recorded SHA with current `origin/<base>` after verifying
+   the remote repository and live branch tip, not just a cached tracking ref.
+   An unchanged SHA or unavailable evidence leaves the issue blocked.
+2. **Recheck.** Rerun each recorded check using its documented invocation on the
+   new base SHA in isolation, not on the PR head. Require a passing result tied to
+   that SHA for every named check. If any check still fails or has no confirmed
+   result, leave the PR and labels unchanged. Report the check, SHA, exact error
+   or missing result, and what must change before retrying.
+3. **Update the retained PR.** Refresh the issue, block, PR head/base, ownership
+   and dispatch gates (planning, prerequisites, pauses and human gates) before
+   writing. If the evidence changed, reconcile it first. Use the existing owner's
+   authorized branch-update path to bring the tested base into the same PR branch
+   by normal merge; never force-push or rebase. Do not take over an active or
+   uncertain owner. Read back the remote PR head and verify it includes both
+   the retained head and the tested base, and that the live base still matches
+   the tested SHA. If the update conflicts or cannot be verified, report the
+   exact blocker and do not requeue.
+4. **Resume the same delivery.** Refresh the same gates before each write. Post
+   a deduplicated evidence comment on the issue with the original and tested
+   base SHAs, check result and log or run link, PR and verified updated head.
+   Confirm the comment is present, then replace `ai-blocked` with `ai-fix-needed`
+   using the deployment's supported resume path; keep all other labels. Read back
+   the issue and labels and verify the transition. Check for resumed work separately.
+   Do not fall back to `ai-ready` for this block.
+
+**Worked example:** Issue #42's block names `python3 scripts/check.py` on
+`main` at `17a2b3c`. `origin/main` now points to `89d4e5f`; the same check exits
+0 on that commit. The normal merge into PR #43 produces head `cd321ab`; readback
+confirms it contains the tested base and the old PR head. The issue comment records
+both base SHAs, the passing check evidence and PR #43 at `cd321ab`. Issue #42 is
+still open and readback shows `ai-fix-needed` instead of `ai-blocked`. If the check
+had exited 1, report its failing output and leave the PR and issue labels untouched
+until the base failure is repaired.
 
 ## Changed requirements: hand back on the same issue
 

@@ -6,10 +6,12 @@ explicit skills. See [support, setup and migration](github-native.md).
 ## Unblock repairs blocked GitHub work
 
 `/unblock` checks open issues and PRs, fixes actionable causes, and reconciles
-recovery labels without asking again for routine decisions. It considers every
-`ai-planning` or `ai-blocked` issue for `ai-ready`. It publishes readiness after
-confirming the plan is complete or the blocker is repaired (both when both labels
-apply). It verifies whether work resumed. Read-only requests, explicit pauses,
+recovery labels without asking again for routine decisions. It
+[cleans stale labels on closed issues and rechecks base-red blocks after a base advance](../skills/unblock/SKILL.md#stale-issue-state).
+That requeue uses `ai-fix-needed` on the existing delivery; other eligible
+`ai-planning` or `ai-blocked` issues use `ai-ready` only after the plan is complete
+or the blocker is repaired (both when both labels apply). It verifies whether
+work resumed. Read-only requests, explicit pauses,
 existing PR ownership and human gates remain binding; the skill does not grant
 GitHub access or activate Orbi.
 

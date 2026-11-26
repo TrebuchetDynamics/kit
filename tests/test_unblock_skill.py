@@ -46,6 +46,35 @@ class UnblockSkillTests(unittest.TestCase):
                          'Confirm readiness before\n  removing resolved state labels'):
             self.assertIn(contract, text)
 
+    def stale_state_phase(self):
+        text = (ROOT / 'skills/unblock/SKILL.md').read_text()
+        inventory, found, rest = text.partition('## Stale issue state')
+        self.assertTrue(found)
+        self.assertIn('(#stale-issue-state)', inventory)
+        return rest.split('## Changed requirements:', 1)[0]
+
+    def test_closed_cleanup_reads_back_state_and_limits_label_removal(self):
+        phase = self.stale_state_phase().split('### Base-red blocks', 1)[0]
+        phase = ' '.join(phase.split())
+        self.assertRegex(phase, r'Re-read .* `CLOSED`.* Remove only .*'
+                         r'`ai-blocked`, `ai-fix-needed`, `ai-in-progress` and `ai-pr-opened`')
+        self.assertIn('Keep `ai-merged` and unrelated labels', phase)
+        self.assertIn('Read back `CLOSED` and the remaining labels', phase)
+
+    def test_base_red_requeue_requires_verified_base_pass_and_pr_update(self):
+        phase = self.stale_state_phase().split('### Base-red blocks', 1)[1]
+        phase = ' '.join(phase.split())
+        for contract in ('latest trusted failure', '`origin/<base>`', 'Rerun',
+                         'on the new base SHA', 'leave the PR and labels unchanged',
+                         'normal merge', 'never force-push', 'Read back the remote PR head',
+                         'evidence comment', 'replace `ai-blocked` with `ai-fix-needed`',
+                         'Read back the issue and labels', 'Worked example'):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, phase)
+        self.assertLess(phase.index('Rerun'), phase.index('normal merge'))
+        self.assertLess(phase.index('Read back the remote PR head'),
+                        phase.index('replace `ai-blocked` with `ai-fix-needed`'))
+
     def test_service_boundary_preserves_pauses_jobs_and_evidence(self):
         text = (ROOT / 'skills/unblock/references/services.md').read_text()
         for contract in ('deliberate-stop', 'pending service jobs',
