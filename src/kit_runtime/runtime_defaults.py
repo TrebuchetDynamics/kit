@@ -1,4 +1,5 @@
 """Apply bundle policy and command visibility in Hermes' bound profile."""
+import os
 from pathlib import Path
 PLUGIN = 'kit'
 BUNDLE_SKILLS = _KIT_LAYOUT.root / 'skills'
@@ -76,8 +77,17 @@ class MissingPyYAML(ValueError):
             '(python3 -m pip install --user PyYAML, or the distribution python3-yaml package) and retry')
 
 
-def setup_profile_policy(config_path):
-    """Read-only policy/values shared by setup and preflight; never boot Hermes."""
+def _setting_matches(raw, path, wanted):
+    actual = raw
+    for key in path.split('.'):
+        if not isinstance(actual, dict) or key not in actual:
+            return False
+        actual = actual[key]
+    return type(actual) is type(wanted) and actual == wanted
+
+
+def setup_profile_policy(config_path, *, changes_only=False):
+    """Read policy and optionally omit settings already on disk; never boot Hermes."""
     try:
         text = Path(config_path).read_text(encoding='utf-8')
     except FileNotFoundError:
@@ -108,6 +118,9 @@ def setup_profile_policy(config_path):
         ('approvals.mcp_reload_confirm', 'mcp_reload_confirm'),
         ('agent.max_turns', 'max_turns'),
         ('skills.platform_disabled', 'skills_platform_disabled'))}
+    if changes_only:
+        settings = {path: value for path, value in settings.items()
+                    if not _setting_matches(raw, path, value)}
     return {'policy': runtime_policy(raw), 'settings': settings}
 
 
@@ -210,4 +223,12 @@ def verify_runtime_defaults():
     is checked only for the bundle's menu entries."""
     from hermes_cli.config import read_raw_config
     raw = read_raw_config() or {}
-    return settings_drift(raw, opted_out_settings(raw) if _opted_out(raw) else expected_settings(raw))
+    if _opted_out(raw):
+        return settings_drift(raw, opted_out_settings(raw))
+    drift = settings_drift(raw, expected_settings(raw))
+    # Explicit setup owns this setting; ordinary update/finalize does not apply it.
+    if os.environ.get('KIT_VERIFY_SETUP_POLICY') == '1':
+        path = 'skills.platform_disabled'
+        if not _setting_matches(raw, path, policy_values(raw)['skills_platform_disabled']):
+            drift.append(path)
+    return drift

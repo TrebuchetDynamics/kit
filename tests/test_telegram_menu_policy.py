@@ -182,6 +182,18 @@ class RuntimePolicyOptOutTests(unittest.TestCase):
         self.assertNotIn('approvals.mode', self.rd.verify_runtime_defaults())
 
 
+    def test_setup_readback_requires_the_exact_platform_disabled_mapping(self):
+        import os
+        from unittest.mock import patch
+        self.raw.update(self.rd.expected_settings(self.raw))
+        self.assertEqual(self.rd.verify_runtime_defaults(), [])  # updater does not apply setup-only settings
+        with patch.dict(os.environ, {'KIT_VERIFY_SETUP_POLICY': '1'}):
+            self.assertEqual(self.rd.verify_runtime_defaults(), ['skills.platform_disabled'])
+            self.raw['skills'] = {'platform_disabled': {'telegram': ['custom']}}
+            self.assertEqual(self.rd.verify_runtime_defaults(), ['skills.platform_disabled'])
+            self.raw['skills']['platform_disabled'] = {}
+            self.assertEqual(self.rd.verify_runtime_defaults(), [])
+
     def test_an_opted_out_profile_gets_new_menu_commands_and_keeps_its_own_settings(self):
         """Every profile had opted out, so menu retirement must still reach the profile."""
         import sys
