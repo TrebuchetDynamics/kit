@@ -2,7 +2,7 @@
 """Orbi repository lifecycle controls, read-only host inventory and local user template maintenance.
 
 `python3 -B orbi_control.py [status|version|setup|start|update|stop|prune|help] [all] [--repo-dir PATH]
-[--config PATH] [--dry-run] [--wait] [--apply] [--json] [--verbose] [--work]`
+[--config PATH] [--dry-run] [--wait] [--wait-minutes MINUTES] [--apply] [--json] [--verbose] [--work]`
 `python3 -B orbi_control.py set DEPLOYMENT {slots N | model PROVIDER/MODEL [THINKING]} [--json]`
 
 - `status` (the default) is read-only: local reads, read-only `orbi doctor`
@@ -24,6 +24,8 @@
   the resolved commit as `sha:<commit>` and validates non-activating. It starts
   scheduling after validation, even after an earlier `stop`, unless `--stop`
   was requested. It never selects a provider or harness.
+- `update all` discovers local deployments, drains without stopping workers, and
+  preserves verified scheduling after an update or drain timeout.
 - `set` drains like `update --wait` and applies a backed-up config change without moving the engine pin.
 - `stop` quiesces the same owned units under lock and reports `stopped` only
   after idle readback. Neither action kills or restarts a worker directly.
@@ -38,6 +40,7 @@ stderr. Minimum compatible Python: 3.11 (stdlib only, `tomllib` included).
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import contextlib
 import dataclasses
 from datetime import datetime, timezone
@@ -2664,10 +2667,16 @@ def run_upstream_step(ctx, target, command, *args, timeout=CHECK_TIMEOUT, curren
             # The engine can install/activate timers before subsequent setup checks.
             # Classify its fixed reason prefixes; never echo child stderr or checkout paths.
             setup_steps = {
+                'required path missing:': 'load_config',
+                'config_not_found': 'load_config',
+                '--repo must be one of:': 'select_repo',
                 'required command missing:': 'check_commands',
+                'systemd user session unavailable': 'check_commands',
                 'gh auth status failed': 'check_auth',
                 'repo not accessible:': 'check_repo',
                 'insufficient permission for': 'check_repo',
+                'installation token cannot manage labels in': 'check_repo',
+                'installation token label probe cleanup failed for': 'check_repo',
                 'cannot parse gh repo view output': 'check_repo',
                 'label alignment failed': 'align_labels',
                 'cannot parse gh label list output': 'align_labels',
@@ -2955,8 +2964,11 @@ def owned_timers(snapshot):
             if item['installed'] and item['owned']]
 
 
-def disable_owned_timers(ctx, target, snapshot, disabled, steps, current):
+def disable_owned_timers(ctx, target, snapshot, disabled, steps, current, *, scheduled_only=False):
     for timer in owned_timers(snapshot):
+        item = snapshot['timers'][timer]
+        if scheduled_only and not item['enabled'] and item['active'] in INACTIVE_STATES:
+            continue
         current.clear()
         current.update(step='verify_timer_ownership', unit=timer, mutation='none')
         require_quiesce_unit(ctx, target, timer)
@@ -2965,7 +2977,7 @@ def disable_owned_timers(ctx, target, snapshot, disabled, steps, current):
         # Do not reload between verifying the loaded timer and --now stopping it.
         ctx.run(['systemctl', '--user', 'disable', '--now', '--no-reload', timer],
                 timeout=MUTATION_TIMEOUT)
-        if snapshot['timers'][timer]['enabled']:
+        if item['enabled']:
             # A persistent disable does not remove runtime enablement links.
             enabled = ctx.run(['systemctl', '--user', 'is-enabled', timer], allow_failure=True)
             if enabled.returncode == 0 and enabled.stdout.strip() == 'enabled-runtime':
@@ -3340,7 +3352,7 @@ def wait_for_workers(ctx, target, snapshot, *, action='update', deadline=None):
             limit = 'the fleet drain deadline' if fleet else f'{UPDATE_WAIT_MINUTES} minutes'
             raise ControlError('update_busy',
                                f'{action.capitalize()} not applied: {finishing} still finishing after '
-                               f'{limit}. Scheduling remains paused.',
+                               f'{limit}.' + ('' if fleet else ' Scheduling remains paused.'),
                                fix=('wait for the remaining work to finish' if fleet else
                                     f'wait for the remaining work to finish before rerunning /orbi {action}'),
                                evidence={'scheduler': snapshot, 'pending_services': pending})
@@ -3356,7 +3368,7 @@ def wait_for_workers(ctx, target, snapshot, *, action='update', deadline=None):
 def quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current, *,
                    wait=False, action='update', deadline=None):
     """The caller holds the config lock and supplied fresh ownership evidence."""
-    disable_owned_timers(ctx, target, snapshot, disabled, steps, current)
+    disable_owned_timers(ctx, target, snapshot, disabled, steps, current, scheduled_only=deadline is not None)
     current.clear()
     current.update(step='verify_timers_disabled', mutation='none')
     known_indices = snapshot['inventory']['additional_instances']
@@ -3764,18 +3776,24 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
             if fleet:
                 preserve_scheduling(snapshot)
                 old = engine_summary(ctx, target, locked_source, include_bootstrap=False)
-                fleet_row.update(old_version=old['version'], old_revision=old['revision'])
-                previous = {'track': target.pin, 'head': checkout_head(ctx, target)}
+                previous = {'track': target.pin, 'head': locked_source.get('head') or checkout_head(ctx, target)}
+                fleet_row.update(old_version=old['version'], old_revision=previous['head'])
                 resume = '/orbi update' + bound_selectors + (' --stop' if args.stop else '') + ' --wait'
             known_indices = snapshot['inventory']['additional_instances'] if setting or fleet else ()
             ctx.lifecycle_home = target.deploy_home
             activation = 'held' if args.stop else 'pending'
             activation_reason = 'explicit --stop' if args.stop else 'maintenance scheduling request'
+            pending = None
             if (not start or update_pending(snapshot)
                     or any(item['enabled'] or item['active'] not in INACTIVE_STATES
                            for item in snapshot['timers'].values())):
-                quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current,
-                               wait=args.wait, action=action, deadline=deadline)
+                try:
+                    quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current,
+                                   wait=args.wait, action=action, deadline=deadline)
+                except ControlError as error:
+                    if not fleet or error.code != 'update_busy' or current['step'] != 'wait_for_workers':
+                        raise
+                    pending = error
             current = {'step': 'recheck_target', 'mutation': 'none'}
             if (repo_identity(ctx, repo.path) != repo
                     or select_target(ctx, repo, args.config, require=True) != target
@@ -3786,6 +3804,34 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
             require_unit_ownership(ctx, target, symlink_error=symlink_error)
             require_source(ctx, target)
             require_clean_checkout(ctx, target)
+            if pending is not None:
+                # No source or config was changed by this update. Restore only the
+                # previously running timers, not setup or an immediate worker tick.
+                if not args.stop:
+                    if checkout_head(ctx, target) != previous['head']:
+                        raise ControlError('target_changed', 'engine checkout changed while waiting for workers',
+                                           fix='verify the engine and restore scheduling deliberately')
+                    activation = 'possible'
+                    for timer in disabled:
+                        current = {'step': 'restore_timer', 'unit': timer, 'mutation': 'none'}
+                        require_quiesce_unit(ctx, target, timer)
+                        current['mutation'] = 'possible'
+                        ctx.run(['systemctl', '--user', 'enable', '--now', '--no-reload', timer],
+                                timeout=MUTATION_TIMEOUT)
+                        steps.append({'step': 'restore_timer', 'unit': timer, 'status': 'restored'})
+                    current = {'step': 'verify_restored_scheduling', 'mutation': 'none'}
+                    after = update_observation(ctx, target, known_indices=known_indices)
+                    if fleet_scheduling(target, after) != 'running':
+                        raise ControlError('activation_unverified', 'could not verify restored timer scheduling',
+                                           fix='inspect the timers before restoring scheduling deliberately',
+                                           evidence={'scheduler': after})
+                    activation = 'started'
+                    pending.message += ' Original scheduling was restored.'
+                    pending.evidence['scheduler'] = after
+                else:
+                    pending.message += ' Scheduling remains stopped.'
+                current = {'step': 'wait_for_workers', 'mutation': 'none'}
+                raise pending
             require_quiescent(ctx, target, known_indices=known_indices)
             steps.append({'step': 'recheck_target', 'status': 'ok'})
 
@@ -4382,7 +4428,7 @@ def host_configs(ctx, paths, coverage):
     return deployments
 
 
-def host_linux(ctx, coverage):
+def host_linux(ctx, coverage, *, bindings=None):
     records, paths, worker_bindings = [], host_config_paths(ctx, coverage), {}
     for manager in ('user', 'system'):
         flag = '--' + manager
@@ -4593,14 +4639,18 @@ def host_linux(ctx, coverage):
                           'enabled': details[n].get('UnitFileState', 'unknown'),
                           'next_trigger': details[n].get('NextElapseUSecRealtime') or None}
                       for n in members if n.endswith('.timer')}
-            records.append({'manager': manager, 'unit': unit, 'timer': timer, 'timers': timers, 'kind': kind,
-                            'state': observed_state,
-                            'loaded': is_loaded, 'installed': any(n in installed or n in definitions for n in members),
-                            'scheduler': state, 'timer_state': timer_state,
-                            'timer_enabled': timer_values.get('UnitFileState', 'unknown'),
-                            'next_trigger': timer_values.get('NextElapseUSecRealtime') or None,
-                            'binding': {'state': binding, 'config': refs[0] if binding == 'verified' else None},
-                            'worker': worker})
+            record = {'manager': manager, 'unit': unit, 'timer': timer, 'timers': timers, 'kind': kind,
+                      'state': observed_state,
+                      'loaded': is_loaded, 'installed': any(n in installed or n in definitions for n in members),
+                      'scheduler': state, 'timer_state': timer_state,
+                      'timer_enabled': timer_values.get('UnitFileState', 'unknown'),
+                      'next_trigger': timer_values.get('NextElapseUSecRealtime') or None,
+                      'binding': {'state': binding, 'config': refs[0] if binding == 'verified' else None},
+                      'worker': worker}
+            records.append(record)
+            if bindings is not None:
+                for config in refs:
+                    bindings.setdefault(config, []).append(record)
     return records, paths, worker_bindings
 
 
@@ -6002,15 +6052,13 @@ def host_coverage():
 
 def command_update_all(ctx, args):
     coverage = host_coverage()
-    units, paths, _ = host_linux(ctx, coverage)
+    bindings = {}
+    _, paths, _ = host_linux(ctx, coverage, bindings=bindings)
     deployments = host_configs(ctx, paths, coverage)
+    checkout_owners = Counter(item['target'].deploy_home for item in deployments.values() if 'target' in item)
     release = official_latest_release(ctx) if deployments and not args.dry_run else None
     wait_minutes = args.wait_minutes if args.wait_minutes is not None else FLEET_UPDATE_WAIT_MINUTES
     deadline = time.monotonic() + wait_minutes * 60
-    bindings = {}
-    for unit in units:
-        if config := unit['binding']['config']:
-            bindings.setdefault(config, []).append(unit)
     results = []
     for config, item in deployments.items():
         target = item.get('target')
@@ -6027,7 +6075,10 @@ def command_update_all(ctx, args):
             if target is None or target.repo_dir is None:
                 raise ControlError('config_invalid', 'cannot bind this config to a repo_dir',
                                    fix='verify the native config and its canonical repo_dir before updating')
-            if any(unit['manager'] != 'user' or not re.fullmatch(
+            if checkout_owners[target.deploy_home] > 1:
+                raise ControlError('config_conflict', 'multiple configs share this deployment engine checkout',
+                                   fix='verify that each config has its own deploy_home before updating')
+            if any(unit['manager'] != 'user' or unit['binding']['state'] != 'verified' or not re.fullmatch(
                     re.escape(target.prefix) + r'@(?:[1-9][0-9]*)?\.service', unit['unit'])
                    or any(timer != unit['unit'].removesuffix('.service') + '.timer'
                           for timer in unit['timers'])
@@ -6056,7 +6107,7 @@ def command_update_all(ctx, args):
             try:
                 after = local_deployment_summary(child, deployment_from(target.config_path), metadata_only=True)['engine']
                 version = after['version']
-                revision = after['revision']
+                revision = after['revision'] or (row['old_revision'] if row['status'] == 'pending' else None)
                 verified_revision = revision if after['state'] == 'verified' else None
             except (ControlError, OSError, UnicodeError, subprocess.SubprocessError):
                 version = revision = verified_revision = None
@@ -6277,6 +6328,8 @@ def command_help(ctx, args):
              'outcome': 'Preview timer disable, queued-start cancellation, worker stop, release update and conditional scheduling; no writes or lock.'},
             {'command': '/orbi update --config /path/to/orbi.toml --wait',
              'outcome': 'Use the configured checkout from any directory and wait for workers to finish before syncing.'},
+            {'command': '/orbi update all --dry-run',
+             'outcome': 'Preview a fleet update without writes or waiting; omit --dry-run to apply and preserve scheduling.'},
             {'command': '/orbi set my-repo slots 1',
              'outcome': 'Wait for workers, back up the config and apply one slot without changing the engine pin.'},
             {'command': '/orbi set my-repo model PUBLISHED_PROVIDER_ID/PUBLISHED_MODEL_ID high',
@@ -6436,7 +6489,7 @@ ACTIONS = {
                 'release as sha:<commit> after fresh idle evidence. Plain update authorizes starting configured scheduling '
                 'after engine validation, even after an earlier stop. Explicit --stop leaves stopped. '
                 'Literal update all discovers local configs, waits without stopping workers, and restores '
-                'verified running/stopped scheduling on successful updates. No repo/config selectors. '
+                'verified running/stopped scheduling after success or a drain timeout. No repo/config selectors. '
                 'No direct kill, restart or background continuation.',
     },
     'set': {
@@ -6671,7 +6724,7 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             render_help(ctx, document, args.json)
         else:
             render(ctx, document, args.json, verbose=args.verbose)
-        return 1 if fleet_update and document['status'] == 'incomplete' else 0
+        return 1 if fleet_update and document.get('status') == 'incomplete' else 0
     except ControlError as exc:
         record_lifecycle(ctx, ctx.lifecycle_home, args, exc.code)
         if args.action in ('setup', 'start') and 'steps' not in exc.evidence:

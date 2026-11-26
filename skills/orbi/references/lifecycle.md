@@ -211,9 +211,10 @@ The receipt lists each config's old and new verified version (or observed
 revision when available), scheduling before and after, and remaining drift
 against the selected official release revision. A nonzero `incomplete` receipt
 lists failures, discovery gaps or deployments still `pending`. A pending
-deployment was not updated and remains paused; when work finishes, use its
-bound `repair_command`. Do not blindly repeat `update all`: after a timeout it
-would see the previously running deployment as paused, not as running.
+deployment was not updated: its original scheduling is restored without running
+setup or issuing a worker start. When work finishes, use its bound `repair_command`.
+If restoration or another update step fails, inspect the reported step and
+scheduling state before recovering; failed validation never authorizes activation.
 
 ### Release synchronization
 

@@ -1,6 +1,6 @@
 ---
 name: orbi
-description: "Prepare, update, start, inspect or stop local Orbi deployments."
+description: "Inspect and manage local Orbi deployments."
 disable-model-invocation: true
 ---
 

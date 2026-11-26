@@ -5002,14 +5002,16 @@ class HostStatusTests(unittest.TestCase):
         self.assertTrue(any(r['unit'] == 'orbi@21.service' for r in doc['rows']))
         self.assertNotIn('do not echo', json.dumps(doc))
 
-    def test_help_advertises_literal_host_mode_and_rejects_all_on_mutations(self):
+    def test_help_advertises_literal_host_modes_and_rejects_all_on_other_actions(self):
         out = io.StringIO()
         helper.main(['help', '--json'], stdout=out)
         help_doc = json.loads(out.getvalue())
         self.assertTrue(any(e['command'] == '/orbi status all --json' for e in help_doc['examples']))
         self.assertIn('status all', help_doc['actions']['status']['effect'])
         self.assertEqual(help_doc['options']['--work']['applies_to'], ['status'])
-        for action in ('setup', 'start', 'stop', 'update'):
+        self.assertTrue(any(e['command'] == '/orbi update all --dry-run' for e in help_doc['examples']))
+        self.assertEqual(help_doc['options']['--wait-minutes']['applies_to'], ['update'])
+        for action in ('setup', 'start', 'stop', 'version', 'prune', 'help'):
             with self.subTest(action=action):
                 out = io.StringIO()
                 code = helper.main([action, 'all', '--json'], stdout=out, env=self.h.env)
@@ -6485,6 +6487,40 @@ class FleetUpdateTests(unittest.TestCase):
                     self.assertEqual(code, 2, out.getvalue())
                     self.assertFalse(h.calls())
 
+    def test_update_all_refuses_ambiguous_unit_bindings_and_shared_engine_checkouts(self):
+        for shared_engine in (False, True):
+            with self.subTest(shared_engine=shared_engine), tempfile.TemporaryDirectory() as root:
+                h = Harness(Path(root))
+                a = h.add_deployment_a()
+                other = h.data_home / 'another' / 'orbi.toml'
+                other.parent.mkdir()
+                config_text = a['config'].read_text().replace('other/repo-a', 'other/repo-b')
+                if not shared_engine:
+                    config_text = config_text.replace(str(a['deploy']), str(other.parent))
+                other.write_text(config_text)
+                rules = [*HostStatusTests.lists(self, '--user'), SchedulingUpdateTests.latest_release]
+                if shared_engine:
+                    rules.extend(HostStatusTests.lists(self, '--system'))
+                else:
+                    # Neither observed config is safe to update underneath this live worker.
+                    unit = 'orbi-shared.service'
+                    fragment = h.root / unit
+                    fragment.write_text(f'[Service]\nEnvironment="ORBI_CONFIG={a["config"]}"\n'
+                                        f'Environment="ORBI_CONFIG={other}"\n')
+                    rules.extend(HostStatusTests.lists(self, '--system', [HostStatusTests.unit(self, unit, 'active')]))
+                    rules.append(HostStatusTests.detail(self, '--system', unit, FragmentPath=fragment))
+                h.rules(*rules)
+                out = io.StringIO()
+                code = helper.main(['update', 'all', '--json'], cwd=h.root, env=h.env,
+                                   platform='linux', stdout=out)
+                doc = json.loads(out.getvalue())
+                self.assertEqual(code, 1, doc)
+                self.assertEqual({row['config'] for row in doc['deployments']}, {str(a['config']), str(other)})
+                for row in doc['deployments']:
+                    self.assertEqual(row['error']['code'], 'config_conflict' if shared_engine else 'unit_conflict')
+                    self.assertFalse(row['error']['mutated'])
+                self.assertFalse([call for call in h.calls() if call['tool'] == 'orbi'])
+
     def test_update_all_from_unrelated_directory_preserves_scheduling_and_reports_pending(self):
         with tempfile.TemporaryDirectory() as root:
             h = Harness(Path(root))
@@ -6606,12 +6642,13 @@ class FleetUpdateTests(unittest.TestCase):
                 self.assertEqual(row['old_version'], '0.7.41')
                 self.assertEqual(row['new_version'], '0.7.41' if index == 3 else '0.7.42')
                 self.assertEqual(row['scheduling_before'], 'stopped' if index == 1 else 'running')
-                self.assertEqual(row['scheduling_after'], 'stopped' if index in {1, 3} else 'running')
+                self.assertEqual(row['scheduling_after'], 'stopped' if index == 1 else 'running')
                 self.assertEqual(row['status'], 'pending' if index == 3 else 'updated')
                 self.assertEqual(row['version_drift'], 'remaining' if index == 3 else 'none')
             pending = doc['deployments'][-1]
             self.assertEqual(pending['error']['code'], 'update_busy')
-            self.assertIn('Scheduling remains paused', pending['error']['message'])
+            self.assertIn('Original scheduling was restored', pending['error']['message'])
+            self.assertEqual([job['unit'] for job in pending['pending_services']], ['orbi-3-busy@1.service'])
             repo, config = expected['3-busy']
             self.assertEqual(shlex.split(pending['repair_command']), ['/orbi', 'update', '--repo-dir',
                              str(repo), '--config', str(config), '--wait'])
@@ -6624,7 +6661,12 @@ class FleetUpdateTests(unittest.TestCase):
                         and str(config) in c['argv']]
                 self.assertEqual([c['cwd'] for c in sync], [] if name == '3-busy' else [str(repo)])
             self.assertFalse([c for c in calls if c['tool'] == 'systemctl'
-                              and 'enable' in c['argv'] and 'orbi-1-stopped@1.timer' in c['argv']])
+                              and set(c['argv']) & {'enable', 'disable'} and 'orbi-1-stopped@1.timer' in c['argv']])
+            busy_mutations = [c for c in calls if c['tool'] == 'systemctl'
+                              and set(c['argv']) & {'enable', 'disable'} and 'orbi-3-busy@1.timer' in c['argv']]
+            self.assertEqual([c['argv'][1] for c in busy_mutations], ['disable', 'enable'])
+            self.assertFalse([c for c in calls if c['tool'] == 'orbi'
+                              and c['argv'][0] in {'setup', 'install-units'} and str(config) in c['argv']])
 
 
 class SchedulingUpdateTests(unittest.TestCase):

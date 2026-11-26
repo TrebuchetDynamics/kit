@@ -73,8 +73,8 @@ concrete unmet need, not a fixed sequence of model turns.
    `--repo-dir`, `--config`, `--stop` or `--wait`. The helper discovers the same
    local configs as `status all` and uses each config's own checkout. It lets
    workers finish without stopping them and restores verified running or stopped
-   scheduling after each successful update. The shared drain budget is 120 minutes
-   unless `--wait-minutes MINUTES` is supplied. Relay each deployment's version,
+   scheduling after a successful update or a drain timeout. The shared drain budget
+   is 120 minutes unless `--wait-minutes MINUTES` is supplied. Relay each deployment's version,
    scheduling and drift, including pending rows and their bound repair commands.
    See [fleet update recovery](references/lifecycle.md#fleet-update).
    **Prune:** forward `prune [--apply] [--json]` without repo/config selectors.
@@ -92,7 +92,8 @@ concrete unmet need, not a fixed sequence of model turns.
    (the Runner's one-tick entry), guess a typo alias or silently select an action.
 2. **Authorize.** Preserve read-only/no-write restrictions and literal `--dry-run`.
    Explicit `/orbi start`, plain `/orbi update`, and `install.sh` with Orbi selected
-   authorize activation. Require verified unit and file ownership, a validated
+   authorize activation; `update all` only restores previously running scheduling.
+   Require verified unit and file ownership, a validated
    release pin and a passing `orbi check`; do not ask for a cutover record or
    separate approval. Public `setup` has the same authority as `start` because it
    maps to it. `setup --prepare-only` and dry-run never activate.
@@ -152,8 +153,8 @@ concrete unmet need, not a fixed sequence of model turns.
    is not worker completion or live delivery. Never retry the timer or configure later slots.
    Exit success is not live qualification; harness resolution is not running-worker evidence.
    Never expose credentials, auth files, environment values or raw child stderr.
-   On failure, stop and return the safe error and repair action. No blind retry,
-   implicit repair, compensating timer changes or worker stops. An unchanged
+   On failure, relay the helper's safe error and repair action. Do not retry blindly,
+   repair implicitly, change timers or stop workers outside the helper. An unchanged
    timeout is not retryable; killed processes have no receipt.
 
 ## Change slots or model
