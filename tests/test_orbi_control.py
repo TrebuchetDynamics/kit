@@ -4046,6 +4046,40 @@ class InstallerFleetTests(unittest.TestCase):
                     with self.assertRaises(helper.ControlError):
                         call()
 
+    def test_recheck_ignores_unrelated_jobs_and_oneshot_worker_activity_only(self):
+        user = helper.FleetManager('user', ('--user',), os.getuid(), self.h.home)
+        system = helper.FleetManager('system', ('--system',), 0, Path('/root'))
+        config = self.h.root / 'orbi.toml'
+
+        def unit(manager, name, active='inactive', service_type='oneshot', triggers=''):
+            return helper.FleetUnit(manager, name, config, ('binding',), active, 'static', triggers,
+                                    service_type=service_type)
+
+        plan = (unit(user, 'w@1.service'), unit(user, 'w@1.timer', 'active', '', 'w@1.service'),
+                unit(user, 'p.service', 'active', 'simple'), unit(system, 's@1.service'))
+        targets = {config: object()}
+        jobs = {user: {}, system: {}}
+        key = helper.fleet_recheck_key(plan, targets, jobs)
+        same = (
+            # The oneshot worker's own timer started it; unrelated units queued jobs.
+            ((unit(user, 'w@1.service', 'activating'), *plan[1:]),
+             {user: {'7': ('w@1.service', 'start'), '8': ('observer.service', 'start')},
+              system: {'9': ('watchdog.service', 'start')}}),
+        )
+        for units, live_jobs in same:
+            self.assertEqual(helper.fleet_recheck_key(units, targets, live_jobs), key)
+        changed = (
+            ((*plan[:1], unit(user, 'w@1.timer', 'inactive', '', 'w@1.service'), *plan[2:]), jobs),
+            ((*plan[:2], unit(user, 'p.service', 'inactive', 'simple'), plan[3]), jobs),
+            (plan, {user: {}, system: {'9': ('s@1.service', 'start')}}),
+            ((*plan[:3], helper.FleetUnit(system, 's@1.service', config, ('other',), 'inactive', 'static',
+                                         service_type='oneshot')), jobs),
+            (plan[:3], jobs),
+        )
+        for units, live_jobs in changed:
+            with self.subTest(units=[u.name for u in units], jobs=live_jobs):
+                self.assertNotEqual(helper.fleet_recheck_key(units, targets, live_jobs), key)
+
     def test_preflight_accepts_official_origin_after_ssh_insteadof_rewrite(self):
         target = mock.Mock(source_repos=['example/repo'], repo_dir=None, deploy_home=self.h.root,
                            config_path=self.h.root / 'orbi.toml')

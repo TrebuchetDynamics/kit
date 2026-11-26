@@ -4495,6 +4495,26 @@ def fleet_inventory(ctx, managers, *, known_units=()):
     return tuple(units), targets, jobs
 
 
+def fleet_recheck_key(units, targets, jobs):
+    """What must not change between the frozen plan and the first stop.
+
+    The stop phase re-reads live jobs and worker states, and cancels or stops
+    only Orbi units. Unrelated units' jobs and a oneshot worker started by its
+    own timer are therefore not plan changes. Activity of timers and persistent
+    services decides what is restored, and system-manager Orbi jobs decide the
+    cancel permission checked before the plan, so those stay compared.
+    """
+    names = {(unit.manager, unit.name) for unit in units}
+    return (
+        tuple(dataclasses.replace(unit, active='') if unit.service_type == 'oneshot' and not unit.triggers else unit
+              for unit in units),
+        targets,
+        {manager: {job: entry for job, entry in pending.items()
+                   if manager.name == 'system' and (manager, entry[0]) in names}
+         for manager, pending in jobs.items()},
+    )
+
+
 def fleet_check_permissions(ctx, units, jobs):
     user_timers = [unit for unit in units if unit.manager.flags == ('--user',) and unit.triggers]
     if user_timers:
@@ -4729,7 +4749,8 @@ def installer_fleet(ctx, *, report_progress=None):
                 current = {'step': 'preflight_deployment', 'config': str(config)}
                 before[config] = fleet_preflight_target(ctx, target)
             current = {}
-            if fleet_managers(ctx) != manager_coverage or fleet_inventory(ctx, managers) != (units, targets, jobs):
+            if (fleet_managers(ctx) != manager_coverage
+                    or fleet_recheck_key(*fleet_inventory(ctx, managers)) != fleet_recheck_key(units, targets, jobs)):
                 fleet_refuse('fleet inventory or jobs changed after preflight')
             for config, target in targets.items():
                 if (setup_file_identities(target) != before[config][0]
