@@ -3,6 +3,7 @@
 Never load Hermes plugins: discovery can apply runtime policy to live profiles.
 """
 import ast
+from itertools import chain
 import json
 import os
 from pathlib import Path
@@ -57,6 +58,11 @@ def selected_source():
     return None
 
 
+def _plugin_functions(path):
+    return (node for node in ast.walk(ast.parse(path.read_text()))
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)))
+
+
 def runtime_check(repo, root, profiles, bundle_only):
     """Find Hermes source/interpreter without invoking its stateful CLI."""
     roots = list(dict.fromkeys([root, Path.home() / '.hermes']))
@@ -68,15 +74,23 @@ def runtime_check(repo, root, profiles, bundle_only):
         return ['Cannot resolve source for Hermes selected on PATH; compatibility unverified']
     errors = []
     try:
-        tree = ast.parse((source / 'hermes_cli/plugins.py').read_text())
-        methods = {n.name: n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
-        inject = methods.get('inject_message')
-        if inject is None or 'origin' not in {a.arg for a in [*inject.args.args, *inject.args.kwonlyargs]}:
+        plugins = source / 'hermes_cli/plugins.py'
+        methods = list(_plugin_functions(plugins))
+        split_methods = (
+            node for path in plugins.parent.glob('plugins*.py')
+            if path != plugins and path.is_file()
+            for node in _plugin_functions(path)
+        )
+        if not any(
+            n.name == 'inject_message'
+            and any(a.arg == 'origin' for a in (*n.args.args, *n.args.kwonlyargs))
+            for n in chain(methods, split_methods)
+        ):
             errors.append('Hermes lacks inject_message(origin=...) support')
-        content = source / 'hermes_cli/plugins_content.py'
-        if 'register_skill' not in methods and not (content.is_file() and any(
+        content = plugins.with_name('plugins_content.py')
+        if not any(n.name == 'register_skill' for n in methods) and not (content.is_file() and any(
                 isinstance(n, ast.FunctionDef) and n.name == 'register_skill'
-                for n in ast.walk(ast.parse(content.read_text())))):
+                for n in _plugin_functions(content))):
             errors.append('Hermes lacks register_skill support')
         candidates = [source / '.venv/bin/python']
         for r in roots:
