@@ -10,9 +10,9 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md),
 [communication rules](../shared/COMMUNICATION.md) and
 [GitHub handoff](../shared/PLAN-HANDOFF.md).
 
-`/unblock [repo|all]` diagnoses the current repository by default. `all` must
-name an explicit set of repositories; it is not permission to discover or operate
-an entire host fleet. Editing this skill does not invoke recovery.
+`/unblock [repo|all]` diagnoses the current repository by default. `all` means
+only the repositories in local Orbi deployment configs.
+Editing this skill does not invoke recovery.
 
 GitHub Issues and Orbi are the only executable backlog and delivery executor.
 Preserve existing tasks, worktrees, attempts and
@@ -83,8 +83,11 @@ on the revised requirement. A comment or label alone is not evidence of resumpti
 
 ## Recover, verify, continue
 
-1. **Bind and inventory.** Read GitHub Issues, native dependencies, linked PRs,
-   CI/review results and actual ownership. Use read-only `orbi status` and
+1. **Bind and inventory.** For `all`, first run `python3 -B <this-skill>/scripts/inventory.py --json`
+   with `<this-skill>` set to this skill's directory. Use `repositories` as the scope;
+   report [inventory gaps](references/inventory.md) without widening discovery.
+   Then read GitHub Issues, native dependencies, linked PRs, CI/review results
+   and actual ownership. Use read-only `orbi status` and
    `orbi doctor` with the target's configuration if installed. A failed read is
    unavailable evidence, not an empty queue. Include every unresolved decision,
    not only the dashboard's displayed questions. For open PRs, follow

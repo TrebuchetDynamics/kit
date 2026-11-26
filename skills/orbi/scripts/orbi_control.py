@@ -5909,7 +5909,8 @@ def host_work_count(ctx, repo):
     return None
 
 
-def command_status_all(ctx, *, work):
+def host_status_snapshot(ctx):
+    """Share local deployment and worker evidence without GitHub reads."""
     coverage = {'state': 'ok', 'managers': {}, 'problems': [],
                 'scope': 'observed local managers only; other users, namespaces, containers and remote hosts unobserved'}
     worker_bindings = {}
@@ -5952,7 +5953,13 @@ def command_status_all(ctx, *, work):
                 'totals': {'observed_workers': sum(r['kind'] == 'runner' and r['loaded'] is True for r in rows),
                            'observed_running_services': sum(r['kind'] == 'runner' and r['scheduler'] in ACTIVE_STATES for r in rows),
                            'discoverable_configs': len(deployments)}, 'rows': rows}
+    return document, deployments
+
+
+def command_status_all(ctx, *, work):
+    document, deployments = host_status_snapshot(ctx)
     if work:
+        rows = document['rows']
         repos = sorted({repo for item in deployments.values() for repo in item.get('repos', [])})
         # GitHub repo names are case-insensitive; retain the config spelling in the receipt.
         repo_counts = {repo: host_work_count(ctx, repo) for repo in sorted({repo.lower() for repo in repos})}
