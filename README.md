@@ -314,6 +314,11 @@ the same stash after newer stashes are added. Kit never applies or removes the s
 even after success. If edits were stashed or HEAD advanced, the on-disk installer is
 re-executed once before installing.
 
+If a dirty checkout's Git common directory records another interactive writer
+that is not confirmed dead, the installer names the session and stops without
+stashing or installing. Wait for the session to finish, have the holder commit
+the edits, or retry with `--no-pull`.
+
 A Git checkout without a usable upstream, or a status/stash/pull failure (including
 diverged history), stops before any component install or service restart. Resolve
 the reported Git error or configure the tracking branch, then retry; any created

@@ -15,8 +15,9 @@ refresh them, and differ only in the report wording. Both first bring this check
 up to date (`git pull --ff-only` of its upstream) and then run the on-disk installer.
 Local staged, unstaged and non-ignored untracked changes are stashed first and kept
 for manual recovery; the stash ID and restore command are always printed, even in
-quiet mode. A missing upstream or status/stash/pull failure aborts before installing
-or restarting services. Unpacked non-Git releases remain supported. --no-pull or
+quiet mode. A live interactive writer record blocks stashing and installation.
+A missing upstream or status/stash/pull failure also aborts before installing or
+restarting services. Unpacked non-Git releases remain supported. --no-pull or
 KIT_INSTALL_NO_PULL bypasses stashing and pulling; --help, --list and --dry-run do neither.
 
 Each host item runs its own supported install command; a host whose CLI is not
@@ -2300,6 +2301,20 @@ def pull_checkout(root, write=print, run=subprocess.run, before_change=None):
     before = read('rev-parse', '--verify', 'HEAD')
     stashed = False
     dirty = read('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none')
+    if dirty:
+        # Import without creating a cache file in the checkout we're inspecting.
+        previous_bytecode = sys.dont_write_bytecode
+        try:
+            sys.dont_write_bytecode = True
+            import checkout_lock
+        finally:
+            sys.dont_write_bytecode = previous_bytecode
+        common = read('rev-parse', '--path-format=absolute', '--git-common-dir')
+        writer = checkout_lock.read(common)
+        if writer and writer.get('pid') != os.getpid() and not checkout_lock.dead_owner(writer):
+            raise RuntimeError(f'cannot stash local edits: interactive writer session {writer["session"]!r} '
+                               'holds the checkout; wait for the session to finish, have the holder commit '
+                               'the edits, or retry with --no-pull')
     if before_change:
         before_change()  # installed links may consume this checkout before stash/pull
     if dirty:
