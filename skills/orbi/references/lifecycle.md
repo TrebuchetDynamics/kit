@@ -26,10 +26,10 @@ names in the technical sections below refer to this direct interface, not public
 setup's default mapping.
 
 ```sh
-python3 -B <loaded-skill>/scripts/orbi_control.py [status|version|setup|start|update|stop|help] [all] \
+python3 -B <loaded-skill>/scripts/orbi_control.py [status|version|setup|start|update|stop|prune|help] [all] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
-  [--resume-setup] [--harness {pi-bolt,pi}] [--stop]
+  [--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--apply]
 ```
 
 - Omitted action means `status`. A bare `orbi` runs one Runner tick and is never
@@ -106,6 +106,25 @@ unavailable.
 - The initial supported source is the verified retention-capable pin
   `sha:ce97e015ca433a9312e5bdf69353be58ab394fd9`. Prepare-only setup never upgrades it;
   use `start` on an existing target or the deliberate `update` below to advance it.
+
+## Lifecycle history and stale templates
+
+`status` and `status all` show the latest available `last_lifecycle` entry for
+bound deployments. Kit keeps up to 200 JSON lines in `<deploy_home>/lifecycle.log`:
+UTC time, helper action and flag names (no argument values), host account and
+result. Previews, preflight refusals and no-op setup/start calls do not replace the latest
+entry. This is best-effort history for the Kit helper, not evidence of direct
+systemd, upstream CLI or installer actions. A failed write warns without changing
+the command result.
+
+On Linux, `/orbi prune [--apply] [--json]` needs no checkout or selectors. The
+preview lists owned user unit templates with an explicitly missing config or a
+config whose recorded `repo_dir` is missing. A different engine pin alone is not
+stale evidence. Loaded or installed instances, queued jobs and unverified
+bindings are kept. `--apply` rechecks before removing only the candidate unit
+files, then reloads the user manager. There is no instance to stop. Configs,
+worktrees and deploy-home data remain in place. If inventory is unavailable,
+restore the user systemd session before previewing again.
 
 ## Suite installer refresh
 

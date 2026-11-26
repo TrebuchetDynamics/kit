@@ -136,7 +136,7 @@ class GithubNativeDocsTests(unittest.TestCase):
     def test_lifecycle_skill_names_observed_states_and_platform_limits(self):
         lifecycle = compact(section(TEXT, "Kit lifecycle skill", level=3))
         for phrase in (
-                "`/orbi [status|version|setup|start|update|stop|help]`",
+                "`/orbi [status|version|setup|start|update|stop|prune|help]`",
                 "Bare invocation reads status",
                 "`setup --prepare-only` prepares without activating scheduling",
                 "On Linux, status names the state it observed",
@@ -156,7 +156,7 @@ class GithubNativeDocsTests(unittest.TestCase):
 
     def test_readme_lists_read_only_version_and_platforms(self):
         setup = compact(section((ROOT / 'README.md').read_text(), 'Using Orbi', level=3))
-        self.assertIn('`/orbi [status|version|setup|start|update|stop|help]`', setup)
+        self.assertIn('`/orbi [status|version|setup|start|update|stop|prune|help]`', setup)
         self.assertIn('| `version` | Read-only selected deployment engine release/revision', setup)
         self.assertIn('macOS supports status, version and help only', setup)
 
