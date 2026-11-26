@@ -124,6 +124,24 @@ sys.exit(0)
 '''
 
 
+@contextlib.contextmanager
+def root_owned(*paths):
+    """Report the given files as root-owned without changing them."""
+    original = Path.lstat
+    chosen = {Path(path) for path in paths}
+
+    def lstat(path, *args, **kwargs):
+        info = original(path, *args, **kwargs)
+        if Path(path) in chosen:
+            fields = list(info[:10])
+            fields[4] = 0
+            return os.stat_result(fields)
+        return info
+
+    with mock.patch.object(Path, 'lstat', lstat):
+        yield
+
+
 class Harness:
     def __init__(self, root):
         self.root = root
@@ -3094,6 +3112,30 @@ class LifecycleSequenceTests(unittest.TestCase):
                 self.assertFalse([c for c in h.calls() if c['tool'] == 'systemctl'
                                   and set(c['argv']) & {'stop', 'kill', 'restart', 'cancel'}])
 
+    def test_scoped_stop_check_accepts_only_benign_vendor_dropins(self):
+        h = self.fresh()
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        service = f'{prefix}@1.service'
+        vendor = h.root / 'vendor/service.d'
+        vendor.mkdir(parents=True)
+        benign = vendor / '10-timeout-abort.conf'
+        benign.write_text('# vendor\n[Service]\nTimeoutStopFailureMode=abort\n')
+        hostile = vendor / '20-override.conf'
+        hostile.write_text('[Service]\nEnvironment=ORBI_CONFIG=/elsewhere/orbi.toml\n')
+        for path in (benign, hostile):
+            path.chmod(0o644)
+        ctx = helper.Context(env=h.env, platform='linux')
+        target = helper.deployment_from(h.deploy / 'orbi.toml')
+        with mock.patch.object(helper, 'VENDOR_DROPIN_DIRS', (vendor,)), root_owned(benign, hostile):
+            h.rules(h.loaded_unit_rule(service, DropInPaths=str(benign)), *h.scheduler_rules())
+            helper.require_quiesce_unit(ctx, target, service)
+            for dropins in (str(hostile), f'{benign} {hostile}', '/foreign/override.conf'):
+                with self.subTest(dropins=dropins):
+                    h.rules(h.loaded_unit_rule(service, DropInPaths=dropins), *h.scheduler_rules())
+                    with self.assertRaises(helper.ControlError) as caught:
+                        helper.require_quiesce_unit(ctx, target, service)
+                    self.assertEqual(caught.exception.code, 'unit_conflict')
+
     def test_stop_refuses_inactive_worker_with_foreign_loaded_binding(self):
         h = self.fresh()
         prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
@@ -3906,6 +3948,133 @@ class InstallerFleetTests(unittest.TestCase):
         })
         self.assertTrue(all(call['argv'][2] in {'list-unit-files', 'list-units', 'list-jobs', 'show'}
                             for call in self.h.calls()))
+
+    def configured_inventory(self, *, unrelated=0, dropins=''):
+        """Two configured Orbi slots (four units) plus unrelated services."""
+        manager = helper.FleetManager('user', ('--user',), os.getuid(), self.h.home)
+        target = self.h.root / 'checkout'
+        target.mkdir(exist_ok=True)
+        config = target / 'orbi.toml'
+        config.write_text('source_repos = ["example/repo"]\nmax_concurrency = 2\n')
+        bootstrap = self.h.home / '.local/bin/orbi'
+        service = self.h.unit_dir / 'project-delivery@.service'
+        timer = self.h.unit_dir / 'project-schedule@.timer'
+        service.write_text(f'[Service]\nWorkingDirectory={target}\n'
+                           f'Environment="ORBI_CONFIG={config}"\nExecStart={bootstrap}\n')
+        timer.write_text('[Timer]\nUnit=project-delivery@%i.service\n[Install]\nWantedBy=timers.target\n')
+        # A vendor unit whose continuation line shlex cannot parse.
+        other = self.h.unit_dir / 'vendor-shell.service'
+        other.write_text('[Service]\nExecStart=/usr/bin/tmux unbind-key -a; \\\n  new-session\n')
+        for path in (service, timer, other):
+            path.chmod(0o644)
+        properties = dict(LoadState='loaded', ActiveState='inactive', NeedDaemonReload='no',
+                          CanStart='yes', CanStop='yes', KillMode='control-group', SendSIGKILL='yes',
+                          DynamicUser='no')
+
+        def rule(name, **extra):
+            values = {'Id': name, 'Names': name, **properties, **extra}
+            return {'tool': 'systemctl', 'argv_contains': ['--user', 'show', name],
+                    'stdout': '\n'.join(f'{k}={v}' for k, v in values.items())}
+
+        unrelated_names = [f'vendor-{index}.service' for index in range(unrelated)]
+        rules = [
+            {'tool': 'systemctl', 'argv_contains': ['--user', 'list-units'], 'stdout': ''},
+            {'tool': 'systemctl', 'argv_contains': ['--user', 'list-unit-files'],
+             'stdout': f'{service.name} static -\n{timer.name} disabled enabled\n'
+                       + ''.join(f'{name} static -\n' for name in unrelated_names)},
+            {'tool': 'systemctl', 'argv_contains': ['--user', 'show', 'UnitPath'], 'stdout': str(self.h.unit_dir)},
+            *[rule(name, FragmentPath=other, Type='simple', UnitFileState='static', WorkingDirectory='/',
+                   ExecStart='{ path=/usr/bin/tmux ; argv[]=/usr/bin/tmux unbind-key -a ; }')
+              for name in unrelated_names],
+        ]
+        for index in (1, 2):
+            name = f'project-delivery@{index}.service'
+            rules.extend([rule(name, FragmentPath=service, DropInPaths=dropins, Type='oneshot',
+                               UnitFileState='static', WorkingDirectory=target,
+                               Requires='"app-project\\x2ddelivery.slice" basic.target',
+                               Environment=f'ORBI_CONFIG={config}',
+                               ExecStart=f'{{ path={bootstrap} ; argv[]={bootstrap} ; }}'),
+                          rule(f'project-schedule@{index}.timer', FragmentPath=timer, WorkingDirectory=target,
+                               Unit=name, Triggers=name, UnitFileState='disabled')])
+        self.h.rules(*rules)
+        ctx = helper.Context(env=self.h.env, platform='linux')
+        return ctx, manager, config
+
+    def test_inventory_bounds_orbi_detail_not_unrelated_units(self):
+        ctx, manager, config = self.configured_inventory(unrelated=6)
+        with mock.patch.object(helper, 'HOST_DETAIL_LIMIT', 4):
+            units, targets, _ = helper.fleet_inventory(ctx, [manager])
+        self.assertEqual(list(targets), [config])
+        self.assertEqual(len(units), 4)
+        with mock.patch.object(helper, 'HOST_DETAIL_LIMIT', 3), self.assertRaises(helper.ControlError) as caught:
+            helper.fleet_inventory(ctx, [manager])
+        self.assertIn('user: Orbi unit detail exceeds 3', str(caught.exception))
+        with mock.patch.object(helper, 'FLEET_CLASSIFY_LIMIT', 5), self.assertRaises(helper.ControlError) as caught:
+            helper.fleet_inventory(ctx, [manager])
+        self.assertIn('user: installed/loaded units exceed 5', str(caught.exception))
+
+    def test_inventory_accepts_a_benign_vendor_dropin_and_quoted_slice(self):
+        vendor = self.h.root / 'vendor/service.d'
+        vendor.mkdir(parents=True)
+        dropin = vendor / '10-timeout-abort.conf'
+        dropin.write_text('[Service]\nTimeoutStopFailureMode=abort\n')
+        dropin.chmod(0o644)
+        ctx, manager, config = self.configured_inventory(dropins=str(dropin))
+        with mock.patch.object(helper, 'VENDOR_DROPIN_DIRS', (vendor,)), root_owned(dropin):
+            units, targets, _ = helper.fleet_inventory(ctx, [manager])
+        self.assertEqual(list(targets), [config])
+        self.assertEqual(len(units), 4)
+        # Without the vendor directory it is an ordinary, ambiguous override.
+        with root_owned(dropin), self.assertRaises(helper.ControlError) as caught:
+            helper.fleet_inventory(ctx, [manager])
+        self.assertIn('drop-in overrides are ambiguous', str(caught.exception))
+
+    def test_bound_unit_parses_quoted_dependencies(self):
+        manager = helper.FleetManager('user', ('--user',), os.getuid(), self.h.home)
+        values = dict(Id='w@1.service', LoadState='loaded', NeedDaemonReload='no', ActiveState='inactive',
+                      CanStart='yes', CanStop='yes', KillMode='control-group', SendSIGKILL='yes',
+                      Conflicts='shutdown.target')
+        for requires, allowed in (('"app-w\\x2d1.slice" basic.target', True),
+                                  ('"unrelated\\x2dservice.service"', False)):
+            with self.subTest(requires=requires):
+                def call():
+                    helper.fleet_bound_unit(manager, 'w@1.service', self.h.root / 'orbi.toml',
+                                            dict(values, Requires=requires), [])
+                if allowed:
+                    call()
+                else:
+                    with self.assertRaises(helper.ControlError):
+                        call()
+
+    def test_benign_vendor_dropin_rules(self):
+        vendor = self.h.root / 'vendor/service.d'
+        vendor.mkdir(parents=True)
+        cases = {
+            'timeout.conf': ('# c\n[Service]\nTimeoutStopFailureMode=abort\nTimeoutStartFailureMode=kill\n', True),
+            'exec.conf': ('[Service]\nExecStart=/bin/true\n', False),
+            'env.conf': ('[Service]\nEnvironment=ORBI_CONFIG=/x\n', False),
+            'unit.conf': ('[Unit]\nTimeoutStopFailureMode=abort\n', False),
+            'continued.conf': ('[Service]\nTimeoutStopFailureMode=abort \\\n', False),
+            'empty-key.conf': ('[Service]\nnot a directive\n', False),
+        }
+        paths = []
+        for name, (text, _) in cases.items():
+            (vendor / name).write_text(text)
+            (vendor / name).chmod(0o644)
+            paths.append(vendor / name)
+        elsewhere = self.h.root / 'timeout.conf'
+        elsewhere.write_text(cases['timeout.conf'][0])
+        with mock.patch.object(helper, 'VENDOR_DROPIN_DIRS', (vendor,)):
+            with root_owned(*paths, elsewhere):
+                for name, (_, expected) in cases.items():
+                    with self.subTest(name=name):
+                        self.assertIs(helper.benign_vendor_dropin(vendor / name), expected)
+                self.assertFalse(helper.benign_vendor_dropin(elsewhere))
+            self.assertFalse(helper.benign_vendor_dropin(vendor / 'timeout.conf'))  # not root-owned
+            (vendor / 'timeout.conf').chmod(0o664)
+            with root_owned(*paths):
+                self.assertFalse(helper.benign_vendor_dropin(vendor / 'timeout.conf'))  # group-writable
+            self.assertFalse(helper.benign_vendor_dropin(vendor / 'missing.conf'))
 
     def test_unsupported_manager_platform_is_held_without_mutation(self):
         ctx = helper.Context(env=self.h.env, platform='freebsd')
