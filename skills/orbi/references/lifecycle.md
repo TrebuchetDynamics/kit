@@ -29,7 +29,7 @@ setup's default mapping.
 python3 -B <loaded-skill>/scripts/orbi_control.py [status|version|setup|start|update|stop|prune|help] [all] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] [--verbose] [--work] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL] [--allow-metered]] \
-  [--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait] [--apply]
+  [--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait] [--wait-minutes MINUTES] [--apply]
 ```
 
 - Omitted action means `status`. A bare `orbi` runs one Runner tick and is never
@@ -204,6 +204,40 @@ literal selectors and the `--stop`/`--wait` choices when retrying an update.
 Inspect and repair that cause before deliberate recovery; never retry errors unchanged.
 Dry-run neither waits nor mutates: it previews conditional activation for plain update
 and continued stopped scheduling for `--stop`.
+
+### Fleet update
+
+```text
+/orbi update all --dry-run
+/orbi update all --wait-minutes 120 --json
+```
+
+On Linux, `update all` discovers local configs as `status all` does, without
+needing a checkout or querying GitHub API budget. Each update runs from the
+config's canonical `repo_dir` using the usual per-deployment safety checks.
+Only supported current-user timer/service bindings are changed. If either
+local manager inventory is unavailable, the helper cannot rule out a second
+worker using the same config and refuses to update. Mixed or unverified timer
+scheduling is refused rather than normalized. `--dry-run`
+previews without writes, waits or fetching the release. Do not add repo/config,
+`--stop`, `--wait`, `--work` or `--verbose` selectors.
+
+Deployments are processed serially. Each verified running deployment is paused
+and later restored after release pinning and validation; a stopped deployment
+remains stopped. Workers finish naturally, with a **shared** drain deadline of
+120 minutes by default. Use `--wait-minutes MINUTES` with a positive integer to
+change that budget. Once exhausted, idle deployments can still update, but the
+helper does not wait again for busy ones. The deadline limits worker waiting,
+not the separate bounded source and validation commands.
+
+The receipt lists each config's old and new verified version (or observed
+revision when available), scheduling before and after, and remaining drift
+against the selected official release revision. A nonzero `incomplete` receipt
+lists failures, discovery gaps or deployments still `pending`. A pending
+deployment was not updated: its original scheduling is restored without running
+setup or issuing a worker start. When work finishes, use its bound `repair_command`.
+If restoration or another update step fails, inspect the reported step and
+scheduling state before recovering; failed validation never authorizes activation.
 
 ### Release synchronization
 
@@ -1007,7 +1041,11 @@ retry an unchanged timeout. Typical repairs:
   includes a read-only scheduler snapshot (or `unavailable`) and completed/failed
   steps. Inspect that evidence and the cause
   before recovery; never repeat activation unchanged or stop workers to undo it.
-  Observation failure does not replace the original activation error.
+  Observation failure does not replace the original activation error. Upstream
+  setup can activate timers before later checks; an active timer does not prove
+  setup succeeded. Start uses the upstream JSON result path to skip optional
+  suggestions and names known failed setup steps (for example `check_checkout`)
+  without printing private subprocess output.
 - `scheduler_unavailable`: verify the systemd user session; status reports the
   same condition as unavailable evidence.
 
