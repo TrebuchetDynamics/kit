@@ -59,9 +59,18 @@ def test_ids(path):
     for node in tree.body:
         if not isinstance(node, ast.ClassDef):
             continue
-        methods = dict.fromkeys(item.name for item in node.body
-                                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                                and item.name.startswith('test'))
+        methods = {}
+        for item in node.body:
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                names = (item.name,)
+            elif isinstance(item, ast.Assign):
+                names = (target.id for target in item.targets if isinstance(target, ast.Name))
+            elif (isinstance(item, ast.AnnAssign) and item.value is not None
+                  and isinstance(item.target, ast.Name)):
+                names = (item.target.id,)
+            else:
+                continue
+            methods.update(dict.fromkeys(name for name in names if name.startswith('test')))
         is_test_case = False
         # A local base must already be defined. Keep mixin methods, but only
         # emit IDs for TestCase subclasses, as unittest's module loader does.

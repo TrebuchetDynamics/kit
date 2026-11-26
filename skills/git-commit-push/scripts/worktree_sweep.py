@@ -150,7 +150,8 @@ def merge(repo, entry, base):
         entry['result'] = 'conflict'
     else:
         entry['result'] = 'failed'
-    entry['note'] = (result.stderr.strip() or result.stdout.strip()).splitlines()[-1][:200]
+    entry['note'] = (result.stderr.strip() or result.stdout.strip()
+                     or f'exit {result.returncode}').splitlines()[-1][:200]
     return False
 
 
@@ -178,7 +179,8 @@ def closeouts(repo, entries, closer, idle_minutes):
                               capture_output=True, text=True)
         entry['closed'] = 'removed' if done.returncode == 0 else 'kept'
         if done.returncode:
-            entry['note'] = (done.stdout.strip() or done.stderr.strip()).splitlines()[-1][:200]
+            entry['note'] = (done.stdout.strip() or done.stderr.strip()
+                             or f'exit {done.returncode}').splitlines()[-1][:200]
 
 
 def report(entries, as_json):

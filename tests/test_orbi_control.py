@@ -1196,7 +1196,24 @@ class FirstDeploymentTests(unittest.TestCase):
         self.catalog = self.h.home / 'models.json'
         self.catalog.write_text(json.dumps(self.metadata))
         self.options = ['--pi-providers', str(self.catalog), '--pi-provider', 'openai',
-                        '--pi-model', 'gpt-6.1-sol', '--pi-thinking', 'high']
+                        '--pi-model', 'gpt-6.1-sol', '--pi-thinking', 'high', '--allow-metered']
+
+    def test_explicit_metered_bootstrap_requires_confirmation(self):
+        options = self.options[:6]
+        before = snapshot(self.h.home)
+        for action in ('setup', 'start'):
+            with self.subTest(action=action):
+                code, doc, err = self.h.run(action, options=options)
+                self.assertEqual(code, 2, (doc, err))
+                self.assertEqual(doc['error']['code'], 'metered_confirmation_required')
+                self.assertIn('openai/gpt-6.1-sol', doc['error']['message'])
+                self.assertIn('--allow-metered', doc['error']['fix'])
+                self.assertFalse(doc['error']['mutated'])
+                self.assertEqual(snapshot(self.h.home), before)
+                code, doc, err = self.h.run(action, options=[*options, '--allow-metered'], dry_run=True)
+                self.assertEqual(code, 0, (doc, err))
+                self.assertEqual(doc['status'], 'planned')
+                self.assertEqual(snapshot(self.h.home), before)
 
     def test_documented_public_setup_routes_have_the_delegated_fake_host_effects(self):
         # Execute the helper argv named by the public instruction table. This proves
@@ -1724,7 +1741,7 @@ class FirstDeploymentTests(unittest.TestCase):
                     expected = 'unknown_target'
                 before = snapshot(h.home)
                 options = ['--pi-providers', str(catalog), '--pi-provider', 'openai',
-                           '--pi-model', 'gpt-6.1-sol']
+                           '--pi-model', 'gpt-6.1-sol', '--allow-metered']
                 for dry_run in (True, False):
                     code, doc, err = h.run('setup', options=options, dry_run=dry_run)
                     self.assertNotEqual(code, 0, (doc, err))
@@ -1807,7 +1824,7 @@ class FirstDeploymentTests(unittest.TestCase):
                 (h.deploy / '.orbi/env').write_text('OPENAI_API_KEY=' + SECRET + '\n')
                 code, doc, err = h.run('setup', options=[
                     '--pi-providers', str(catalog), '--pi-provider', 'openai',
-                    '--pi-model', 'gpt-6.1-sol'])
+                    '--pi-model', 'gpt-6.1-sol', '--allow-metered'])
                 self.assertEqual(code, 0, (doc, err))
                 self.assertNotIn('pi_thinking', h.config())
                 self.assertEqual(json.loads((h.deploy / '.orbi/pi-providers.json').read_text()),
@@ -4383,8 +4400,9 @@ class HostStatusTests(unittest.TestCase):
             config = deploy / 'orbi.toml'
             count = 2 if index < 6 else 1
             # Two distinct deployments can target the same repository.
+            provider = {0: 'example', 1: 'openai-codex', 2: 'openrouter'}.get(index, 'example')
             config.write_text(f'source_repos = ["owner/repo-{max(1, index)}"]\n'
-                              f'max_concurrency = {count}\npi_provider = "example"\n'
+                              f'max_concurrency = {count}\npi_provider = "{provider}"\n'
                               'pi_model = "model-id"\npi_thinking = "high"\n')
             template = self.h.unit_dir / f'delivery-{index}@.service'
             template.write_text(f'[Service]\nExecStart=/bin/orbi --config {config}\n')
@@ -4437,6 +4455,11 @@ class HostStatusTests(unittest.TestCase):
         self.assertEqual(len(data), 7)
         self.assertEqual(sum('owner/repo-1' in line for line in data), 2)
         self.assertLessEqual(len(text.splitlines()), 10)
+        self.assertIn('openrouter/model-id/high (metered)', text)
+        self.assertIn('openrouter/model-id (metered)', verbose)
+        self.assertNotIn('openai-codex/model-id/high (metered)', text)
+        self.assertFalse(next(r for r in doc['rows'] if r.get('provider') == 'openai-codex')['metered'])
+        self.assertTrue(next(r for r in doc['rows'] if r.get('provider') == 'openrouter')['metered'])
         self.assertEqual(len(budget_calls), 3)  # one per invocation, never an issue list
         for output in (text, verbose):
             self.assertIn('GraphQL 0/5000 (resets 2026-11-26T05:55:53Z)', output)
@@ -7061,6 +7084,132 @@ class SetTests(unittest.TestCase):
         self.assertEqual(self.h.config()['unrelated'], {'pi_model': 'nested'})
         self.assertEqual(self.h.config()['engine_source_track'], helper.PIN_TRACK)
 
+    def test_metered_model_change_requires_flag_and_obeys_allowlist(self):
+        config = self.h.deploy / 'orbi.toml'
+        subscription = config.read_text().replace('pi_provider = "openrouter"', 'pi_provider = "openai-codex"')
+        config.write_text(subscription)
+        metadata = self.h.deploy / '.orbi/pi-providers.json'
+        catalog = json.loads(metadata.read_text())
+        router = catalog['providers']['openrouter']
+        catalog['providers']['openai-codex'] = {key: value for key, value in router.items() if key != 'apiKey'}
+        router['models'] = [*router['models'], {**router['models'][0], 'id': 'x'}]
+        metadata.write_text(json.dumps(catalog))
+        PauseUpdateTests.pause_rules(self, extra=self.h.enable_timer_rules(f'{self.prefix}@1.timer'))
+        argv = [sys.executable, '-B', str(HELPER), 'set', 'kit', 'model', 'openrouter/x']
+        before = snapshot(self.h.home)
+        result = subprocess.run(argv, cwd=self.h.root, env=self.h.env,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('metered_confirmation_required', result.stderr)
+        self.assertIn('openrouter/x', result.stderr)
+        self.assertIn('--allow-metered', result.stderr)
+        self.assertEqual(snapshot(self.h.home), before)
+        result = subprocess.run([*argv, '--allow'], cwd=self.h.root, env=self.h.env,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('unrecognized arguments: --allow', result.stderr)
+        self.assertEqual(snapshot(self.h.home), before)
+
+        config.write_text('allowed_providers = ["openai-codex"]\n' + subscription)
+        before = snapshot(self.h.home)
+        self.h.clear_calls()
+        code, doc, err = self.set_command('kit', 'model', 'openrouter/x', '--allow-metered')
+        self.assertEqual(code, 2, (doc, err))
+        self.assertEqual(doc['error']['code'], 'provider_not_allowed')
+        self.assertIn('openrouter/x', doc['error']['message'])
+        self.assertIn('allowed_providers', doc['error']['fix'])
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertFalse(any(set(call['argv']) & {'disable', 'enable', 'check'} for call in self.h.calls()))
+
+        allowed = 'allowed_providers = ["openai-codex", "openrouter"]\n'
+        config.write_text(allowed + subscription)
+        result = subprocess.run([*argv[:-1], '--allow-metered', argv[-1]], cwd=self.h.root, env=self.h.env,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('pi_provider: "openai-codex" -> "openrouter"', result.stdout)
+        self.assertIn('Backup:', result.stdout)
+        self.assertEqual((self.h.config()['pi_provider'], self.h.config()['pi_model']), ('openrouter', 'x'))
+        self.assertEqual(self.h.config()['allowed_providers'], ['openai-codex', 'openrouter'])
+        code, text, err = self.h.run('status', json_mode=False)
+        self.assertEqual(code, 0, err)
+        self.assertIn('openrouter/x (metered)', text)
+
+    def test_metered_allowlist_refuses_malformed_or_disallowed_explicit_selection(self):
+        config = self.h.deploy / 'orbi.toml'
+        original = config.read_text().replace('pi_provider = "openrouter"', 'pi_provider = "openai-codex"')
+        catalog = config.parent / '.orbi/pi-providers.json'
+        options = ['--pi-providers', str(catalog), '--pi-provider', 'openrouter', '--pi-model', 'vendor/model-a']
+        config.write_text(original)
+        before = snapshot(self.h.home)
+        for action, override in (('setup', 'provider_override_refused'), ('start', 'bootstrap_override_refused')):
+            with self.subTest(action=action):
+                code, doc, err = self.h.run(action, options=options)
+                self.assertEqual(code, 2, (doc, err))
+                self.assertEqual(doc['error']['code'], 'metered_confirmation_required')
+                self.assertIn('openrouter/vendor/model-a', doc['error']['message'])
+                self.assertIn('/orbi set', doc['error']['fix'])
+                code, doc, err = self.h.run(action, options=[*options, '--allow-metered'])
+                self.assertEqual(code, 2, (doc, err))
+                self.assertEqual(doc['error']['code'], override)
+                self.assertEqual(snapshot(self.h.home), before)
+
+        config.write_text('allowed_providers = [123]\n' + original)
+        with mock.patch.object(helper.Context, 'run') as run:
+            code, doc, err = self.set_command(config, 'model', 'openrouter/vendor/model-a', '--allow-metered')
+        run.assert_not_called()
+        self.assertEqual(code, 2, (doc, err))
+        self.assertEqual(doc['error']['code'], 'config_invalid')
+        self.assertFalse(doc['error']['mutated'])
+
+    def test_dual_auth_provider_requires_confirmation_for_api_keys_not_subscription(self):
+        config = self.h.deploy / 'orbi.toml'
+        saved = config.read_text()
+        subscription = saved.replace('pi_provider = "openrouter"', 'pi_provider = "openai-codex"')
+        metadata = config.parent / '.orbi/pi-providers.json'
+        catalog = json.loads(metadata.read_text())
+        router = catalog['providers']['openrouter']
+        oauth = {key: value for key, value in router.items() if key != 'apiKey'}
+        catalog['providers'].update({'openai-codex': oauth, 'anthropic': oauth})
+        metadata.write_text(json.dumps(catalog))
+        auth = self.h.home / '.pi/agent/auth.json'
+        auth.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(subscription)
+        auth.write_text(json.dumps({'anthropic': {'type': 'api_key', 'key': SECRET}}))
+        before = snapshot(self.h.home)
+        code, doc, err = self.set_command('kit', 'model', 'anthropic/vendor/model-a')
+        self.assertEqual(code, 2, (doc, err))
+        self.assertEqual(doc['error']['code'], 'metered_confirmation_required')
+        self.assertIn('anthropic/vendor/model-a is metered', doc['error']['message'])
+        self.assertNotIn(SECRET, json.dumps(doc) + err)
+        self.assertEqual(snapshot(self.h.home), before)
+
+        config.write_text(subscription.replace('"openai-codex"', '"anthropic"'))
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertTrue(doc['deployment']['provider']['metered'])
+        auth.write_text(json.dumps({'anthropic': {'type': 'oauth', 'access': SECRET}}))
+        code, doc, err = self.h.run('status')
+        self.assertEqual(code, 0, err)
+        self.assertFalse(doc['deployment']['provider']['metered'])
+        before = snapshot(self.h.home)
+        code, doc, err = self.set_command('kit', 'model', 'openrouter/vendor/model-a')
+        self.assertEqual(code, 2, (doc, err))
+        self.assertEqual(doc['error']['code'], 'metered_confirmation_required')
+        self.assertEqual(snapshot(self.h.home), before)
+
+    def test_allowlist_refuses_a_disallowed_review_provider_before_activation(self):
+        config = self.h.deploy / 'orbi.toml'
+        config.write_text('allowed_providers = ["openrouter"]\nreview_pi_provider = "anthropic"\n'
+                          + config.read_text())
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('start')
+        self.assertEqual(code, 2, (doc, err))
+        self.assertEqual(doc['error']['code'], 'provider_not_allowed')
+        self.assertIn('anthropic/vendor/model-a', doc['error']['message'])
+        self.assertFalse(doc['error']['mutated'])
+        self.assertEqual(snapshot(self.h.home), before)
+
     def test_unknown_model_and_invalid_values_do_not_write(self):
         config = self.h.deploy / 'orbi.toml'
         before = snapshot(self.h.home)
@@ -7574,6 +7723,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                 '--pi-provider': ['setup', 'start'],
                                 '--pi-model': ['setup', 'start'],
                                 '--pi-thinking': ['setup', 'start'],
+                                '--allow-metered': ['setup', 'start', 'set'],
                                 '--harness': ['setup', 'start'],
                                 '--resume-setup': ['setup'],
                             }.items():
