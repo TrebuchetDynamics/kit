@@ -1168,6 +1168,8 @@ def orbi_fleet_details(receipt, *, verbose=False):
         lines[0] += f": {where + ': ' if where else ''}{error['message']}"
         if error.get('fix'):
             lines.append(error['fix'])
+    for path in receipt.get('repaired_unit_fragments', []):
+        lines.append(f'Removed group/other write permission: {path}')
     deployments = receipt['deployments']
     names = Counter(row['repo'].rsplit('/', 1)[-1] for row in deployments)
     for row in deployments:
