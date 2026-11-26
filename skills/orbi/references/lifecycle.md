@@ -28,7 +28,7 @@ setup's default mapping.
 ```sh
 python3 -B <loaded-skill>/scripts/orbi_control.py [status|version|setup|start|update|stop|prune|help] [all] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] [--verbose] [--work] \
-  [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
+  [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL] [--allow-metered]] \
   [--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait] [--apply]
 ```
 
@@ -58,7 +58,8 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|version|setup|start|up
 - New-deployment `setup` and an authorized absent-target `start` accept `--pi-providers PATH --pi-provider ID --pi-model ID`
   together, plus optional `--pi-thinking LEVEL`. Existing-target start rejects
   these flags; omit them to retain its selection. Help accepts and ignores them.
-  The metadata path is relative to the current directory unless absolute.
+  The metadata path is relative to the current directory unless absolute. Explicit
+  metered selection requires `--allow-metered`; see [provider selection policy](#provider-selection-policy).
 - `--harness {pi-bolt,pi}` selects an installed executable for new `setup` or
   absent-target `start` preparation. Omission defaults to Pi-Bolt. A missing selected command is an
   exact prerequisite failure, not permission to install or fall back. Existing
@@ -342,6 +343,28 @@ Upstream `orbi setup` and `install-units` activate timers at this pin, so both
 are deliberately deferred to helper `start` (public default setup or start). Helper setup never enables a timer
 to disable it again. No sudo, system package, automated login or shell-profile
 change is used.
+
+### Provider selection policy
+
+`/orbi set DEPLOYMENT model PROVIDER/MODEL [THINKING] [--allow-metered]` requires
+`--allow-metered` to move from a subscription to a metered provider. New setup
+and absent-target start require it when an explicit `--pi-provider` is metered.
+The flag does not let bootstrap selectors replace a saved selection; use `set`
+for that. Starting an existing metered deployment or reusing a saved donor
+selection without explicit provider inputs does not require confirmation.
+
+To restrict the deployment's Pi providers, add a top-level allowlist in
+`orbi.toml`, for example `allowed_providers = ["openai-codex"]`. The selected
+provider and any separate review provider must both be on the list, even with
+`--allow-metered`. Omit the key for no restriction; an empty list allows none.
+This is a Kit lifecycle check, not a change to upstream Orbi or running workers.
+
+`status` and `status all` mark metered models. For IDs supporting both
+subscription OAuth and API keys (such as `anthropic`), the check uses the
+catalog and the saved Pi credential type. When subscription auth cannot be
+established, treat the selection as potentially metered. Other IDs outside the
+known subscription list, including API gateways and custom providers, are
+metered for this check. The helper does not resolve secrets or track spending.
 
 ### First-deployment provider bootstrap
 
