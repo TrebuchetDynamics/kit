@@ -84,10 +84,11 @@ on the revised requirement. A comment or label alone is not evidence of resumpti
 ## Recover, verify, continue
 
 1. **Bind and inventory.** For `all`, first run `python3 -B <this-skill>/scripts/inventory.py --json`
-   with `<this-skill>` set to this skill's directory. Use `repositories` as the scope;
-   report [inventory gaps](references/inventory.md) without widening discovery.
-   Then read GitHub Issues, native dependencies, linked PRs, CI/review results
-   and actual ownership. Use read-only `orbi status` and
+   with `<this-skill>` set to this skill's directory. Use `repositories` as the scope
+   and its issue and PR rows as the starting snapshot. Report
+   [inventory gaps](references/inventory.md) without widening discovery.
+   Read any additional issues, native dependencies, linked PRs, CI/review results
+   and actual ownership the snapshot does not cover. Use read-only `orbi status` and
    `orbi doctor` with the target's configuration if installed. A failed read is
    unavailable evidence, not an empty queue. Include every unresolved decision,
    not only the dashboard's displayed questions. For open PRs, follow

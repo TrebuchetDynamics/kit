@@ -8,7 +8,8 @@ python3 -B skills/unblock/scripts/inventory.py --json
 
 From another directory, use the absolute path to the same script. JSON is the default.
 Use Python 3.11+ on Linux or macOS and an authenticated GitHub CLI with repository
-read access and support for `gh api --paginate --slurp`. The command uses
+read access and support for `gh api --paginate --slurp` and
+`gh pr checks --required --json`. The command uses
 [Orbi's local status discovery](../../orbi/references/lifecycle.md#host-inventory) for
 config and scheduler evidence. Only `source_repos` in discovered local configs
 supply repositories; the current Git remote and other hosts do not. The command
@@ -30,15 +31,19 @@ Each repository has the following fields:
 | `errors` | Array of repository read gaps, empty if none. An unavailable list is `null`, not `[]`. A detail error can leave a list populated but the affected detail unknown. |
 
 Issues and PRs are sorted numerically. `failure` is null or has the latest
-`orbi:failure:v1` `reason_code` and `action_code`. `open_question` is null or has
-`id`, `question` (text) and `recommended_option` (the option object from the
-marker, or null). The inventory shows the latest `orbi:question:v1` unless a
-matching `orbi:answer:v1` record appears in the same or a later comment. These
-markers are observations, not a verdict on answer authority or retry safety.
+`orbi:failure:v1` `reason_code` and `action_code`, by comment update time (Orbi
+can update a repeated failure in place). `open_question` is null or has `id`,
+`question` (text) and `recommended_option` (the option object from the marker,
+or null). The latest `orbi:question:v1` is omitted when Orbi records an automatic
+answer in the same requeue comment or a success receipt for a later matching
+`orbi:answer:v1` comment. A reply without a success receipt does not hide the
+question. These markers are observations, not a verdict on answer authority or
+retry safety.
 `live_local_worker` is `true` for a verified local issue binding, `false` when no
 worker was observed with readable local evidence, or `null` when a worker could
-not be attributed or local observation is incomplete. It is not a fleet-wide
-ownership guarantee.
+not be attributed or local observation is incomplete. macOS reports running
+jobs but cannot attribute them to an issue. This is not a fleet-wide ownership
+guarantee.
 
 `required_checks` contains `result` and `checks`. The latter contains reported
 required checks with `name`, `state`, `bucket` and `link`. The result is `fail`

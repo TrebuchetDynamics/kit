@@ -56,31 +56,43 @@ def comment_record(body, kind):
     return data
 
 
-def issue_markers(comments):
-    failure, question, newest_question = None, None, False
-    answered = set()
-    # GitHub lists issue comments in ascending ID order, across page boundaries.
-    for comment in reversed(comments):
-        body = comment['body']
-        if failure is None and (record := comment_record(body, 'failure')) is not None:
+def latest_failure(comments):
+    # Orbi edits a deduplicated failure in place. REST timestamps are UTC;
+    # break ties by descending comment ID (GitHub's list order, reversed).
+    for comment in sorted(reversed(comments), key=lambda c: c.get('updated_at') or '', reverse=True):
+        if (record := comment_record(comment['body'], 'failure')) is not None:
             failure = {key: record[key] for key in ('reason_code', 'action_code')}
             if not all(isinstance(code, str) and code for code in failure.values()):
                 raise ValueError('invalid failure codes')
-        if not newest_question:
+            return failure
+    return None
+
+
+def open_question(comments):
+    applied, answered = set(), set()
+    # GitHub lists issue comments in ascending ID order. Read newer receipts
+    # before the answer comments they reference, including across pages.
+    for comment in reversed(comments):
+        body = comment['body']
+        applied.update(re.findall(r'^<!-- orbi-answer-command comment=(\S+) -->$', body, re.M))
+        # Orbi's GitHub CLI reads use the GraphQL ID (REST node_id).
+        if any(str(comment.get(key, '')) in applied for key in ('node_id', 'id', 'html_url')):
             if (answer := comment_record(body, 'answer')) is not None:
-                if (answer['action'] in ('accept', 'decline', 'cancel')
-                        and isinstance(answer['q'], str)):
-                    answered.add(answer['q'])
-            if (record := comment_record(body, 'question')) is not None:
-                newest_question = True
-                asked = record['question']
-                if asked['id'] not in answered:
-                    question = {key: asked[key] for key in ('id', 'question')}
-                    question['recommended_option'] = next((option for option in asked.get('options', [])
-                                                           if option.get('recommended') is True), None)
-        if failure is not None and newest_question:
-            break
-    return failure, question
+                answered.add(answer['q'])
+        if (record := comment_record(body, 'question')) is None:
+            continue
+        asked = record['question']
+        if asked['id'] in answered:
+            return None
+        if '<!-- orbi:comment=requeued -->' in body:
+            answer = comment_record(body, 'answer')
+            if answer and answer['q'] == asked['id'] and answer['by'] == 'orbi' and answer['action'] == 'accept':
+                return None
+        question = {key: asked[key] for key in ('id', 'question')}
+        question['recommended_option'] = next((option for option in asked.get('options', [])
+                                               if option.get('recommended') is True), None)
+        return question
+    return None
 
 
 def issue_number(row):
@@ -122,10 +134,11 @@ def issues(ctx, repo, state, live, uncertain, errors):
             except ValueError as exc:
                 errors.append(f'issue #{number} comments: {exc}')
                 continue
-            try:
-                item['failure'], item['open_question'] = issue_markers(comments)
-            except (ValueError, KeyError, TypeError, AttributeError):
-                errors.append(f'issue #{number}: invalid Orbi marker or comment data')
+            for key, read in (('failure', latest_failure), ('open_question', open_question)):
+                try:
+                    item[key] = read(comments)
+                except (ValueError, KeyError, TypeError, AttributeError):
+                    errors.append(f'issue #{number}: invalid {key} marker or comment data')
     return result
 
 

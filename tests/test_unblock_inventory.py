@@ -107,7 +107,15 @@ class UnblockInventoryTests(unittest.TestCase):
         question = marker('question', schema=1, decision_class='authority', question={
             'id': 'q2', 'kind': 'choice', 'summary': 'Review stalled', 'question': 'How should delivery resume?',
             'options': [{'label': 'Close', 'description': 'Close work', 'action': 'close_all'}, option]})
-        answer = marker('answer', q='q2', action='accept', value=option['label'], by='orbi')
+        answer = marker('answer', q='q2', action='accept', value=option['label'], by='maintainer')
+        def reply(issue_number, comment_id):
+            return {'body': answer, 'id': comment_id, 'node_id': f'IC_kwFixture{comment_id}',
+                    'html_url': f'https://github.com/{REPO}/issues/{issue_number}#issuecomment-{comment_id}'}
+
+        receipt = '<!-- orbi-answer-command comment=IC_kwFixture107 -->'
+        rejected = '<!-- orbi-answer-command-rejected comment=IC_kwFixture108 -->'
+        automatic = '<!-- orbi:comment=requeued -->\n' + question.replace('authority', 'pick_best') + '\n' + marker(
+            'answer', q='q2', action='accept', value=option['label'], by='orbi')
         result, doc = self.run_cli(
             *self.service_rules(),
             self.api(REPO, 'issues?state=open&per_page=100',
@@ -117,10 +125,17 @@ class UnblockInventoryTests(unittest.TestCase):
             self.api(REPO, 'issues?state=closed&per_page=100',
                      [issue(15, 'ai-ready'), issue(16, 'ai-ops-only'),
                       {**issue(17, 'ai-blocked'), 'pull_request': {}}]),
-            self.api(REPO, 'issues/1/comments?per_page=100', [{'body': older}], [{'body': latest}]),
-            self.api(REPO, 'issues/2/comments?per_page=100', [{'body': question}, {'body': answer}]),
-            self.api(REPO, 'issues/3/comments?per_page=100', [{'body': question}]),
-            *(self.api(REPO, f'issues/{n}/comments?per_page=100', []) for n in (4, 7, 42)),
+            # Orbi can update a deduplicated failure in place, behind a newer comment ID.
+            self.api(REPO, 'issues/1/comments?per_page=100',
+                     [{'body': latest, 'updated_at': '2026-11-26T12:00:00Z'}],
+                     [{'body': older, 'updated_at': '2026-11-26T11:00:00Z'}]),
+            self.api(REPO, 'issues/2/comments?per_page=100',
+                     [{'body': question}, reply(2, 107)], [{'body': receipt}]),
+            self.api(REPO, 'issues/3/comments?per_page=100',
+                     [{'body': question}, reply(3, 108), {'body': rejected}]),
+            self.api(REPO, 'issues/4/comments?per_page=100', [{'body': automatic}]),
+            self.api(REPO, 'issues/7/comments?per_page=100', [{'body': question}, reply(7, 109)]),
+            self.api(REPO, 'issues/42/comments?per_page=100', []),
             self.api(REPO, 'pulls?state=open&per_page=100', [self.pr(22)], [self.pr(11)]),
             *self.pr_reads(22, bucket=None), *self.pr_reads(11),
             *(self.api('second/repo', path, []) for path in ('issues?state=open&per_page=100',
@@ -142,6 +157,8 @@ class UnblockInventoryTests(unittest.TestCase):
         self.assertIsNone(by_number[2]['open_question'])
         self.assertEqual(by_number[3]['open_question']['id'], 'q2')
         self.assertEqual(by_number[3]['open_question']['recommended_option'], option)
+        self.assertIsNone(by_number[4]['open_question'])
+        self.assertEqual(by_number[7]['open_question']['recommended_option'], option)
         self.assertIs(by_number[42]['live_local_worker'], True)
         self.assertIs(by_number[4]['live_local_worker'], False)
         self.assertEqual([i['number'] for i in first['closed_issues']], [15])
