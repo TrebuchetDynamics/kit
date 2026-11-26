@@ -3805,6 +3805,20 @@ class InstallerFleetTests(unittest.TestCase):
         for private in (str(home), SECRET, 'PermissionError'):
             self.assertNotIn(private, json.dumps(receipt))
 
+    def test_offline_account_continued_unrelated_unit_is_not_orbi_evidence(self):
+        with self.other_account(definitions=None) as (ctx, home):
+            directory = home / '.config/systemd/user'
+            directory.mkdir(parents=True)
+            unit = directory / 'vendor.service'
+            unit.write_text('[Service]\nExecStart=/usr/bin/tmux unbind-key -a; \\\n  new-session\n')
+            manager = helper.FleetManager('user:other', ('--user', '--machine=other@.host'), 1001, home)
+            self.assertIs(helper.fleet_offline_user_evidence(ctx, manager, live=False), False)
+            unit.write_text(f'[Service]\nExecStart=/bin/orbi --config "{SECRET}\n')
+            with self.assertRaises(helper.ControlError) as caught:
+                helper.fleet_offline_user_evidence(ctx, manager, live=False)
+            self.assertEqual(caught.exception.message, 'user:other:vendor.service: unit definition is unparsable')
+            self.assertNotIn(SECRET, str(caught.exception))
+
     def test_fleet_holds_when_unreadable_account_is_live_or_lingering(self):
         for options in ({'active': True}, {'linger': ('other',)}):
             with self.subTest(options=options), self.other_account(**options) as (ctx, home), \
@@ -3949,7 +3963,7 @@ class InstallerFleetTests(unittest.TestCase):
         self.assertTrue(all(call['argv'][2] in {'list-unit-files', 'list-units', 'list-jobs', 'show'}
                             for call in self.h.calls()))
 
-    def configured_inventory(self, *, unrelated=0, dropins=''):
+    def configured_inventory(self, *, unrelated=0, dropins='', extra_templates=()):
         """Two configured Orbi slots (four units) plus unrelated services."""
         manager = helper.FleetManager('user', ('--user',), os.getuid(), self.h.home)
         target = self.h.root / 'checkout'
@@ -3962,7 +3976,7 @@ class InstallerFleetTests(unittest.TestCase):
         service.write_text(f'[Service]\nWorkingDirectory={target}\n'
                            f'Environment="ORBI_CONFIG={config}"\nExecStart={bootstrap}\n')
         timer.write_text('[Timer]\nUnit=project-delivery@%i.service\n[Install]\nWantedBy=timers.target\n')
-        # A vendor unit whose continuation line shlex cannot parse.
+        # A vendor unit with a systemd continuation.
         other = self.h.unit_dir / 'vendor-shell.service'
         other.write_text('[Service]\nExecStart=/usr/bin/tmux unbind-key -a; \\\n  new-session\n')
         for path in (service, timer, other):
@@ -3981,7 +3995,7 @@ class InstallerFleetTests(unittest.TestCase):
             {'tool': 'systemctl', 'argv_contains': ['--user', 'list-units'], 'stdout': ''},
             {'tool': 'systemctl', 'argv_contains': ['--user', 'list-unit-files'],
              'stdout': f'{service.name} static -\n{timer.name} disabled enabled\n'
-                       + ''.join(f'{name} static -\n' for name in unrelated_names)},
+                       + ''.join(f'{name} static -\n' for name in (*unrelated_names, *extra_templates))},
             {'tool': 'systemctl', 'argv_contains': ['--user', 'show', 'UnitPath'], 'stdout': str(self.h.unit_dir)},
             *[rule(name, FragmentPath=other, Type='simple', UnitFileState='static', WorkingDirectory='/',
                    ExecStart='{ path=/usr/bin/tmux ; argv[]=/usr/bin/tmux unbind-key -a ; }')
@@ -3999,6 +4013,24 @@ class InstallerFleetTests(unittest.TestCase):
         self.h.rules(*rules)
         ctx = helper.Context(env=self.h.env, platform='linux')
         return ctx, manager, config
+
+    def test_inventory_skips_unrelated_service_templates_before_parsing(self):
+        continued = self.h.unit_dir / 'vendor-shell@.service'
+        continued.write_text('[Service]\nExecStart=/usr/bin/tmux unbind-key -a; \\\n  new-session\n')
+        malformed = self.h.unit_dir / 'vendor-quoted@.service'
+        malformed.write_text(f'[Service]\nExecStart=/bin/true "{SECRET}\n')
+        ctx, manager, config = self.configured_inventory(extra_templates=(continued.name, malformed.name))
+        units, targets, _ = helper.fleet_inventory(ctx, [manager])
+        self.assertEqual(list(targets), [config])
+        self.assertEqual({unit.name for unit in units}, {
+            'project-delivery@1.service', 'project-delivery@2.service',
+            'project-schedule@1.timer', 'project-schedule@2.timer',
+        })
+        malformed.write_text(f'[Service]\nEnvironment="ORBI_CONFIG={SECRET}\n')
+        with self.assertRaises(helper.ControlError) as caught:
+            helper.fleet_inventory(ctx, [manager])
+        self.assertEqual(caught.exception.message, 'user:vendor-quoted@.service: unit definition is unparsable')
+        self.assertNotIn(SECRET, str(caught.exception))
 
     def test_inventory_bounds_orbi_detail_not_unrelated_units(self):
         ctx, manager, config = self.configured_inventory(unrelated=6)
@@ -4574,11 +4606,48 @@ class HostStatusTests(unittest.TestCase):
         self.assertEqual(doc['totals']['observed_workers'], 2)
         self.assert_read_only(before)
 
+    def test_unit_definition_continuations_match_single_line_directives(self):
+        ctx = helper.Context(env=self.h.env, platform='linux')
+        service = self.h.unit_dir / 'delivery.service'
+        service.write_text(f'[Service]\nWorkingDirectory={self.h.root}\n'
+                           'Environment="ORBI_CONFIG=env.toml" PRIVATE=hidden\n'
+                           'ExecStart=/bin/orbi --config cli.toml\n')
+        expected = helper.host_definition(ctx, service)
+        self.assertEqual(expected['configs'], [str(self.h.root / name) for name in ('cli.toml', 'env.toml')])
+        self.assertTrue(expected['orbi'] and expected['runner'])
+        service.write_text(f'[Service]\r\nWorkingDirectory=\\\r\n  {self.h.root}\r\n'
+                           'Environment=PRIVATE=hidden\\\r\n  "ORBI_CONFIG=env.toml"\r\n'
+                           'ExecStart=/bin/orbi\\\r\n  # skipped comment\r\n; also skipped\r\n'
+                           '  --config\\\r\n  cli.toml\r\n')
+        self.assertEqual(helper.host_definition(ctx, service), expected)
+
+    def test_unit_definition_doubled_backslash_does_not_continue_and_eof_can(self):
+        ctx = helper.Context(env=self.h.env, platform='linux')
+        service = self.h.unit_dir / 'delivery.service'
+        config = self.h.root / 'delivery.toml'
+        service.write_text('[Service]\nEnvironment=PRIVATE=path' + '\\' * 2 + '\n'
+                           f'ExecStart=/bin/orbi --config {config} ' + '\\')
+        definition = helper.host_definition(ctx, service)
+        self.assertTrue(definition['orbi'] and definition['runner'])
+        self.assertEqual(definition['configs'], [str(config)])
+
+    def test_status_all_reports_unparsable_definition_without_private_text(self):
+        service = self.h.unit_dir / 'delivery.service'
+        service.write_text(f'[Service]\nExecStart=/bin/orbi \\\n  --config "{SECRET}\n')
+        self.h.rules(*self.lists('--user', [self.unit(service.name)]), *self.lists('--system'),
+                     self.detail('--user', service.name, FragmentPath=service))
+        code, text, err = self.invoke(json_mode=False)
+        self.assertEqual(code, 0, err)
+        self.assertIn('coverage=partial', text)
+        self.assertIn('coverage partial: user:delivery.service: unit definition is unparsable', text)
+        self.assertNotIn(SECRET, text + err)
+        self.assertNotIn('No closing quotation', text + err)
+
     def test_installed_arbitrary_name_outside_default_definition_roots_is_discovered(self):
         config = self.h.root / 'native.toml'
         config.write_text('source_repos = ["native/repo"]\n')
         definition = self.h.root / 'vendor-delivery.service'
-        definition.write_text(f'[Service]\nExecStart=/bin/orbi --config {config}\n')
+        definition.write_text(f'[Service]\nExecStart=/bin/orbi \\\n  --config {config}\n')
         self.h.rules(*self.lists('--user', files=[{'unit_file': definition.name, 'state': 'disabled'}]),
                      *self.lists('--system'),
                      self.detail('--user', definition.name, FragmentPath=definition, LoadState='loaded'))
