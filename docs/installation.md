@@ -360,9 +360,14 @@ treated as an override, except a root-owned vendor file in
 Fedora's `10-timeout-abort.conf`.
 
 The deployment file and engine execution owner must match the installing account;
-Kit does not switch users, invoke sudo or make access changes. The installer
-checks the current exact engine pin and runs `orbi check` before any stop, then
-validates the new pin and runs the check again before activation.
+Kit does not switch users or invoke sudo. During inventory, it removes group/other
+write bits only from the installing account's own regular Orbi service and timer
+templates in its user unit directory, without changing their contents. The Orbi
+receipt lists each changed path in `repaired_unit_fragments`, even if a later check
+holds the fleet. Other writable fragments still hold the refresh; verify their
+binding and owner before applying the reported permission fix. The installer checks
+the current exact engine pin and runs `orbi check` before any stop, then validates
+the new pin and runs the check again before activation.
 
 It disables/stops verified triggers and cancels owned queued starts before stopping
 owned services through systemd, without a natural-drain wait. After proving fleet
