@@ -106,6 +106,28 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                      'cite file:line', 'required docs missing from `touches`'):
             self.assertIn(rule, builder)
 
+    def test_guard_contract_check_runs_before_publication(self):
+        craft = 'skills/shared/PLANNING-CRAFT.md'
+        anchor = 'PLANNING-CRAFT.md#check-issue-contracts-before-publication'
+        contract = section(craft, 'Check issue contracts before publication')
+        for rule in ('declared Verification read-only on current `main`',
+                     'Record the revision, command and result in Sources',
+                     'exact reason it could not run', 'direct test fixtures and generators',
+                     'Exclusions forbid any change needed by Acceptance',
+                     'add the authorized repair to Scope', 'native `blockedBy` prerequisite',
+                     'narrow the proposed check within accepted intent',
+                     'hold the affected draft out of publication',
+                     'guard issue is blocked by the copy repair issues, not the reverse'):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, contract)
+        handoff = section('skills/shared/PLAN-HANDOFF.md', 'Publication and dependencies')
+        self.assertIn(anchor, handoff.split('Create complete issues', 1)[0])
+        for mode, heading in (('plan-with-me', 'Save answers and finish the plan'),
+                              ('plan-for-me', 'Save the plan and hand off')):
+            with self.subTest(mode=mode):
+                finish = section(f'skills/{mode}/SKILL.md', heading)
+                self.assertIn(anchor, finish.split('Follow Plan Handoff', 1)[0])
+
     def test_handoff_makes_github_disposition_explicit(self):
         handoff = section('skills/shared/PLAN-HANDOFF.md', 'Publication and dependencies')
         for rule in ('ready/waiting/proposed status', 'actual ownership',
