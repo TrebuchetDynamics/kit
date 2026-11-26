@@ -768,9 +768,9 @@ from template availability. Absent timer fragments retain the existing omission
 from `timers`; service records cover every scanned index.
 
 `scheduler.inventory` exposes `scope: local-target-prefix`, `scan_first: 1`,
-`scan_last: 5` (the default `MAX_INSTANCES`) and `outside_scan: unobserved`.
-The setup idle check and stop failure observation use `scan_last: max(5, max_concurrency)`.
-`configured_slots_covered` is false when configured capacity exceeds the scan bound;
+`scan_last` and `outside_scan: unobserved`. Linux repository status and start scan
+through `max(5, max_concurrency)`, as do the setup idle check and stop failure
+observation. `configured_slots_covered` is false when configured capacity exceeds the scan bound;
 positive concurrency above five remains valid. Counts describe only owned
 observed units within that bound, including out-of-config ones, not exhaustive
 whole-deployment or remote activity:

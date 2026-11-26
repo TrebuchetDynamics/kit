@@ -1561,7 +1561,8 @@ def scheduler_snapshot(ctx, deployment, *, indices=None, scan_last=MAX_INSTANCES
     return {'state': 'ok', 'timers': timers, 'services': services, 'inventory': inventory}
 
 
-def safe_scheduler_snapshot(ctx, deployment, *, scan_last=MAX_INSTANCES):
+def safe_scheduler_snapshot(ctx, deployment):
+    scan_last = max(MAX_INSTANCES, deployment.max_concurrency)
     try:
         return scheduler_snapshot(ctx, deployment, scan_last=scan_last)
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError):
@@ -2625,7 +2626,8 @@ def activate_existing_locked(ctx, args, repo, target, identities, steps, current
     steps.append({'step': 'install_units', 'status': 'ok'})
     current.clear()
     current.update({'step': 'observe_scheduler', 'mutation': 'none'})
-    snapshot = scheduler_snapshot(ctx, target)
+    scan_last = max(MAX_INSTANCES, target.max_concurrency) if first_tick_request else MAX_INSTANCES
+    snapshot = scheduler_snapshot(ctx, target, scan_last=scan_last)
     if snapshot['state'] != 'ok':
         raise ControlError('scheduler_unavailable',
                            f"cannot read the target scheduler: {snapshot.get('reason')}",
@@ -2758,7 +2760,7 @@ def prepare_or_preview_start(ctx, args, repo, target):
         report = new_deployment_report(ctx, target, provider)
         report['source'] = _source['state']
         if args.dry_run:
-            snapshot = scheduler_snapshot(ctx, target)
+            snapshot = scheduler_snapshot(ctx, target, scan_last=max(MAX_INSTANCES, target.max_concurrency))
             if snapshot['state'] != 'ok':
                 raise ControlError('scheduler_unavailable',
                                    f"cannot read the target scheduler: {snapshot.get('reason')}",
