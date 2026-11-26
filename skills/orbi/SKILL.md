@@ -36,7 +36,7 @@ concrete unmet need, not a fixed sequence of model turns.
 
    | Public skill arguments | Helper arguments |
    | --- | --- |
-   | `status all [--json]` | `status all [--json]` |
+   | `status all [--verbose\|--json]` | `status all [--verbose\|--json]` |
    | `setup` | `start` |
    | `setup --dry-run` | `start --dry-run` |
    | `setup --prepare-only` | `setup` |
@@ -57,9 +57,10 @@ concrete unmet need, not a fixed sequence of model turns.
    it needs no repository, config, environment or scheduler reads.
    **Host inventory:** preserve literal
    `status all` in one helper invocation, from any working directory. Do not inject
-   `--repo-dir` or `--config`, resolve a checkout or run GitHub probes. Only `--json`
-   may accompany `all`; conflicting selectors are refused before probes. Relay
-   partial manager/config coverage and observed totals, never an absolute host count.
+   `--repo-dir` or `--config`, resolve a checkout or run GitHub probes. Return the
+   compact deployment rows by default, per-unit text with `--verbose`, or structured
+   inventory with `--json`. Reject conflicting selectors before probes. Relay partial
+   coverage and observed totals, never an absolute host count.
    For host inventory interpretation, see [host inventory](references/lifecycle.md#host-inventory).
    For repository lifecycle actions, use the requested
    repo/config or known current checkout. The helper resolves the canonical
@@ -96,7 +97,8 @@ concrete unmet need, not a fixed sequence of model turns.
    user text as shell code; shell-only hosts must safely quote every argv element.
    After the public mapping, pass supported flags unchanged; add a known `--repo-dir`
    only when needed to bind the requested repository. Use `--json` for structured receipts unless the
-   requested text/help output is preferable. Do not add/remove `--dry-run`, expand
+   requested text/help output is preferable. For `status all`, pass only the user's
+   requested output flag, if any. Do not add/remove `--dry-run`, expand
    a literal path's shell substitutions, invent selectors or copy credentials.
    The existing ACTIONS-backed helper owns deterministic checks and action composition.
 

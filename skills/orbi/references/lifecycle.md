@@ -562,11 +562,17 @@ authorizes a protection change.
 
 ## Host inventory
 
-`/orbi status all [--json]` is one read-only helper call from any directory.
+`/orbi status all [--verbose|--json]` is one read-only helper call from any directory.
+The default prints one row per resolved config: repository, observed busy/configured
+slots, saved provider/model/thinking, state, current issues and the earliest observed
+next trigger. `--verbose` lists units and full coverage diagnostics; `--json` keeps the
+structured per-unit inventory. Unknown bindings and unavailable timestamps are not
+inferred from retained runs. Bare/current-repo status is unchanged.
+
 Preserve the literal `all`; never inject `--repo-dir` or `--config`. Explicit
 repo/config and all mutation/bootstrap selectors (including dry-run) conflict
 and return `invalid_host_selection` before probes. Repair by using
-`/orbi status all --json` without selectors. Bare/current-repo status is unchanged.
+`/orbi status all` without selectors.
 
 Linux lists loaded services/timers and installed unit files in the current user
 and system managers, without sudo. It reads accessible installed definitions,
@@ -575,8 +581,9 @@ actual fragments/drop-ins and discoverable configs under XDG data/config roots,
 slots; explicit timer targets take precedence over matching stems. A config
 reference, not a basename or Kit unit naming convention, establishes repository
 attribution. Conflicting/unreadable bindings remain unknown while healthy rows
-survive. Templates and nonrunner services are distinct from worker instances.
-Config-only rows mean prepared metadata, not installed or active scheduling.
+survive. Templates are inspected via their installed fragments, not runtime
+`systemctl show`. Templates and nonrunner services are distinct from worker
+instances. Config-only rows mean prepared metadata, not installed or active scheduling.
 Worker classification uses the service command where readable; a templated
 exporter is not a worker, and a directly evidenced singleton tick is. Enabled
 but inactive timers are stopped, not active scheduling. Loaded presence comes
@@ -594,19 +601,24 @@ also omits that job. Next-fire time is unknown on launchd.
 
 The host receipt has `scope: host`, `rows`, `totals` and `coverage`. Rows include
 manager/unit/timer, kind, loaded/installed evidence, scheduler and worker state,
-config binding, repository, deployment-bound engine metadata, current issue when
-locally verified and next trigger when available. No provider/env/session contents,
-raw commands, queue scan, doctor or network fan-out. Engine metadata is reused once
-per resolved config; bootstrap CLI checks are omitted. For worker attribution in
-the observed manager, use the same [current-invocation binding](#stop-status-and-drain)
-as repository status.
+config binding, repository, deployment-bound engine metadata, saved Pi selection
+and capacity, current issue when locally attributed, and next trigger when available.
+No provider metadata files, env/session contents, raw commands, queue scan, doctor or
+network fan-out. Engine metadata is reused once per resolved config; bootstrap CLI
+checks are omitted. On Linux, prefer the same [current-invocation journal binding](#stop-status-and-drain)
+as repository status. If that leaves the issue unknown, try a slot record locked by the
+current service PID, then the Orbi branch of a worktree used by the live service's
+cgroup. Fallback evidence has provenance but no journal run ID.
 
 Totals count **observed loaded worker services**, not timers, templates or an
 absolute host population. Coverage is scoped to observed local managers: other
 users, namespaces, containers and remote hosts remain unobserved. Successful empty
 lists are zero observed. Failed/denied discovery, unreadable configs and truncated
 reads produce partial coverage with a read-access repair action; no automatic
-repair or privilege escalation. Lists/definition scans cap at 8192 entries and
+repair or privilege escalation. Compact text counts unreadable units without observed
+Orbi evidence instead of listing them. This does not prove those units are unrelated;
+coverage remains partial and `--verbose` or `--json` retains the problems.
+Lists/definition scans cap at 8192 entries and
 unit/job details at 256 per manager; overflow is explicit. Detail reads are bounded,
 not a full status/doctor per deployment. This inventory grants no activation or
 live qualification.

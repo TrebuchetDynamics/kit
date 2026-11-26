@@ -4019,11 +4019,130 @@ class HostStatusTests(unittest.TestCase):
         self.assertEqual(doc['totals']['observed_workers'], 4)
         self.assert_read_only(before)
         self.h.clear_calls()
-        code, text, _ = self.invoke(json_mode=False)
+        code, text, _ = self.invoke('--verbose', json_mode=False)
         self.assertEqual(code, 0)
         for token in ('Host Orbi', 'orbi-a@9.service', 'second/project', 'unknown', 'observed'):
             self.assertIn(token, text)
         self.assert_read_only(before)
+
+    def test_compact_status_groups_13_slots_by_config_and_counts_non_orbi_failures(self):
+        units, files, details = [], [], {}
+        for index in range(7):
+            deploy = self.h.data_home / f'delivery-{index}'
+            deploy.mkdir()
+            config = deploy / 'orbi.toml'
+            count = 2 if index < 6 else 1
+            # Two distinct deployments can target the same repository.
+            config.write_text(f'source_repos = ["owner/repo-{max(1, index)}"]\n'
+                              f'max_concurrency = {count}\npi_provider = "example"\n'
+                              'pi_model = "model-id"\npi_thinking = "high"\n')
+            template = self.h.unit_dir / f'delivery-{index}@.service'
+            template.write_text(f'[Service]\nExecStart=/bin/orbi --config {config}\n')
+            files.append({'unit_file': str(template), 'state': 'disabled'})
+            for slot in range(1, count + 1):
+                name = template.name.replace('@.', f'@{slot}.')
+                units.append(self.unit(name, 'active' if index == 0 and slot == 1 else 'inactive'))
+                details[name] = dict(FragmentPath=template)
+                if index < 2:
+                    timer = name.replace('.service', '.timer')
+                    units.append(self.unit(timer, 'active'))
+                    details[timer] = dict(Unit=name, NextElapseUSecRealtime=(
+                        'Sun 2026-11-22 08:00:00 UTC' if slot == 1 else 'Mon 2026-11-23 08:00:00 UTC'))
+        for name in ('getty@.service', 'example@.timer'):
+            path = self.h.unit_dir / name
+            path.write_text('[Unit]\nDescription=Unrelated template\n')
+            files.append({'unit_file': str(path), 'state': 'disabled'})
+        units.extend(self.unit(f'vendor-{index}.service') for index in range(58))
+        show = []
+
+        def fake_run(ctx, argv, **kwargs):
+            if argv[:2] == ['systemctl', '--user']:
+                if argv[2] == 'list-units':
+                    return subprocess.CompletedProcess(argv, 0, json.dumps(units), '')
+                if argv[2] == 'list-unit-files':
+                    return subprocess.CompletedProcess(argv, 0, json.dumps(files), '')
+                self.assertEqual(argv[2], 'show')
+                name = argv[3]
+                show.append(name)
+                if name in details:
+                    return subprocess.CompletedProcess(argv, 0, self.detail('--user', name, **details[name])['stdout'], '')
+                return subprocess.CompletedProcess(argv, 1, '', 'not readable ' + SECRET)
+            self.assertIn(argv[:2], (['systemctl', '--system'], ['git', '-C']))
+            return subprocess.CompletedProcess(argv, 0, '[]', '')
+
+        with mock.patch.object(helper.Context, 'run', fake_run), mock.patch.object(
+                helper, 'host_definition_dirs', return_value=[]):
+            code, text, err = self.invoke(json_mode=False)
+            self.assertEqual(code, 0, err)
+            _, verbose, _ = self.invoke('--verbose', json_mode=False)
+            _, doc, _ = self.invoke()
+        data = [line for line in text.splitlines() if 'slots=' in line]
+        self.assertEqual(len(data), 7)
+        self.assertEqual(sum('owner/repo-1' in line for line in data), 2)
+        self.assertLessEqual(len(text.splitlines()), 10)
+        for token in ('slots=1/2', 'example/model-id/high', 'state=running', 'issues=unknown',
+                      'next=Sun 2026-11-22 08:00:00 UTC', 'state=idle', 'state=stopped'):
+            self.assertIn(token, text)
+        self.assertIn('coverage partial: 58 non-Orbi units unreadable (--verbose to list)', text)
+        self.assertNotIn('vendor-0.service', text)
+        self.assertNotIn(SECRET, text + verbose + json.dumps(doc))
+        self.assertIn('unit details failed: vendor-0.service', verbose)
+        self.assertIn('delivery-0@.service', verbose)
+        self.assertEqual(doc['coverage']['state'], 'partial')
+        self.assertEqual(len(doc['coverage']['problems']), 58)
+        self.assertEqual(doc['totals']['observed_workers'], 13)
+        self.assertEqual(sum(r['kind'] == 'template' for r in doc['rows']), 7)
+        self.assertEqual(sum(r['kind'] == 'runner' for r in doc['rows']), 13)
+        row = next(r for r in doc['rows'] if r['unit'] == 'delivery-0@1.service')
+        self.assertEqual((row['provider'], row['model'], row['thinking'], row['max_concurrency']),
+                         ('example', 'model-id', 'high', 2))
+        self.assertFalse(any('@.' in name for name in show))
+
+    def test_active_worker_falls_back_to_live_slot_then_worktree_branch(self):
+        a = self.h.add_deployment_a()
+        repo = self.h.root / 'repo-a'
+        worktree = repo / '.worktrees' / 'live-branch-checkout'
+        worktree.mkdir(parents=True)
+        (worktree / '.git').write_text('gitdir: ../linked-worktree-metadata\n')
+        unit, pid = 'orbi-a@17.service', '222'
+        proc = self.h.root / 'proc'
+        main = proc / pid
+        (main / 'fd').mkdir(parents=True)
+        (main / 'fdinfo').mkdir()
+        child = proc / '333'
+        child.mkdir()
+        (child / 'cwd').symlink_to(worktree)
+        slots = repo / '.orbi/slots'
+        slots.mkdir(parents=True)
+        slot = slots / 'slot-1'
+        slot.write_text(f'{pid}\nother/repo-a#42\n')
+        (main / 'fd/5').symlink_to(slot)
+        fdinfo = main / 'fdinfo/5'
+        fdinfo.write_text(f'lock:\t1: FLOCK ADVISORY WRITE {pid} 00:27:1234 0 EOF\n')
+        cgroups = self.h.root / 'cgroups'
+        group = cgroups / 'pool.slice' / unit
+        group.mkdir(parents=True)
+        (group / 'cgroup.procs').write_text(f'{pid}\n333\n')
+        props = dict(ActiveState='active', MainPID=pid, InvocationID='c' * 32,
+                     WorkingDirectory=a['deploy'], FragmentPath=self.h.unit_dir / 'orbi-a@.service',
+                     ControlGroup=f'/pool.slice/{unit}')
+        self.h.rules(*self.lists('--system'), *self.lists('--user', [self.unit(unit, 'active')]),
+                     self.detail('--user', unit, **props),
+                     {'tool': 'git', 'argv_contains': [str(worktree), 'symbolic-ref', '--short', 'HEAD'],
+                      'stdout': 'orbi/other-repo-a-issue-308\n'})
+        with mock.patch.object(helper, 'HOST_PROC', proc), mock.patch.object(
+                helper, 'HOST_CGROUP', cgroups):
+            _, bound, _ = self.invoke()
+            fdinfo.unlink()  # An unlocked record is not evidence, even with the same PID.
+            _, text, _ = self.invoke(json_mode=False)
+            _, branch, _ = self.invoke()
+            (group / 'cgroup.procs').write_text(f'{pid}\n')
+            _, stale, _ = self.invoke()
+        self.assertIn('issues=#308', text)
+        for doc, number in ((bound, 42), (branch, 308), (stale, None)):
+            worker = next(r['worker'] for r in doc['rows'] if r['unit'] == unit)
+            self.assertEqual(worker.get('issue', {}).get('number'), number)
+            self.assertEqual(worker['state'], 'active/issue unknown' if number is None else 'running')
 
     def test_worker_kind_uses_execution_evidence_and_inactive_timer_is_stopped(self):
         config = self.h.root / 'native.toml'
@@ -4260,17 +4379,31 @@ class HostStatusTests(unittest.TestCase):
 
     def test_real_cli_from_non_git_cwd_needs_no_github_or_global_checkout(self):
         self.h.rules(*self.lists('--user'), *self.lists('--system'))
+        (self.cwd / 'orbi.toml').write_text('source_repos = ["prepared/project"]\nmax_concurrency = 3\n')
         before = snapshot(self.h.home)
-        proc = subprocess.run([sys.executable, '-B', str(HELPER), 'status', 'all', '--json'],
-                              cwd=self.cwd, env=self.h.env, capture_output=True, text=True, timeout=30)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(json.loads(proc.stdout)['totals']['observed_workers'], 0)
+        for flags in ([], ['--verbose'], ['--json']):
+            with self.subTest(flags=flags):
+                proc = subprocess.run([sys.executable, '-B', str(HELPER), 'status', 'all', *flags],
+                                      cwd=self.cwd, env=self.h.env, capture_output=True, text=True, timeout=30)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                if not flags:
+                    self.assertIn('prepared/project slots=0/3', proc.stdout)
+                    self.assertIn('state=stopped issues=-', proc.stdout)
+                elif flags == ['--verbose']:
+                    self.assertIn('repo=prepared/project', proc.stdout)
+                    self.assertIn('state=prepared-only', proc.stdout)
+                else:
+                    self.assertEqual(json.loads(proc.stdout)['totals']['observed_workers'], 0)
         calls_before = self.h.calls()
         failure = subprocess.run([sys.executable, '-B', str(HELPER), 'status', 'all', '--config', '/missing'],
                                  cwd=self.cwd, env=self.h.env, capture_output=True, text=True, timeout=30)
         self.assertEqual(failure.returncode, 2)
         self.assertIn('error=invalid_host_selection', failure.stderr)
-        self.assertIn('fix=use /orbi status all [--json] without selectors', failure.stderr)
+        self.assertIn('fix=use /orbi status all without selectors', failure.stderr)
+        failure = subprocess.run([sys.executable, '-B', str(HELPER), 'status', '--verbose'],
+                                 cwd=self.cwd, env=self.h.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(failure.returncode, 2)
+        self.assertIn('--verbose requires status all', failure.stderr)
         self.assertEqual(self.h.calls(), calls_before)
         self.assert_read_only(before)
 
