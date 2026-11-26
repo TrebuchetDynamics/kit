@@ -63,6 +63,10 @@ SUPPORTED_PIN = 'ce97e015ca433a9312e5bdf69353be58ab394fd9'
 PIN_TRACK = 'sha:' + SUPPORTED_PIN
 OFFICIAL_ORIGIN = 'https://github.com/orbi-build/orbi'
 OFFICIAL_REPO = 'orbi-build/orbi'
+# `git remote get-url` applies url.<base>.insteadOf, so a common
+# `git@github.com:` rewrite reports the official HTTPS clone over SSH.
+OFFICIAL_ORIGINS = frozenset({OFFICIAL_ORIGIN, OFFICIAL_ORIGIN + '.git',
+                              f'git@github.com:{OFFICIAL_REPO}', f'git@github.com:{OFFICIAL_REPO}.git'})
 MAX_INSTANCES = 5
 NODE_FLOOR = (22, 19)
 PROBE_TIMEOUT = 20
@@ -4594,7 +4598,7 @@ def fleet_preflight_target(ctx, target):
         repo = repo_identity(ctx, target.repo_dir)
         validate_target(target, repo)
     remote = ctx.run(['git', '-C', target.deploy_home, 'remote', 'get-url', 'origin']).stdout.strip()
-    if remote not in {OFFICIAL_ORIGIN, OFFICIAL_ORIGIN + '.git', f'git@github.com:{OFFICIAL_REPO}.git'}:
+    if remote not in OFFICIAL_ORIGINS:
         fleet_refuse(f'{target.deploy_home}: engine origin is not official')
     if not os.access(target.config_path.parent, os.W_OK) or not os.access(target.deploy_home, os.W_OK):
         fleet_refuse(f'{target.config_path}: deployment files are not writable')

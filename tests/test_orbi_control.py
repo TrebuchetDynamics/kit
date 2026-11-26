@@ -4046,6 +4046,28 @@ class InstallerFleetTests(unittest.TestCase):
                     with self.assertRaises(helper.ControlError):
                         call()
 
+    def test_preflight_accepts_official_origin_after_ssh_insteadof_rewrite(self):
+        target = mock.Mock(source_repos=['example/repo'], repo_dir=None, deploy_home=self.h.root,
+                           config_path=self.h.root / 'orbi.toml')
+        ctx = helper.Context(env=self.h.env, platform='linux')
+        for remote, allowed in (('https://github.com/orbi-build/orbi', True),
+                                ('https://github.com/orbi-build/orbi.git', True),
+                                ('git@github.com:orbi-build/orbi', True),
+                                ('git@github.com:orbi-build/orbi.git', True),
+                                ('git@github.com:someone/orbi', False),
+                                ('https://github.com/orbi-build/orbi-fork', False)):
+            with self.subTest(remote=remote), \
+                    mock.patch.object(helper, 'validate_deployment_paths'), \
+                    mock.patch.object(helper, 'setup_file_identities'), \
+                    mock.patch.object(helper, 'require_engine_checkout'), \
+                    mock.patch.object(helper.os, 'access', return_value=False), \
+                    mock.patch.object(ctx, 'run', return_value=subprocess.CompletedProcess([], 0, remote + '\n', '')):
+                with self.assertRaises(helper.ControlError) as caught:
+                    helper.fleet_preflight_target(ctx, target)
+                # Accepted origins continue to the next check (writability here).
+                expected = 'deployment files are not writable' if allowed else 'engine origin is not official'
+                self.assertIn(expected, str(caught.exception))
+
     def test_benign_vendor_dropin_rules(self):
         vendor = self.h.root / 'vendor/service.d'
         vendor.mkdir(parents=True)
