@@ -161,7 +161,8 @@ Output streams during each install step, including native prompts, and shows
 shell-quoted commands by default. Hermes fleet setup summarizes skills per profile
 in both preflight and installation, reports profile status and whether `config.yaml`
 changed, and times preflight, skill installation, configuration and each gateway
-check. Use `--verbose` to see individual Hermes skill skips and full setup receipts.
+check. Use `--verbose` to see individual Hermes skill skips, full setup receipts
+and completed Orbi deployment steps.
 `--quiet` shows summaries and failure diagnostics, while leaving native output
 visible when input is a terminal. The failure
 transcript in quiet mode is limited to its last 16,384 characters. Colors are
@@ -342,8 +343,8 @@ that inventory. If a local account's user unit folders cannot be listed due to
 permissions, the installer leaves it unchecked only if there is no runtime
 entry for its UID, the linger directory can be listed and has no marker for the
 account, and no readable unit evidence names Orbi. The Orbi receipt records only
-the unchecked account names, and the summary shows
-`not checked: <account> (home unreadable, no running manager, no linger)`.
+the unchecked account names, and the final Orbi summary line lists them as
+`not checked: <accounts> (home unreadable, no running manager, no linger)`.
 This skip does not fail the refresh. Unverified
 coverage for other accounts, inaccessible managers, ambiguous unit/config/owner
 bindings or missing noninteractive write access hold the entire Orbi fleet
@@ -369,6 +370,12 @@ quiescence, it syncs each deployment once, locks the newest official stable rele
 as an exact commit, and runs `orbi check` before activation. It reads back enabled,
 active scheduling separately from requested service starts. No new deployment,
 unit topology, credential setup or bare Orbi tick is part of the refresh.
+
+The Orbi stage shows one row per successful deployment: the configured repository
+name, result, and configured slot count. Pass `--verbose` to see the completed
+steps as well. A hold or failure always shows the available completed steps and
+failure location. The final Orbi line reports counts and unchecked accounts,
+without repeating the deployment rows.
 
 On a partial failure, the installer exits nonzero but continues independent
 components. Inspect the named config and manager-qualified units in the Orbi

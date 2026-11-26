@@ -37,6 +37,7 @@ Standard library only.
 """
 import argparse
 import codecs
+from collections import Counter
 from contextlib import contextmanager, nullcontext
 import fcntl
 import hashlib
@@ -86,9 +87,9 @@ class Output:
     COLORS = {'heading': '1;36', 'installed': '32', 'failed': '31',
               'skipped': '33', 'warning': '33', 'planned': '36', 'command': '2'}
 
-    def __init__(self, color='auto', verbosity=2, *, verbose_hermes=False):
+    def __init__(self, color='auto', verbosity=2, *, verbose=False):
         self.verbosity = verbosity
-        self.verbose_hermes = verbose_hermes
+        self.verbose = verbose
         self.color = color == 'always' or (color == 'auto' and sys.stdout.isatty()
                       and os.environ.get('TERM') != 'dumb' and not os.environ.get('NO_COLOR'))
 
@@ -117,7 +118,7 @@ def run_command(argv, output, extra_env=None, timeout=None, receipt=None, *, rec
     decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
     tail = ''
     # Native receipts can exceed the diagnostic tail (many profiles/commands).
-    # Setup can write directly to the spool instead of publishing JSON to the terminal.
+    # Native commands can write full receipts to the spool without publishing them to the terminal.
     captured = tempfile.TemporaryFile(mode='w+', encoding='utf-8') if receipt is not None else None
     receipt_fd = captured.fileno() if receipt_via_fd and captured is not None else None
     if receipt_fd is not None:
@@ -1143,24 +1144,55 @@ def refresh_orbi_fleet(*, report_progress=None):
 
 
 def orbi_fleet_summary(receipt):
-    lines = ['No installed Orbi deployment verified; CLI only' if receipt['status'] == 'no_deployments'
-             else f"Orbi fleet {receipt['status']}"]
-    if 'error' in receipt:
-        error = receipt['error']
+    status = receipt['status']
+    if status == 'no_deployments':
+        summary = 'No installed Orbi deployment verified; CLI only'
+    else:
+        rows = receipt['deployments']
+        counts = Counter(row['status'] for row in rows)
+        if status == 'completed':
+            counts.update(row['engine_update'] for row in rows)
+        summary = f'Orbi fleet {status}'
+        if counts:
+            summary += ': ' + ', '.join(f"{count} {label.replace('_', ' ')}" for label, count in counts.items())
+    if names := receipt.get('not_checked'):
+        summary += f"; not checked: {', '.join(names)} (home unreadable, no running manager, no linger)"
+    return summary
+
+
+def orbi_fleet_details(receipt, *, verbose=False):
+    failed = receipt['status'] != 'completed'
+    lines = [f"Orbi fleet {receipt['status']}"]
+    if error := receipt.get('error'):
         where = ' '.join(error[key] for key in ('config', 'unit', 'step') if error.get(key))
         lines[0] += f": {where + ': ' if where else ''}{error['message']}"
         if error.get('fix'):
             lines.append(error['fix'])
-    for row in receipt['deployments']:
-        steps = ', '.join(step['step'] + (' ' + step['unit'] if 'unit' in step else '')
-                          for step in row['steps'])
-        lines.append(f"{row['config']}: {row['status']} ({row.get('engine_update', 'not applied')})"
-                     + (f'; completed: {steps}' if steps else '')
-                     + (f"; {row['recovery']}" if receipt['status'] != 'completed' else ''))
+    deployments = receipt['deployments']
+    names = Counter(row['repo'].rsplit('/', 1)[-1] for row in deployments)
+    for row in deployments:
+        result = f"{row['status']} ({row.get('engine_update', 'not_applied').replace('_', ' ')})"
+        needs_repair = failed and row['status'] != 'started'
+        if needs_repair:
+            line = f"{row['config']}: {result}"
+        else:
+            slug = row['repo'].rsplit('/', 1)[-1]
+            # Different owners can deploy repositories with the same basename.
+            name = ' '.join((row['repo'] if names[slug] > 1 else slug).splitlines())
+            slots = row.get('slots', 'unknown')  # older delegated receipts omit the count
+            line = f"{name}  {result}, {slots} {'slot' if slots == 1 else 'slots'}"
+            if verbose:
+                line += f"; {row['config']}"
+        if verbose or needs_repair:
+            steps = ', '.join(step['step'] + (' ' + step['unit'] if 'unit' in step else '')
+                              for step in row['steps'])
+            if steps:
+                line += f'; completed: {steps}'
+            if needs_repair:
+                line += f"; {row['recovery']}"
+        lines.append(line)
     if 'recovery' in receipt:
         lines.append(receipt['recovery'])
-    lines.extend(f'not checked: {name} (home unreadable, no running manager, no linger)'
-                 for name in receipt.get('not_checked', ()))
     return '\n  '.join(lines)
 
 
@@ -2031,9 +2063,18 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
     for item in all_items:
         if item.key not in chosen:
             if item.key == 'orbi' and delegated_orbi:
-                record('orbi', delegated_orbi['status'], 'Hermes delegated: ' +
-                       orbi_fleet_summary(delegated_orbi['orbi_fleet']), delegated_orbi['exit'],
-                       orbi_fleet=delegated_orbi['orbi_fleet'])
+                fleet = delegated_orbi['orbi_fleet']
+                # The quiet delegate prints terminal failures unless we suppress the
+                # stream. An interrupted delegate leaves only an intermediate receipt.
+                error = fleet.get('error')
+                if error and (fleet['status'] == 'unverified'
+                              or error['message'] == 'fleet refresh did not return a terminal receipt'
+                              or not (output.verbosity or sys.stdin.isatty())):
+                    output.line('  FAILED: ' + orbi_fleet_details(fleet, verbose=output.verbose), 'failed')
+                elif fleet['status'] == 'completed' and output.verbosity:
+                    output.line('  Hermes delegated: ' + orbi_fleet_details(fleet, verbose=output.verbose))
+                record('orbi', delegated_orbi['status'], 'Hermes delegated: ' + orbi_fleet_summary(fleet),
+                       delegated_orbi['exit'], orbi_fleet=fleet)
             else:
                 record(item.key, 'skipped', describe(item) if not item.available else 'not chosen')
             continue
@@ -2082,31 +2123,37 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                             refresh, message = message, message.message
                         if item.key == 'orbi':
                             fleet = message
-                            message = orbi_fleet_summary(fleet)
                             if fleet['status'] == 'no_deployments':
                                 if fleet.get('not_checked'):
-                                    detail.append(message)
+                                    detail.append(orbi_fleet_summary(fleet))
                                 message = install_orbi(output)
-                            elif fleet['status'] != 'completed':
-                                outcome, exit_code = 'failed', 1
-                                output.line('  FAILED: ' + message, 'failed')
+                            else:
+                                detail.append(orbi_fleet_summary(fleet))
+                                if fleet['status'] != 'completed':
+                                    outcome, exit_code = 'failed', 1
+                                    output.line('  FAILED: ' + orbi_fleet_details(fleet, verbose=output.verbose), 'failed')
+                                elif output.verbosity:
+                                    output.line('  ' + orbi_fleet_details(fleet, verbose=output.verbose))
+                                break
                         detail.append(message)
                         if output.verbosity and outcome != 'failed':
                             output.line('  ' + message)
                         break
                     if item.key == 'hermes':
                         env = {'KIT_INSTALL_DEFER_SERVICES': '1',
-                               'KIT_INSTALL_HERMES_SUMMARY': '0' if output.verbose_hermes else '1'}
+                               'KIT_INSTALL_HERMES_SUMMARY': '0' if output.verbose else '1'}
                         if skip_orbi or 'orbi' in chosen:
                             # Explicit opt-out or let the outer Orbi item own the one fleet refresh.
                             env['KIT_INSTALL_SKIP_ORBI'] = '1'
                         if lock_fd is not None:
                             env['KIT_INSTALL_LOCK_FD'] = str(lock_fd)
                         native = {}
-                        setup_summary = (not output.verbose_hermes and len(step.argv) > 1
-                                         and Path(step.argv[1]).name == 'setup_bundle.py')
+                        script = Path(step.argv[1]).name if len(step.argv) > 1 else ''
+                        private_receipt = not output.verbose and (
+                            script == 'setup_bundle.py'
+                            or (script == 'update_bundle.py' and 'KIT_INSTALL_SKIP_ORBI' not in env))
                         code, text = run_command(step.argv, output, extra_env=env, receipt=native, timeout=1800,
-                                                 receipt_via_fd=setup_summary)
+                                                 receipt_via_fd=private_receipt)
                         native = native or terminal_receipt(text)
                     else:
                         code, text = run_command(step.argv, output)
@@ -2477,7 +2524,8 @@ def main(argv=None):
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
     parser.add_argument('--menu', action='store_true', help='choose components using the checkbox menu')
     verbosity = parser.add_mutually_exclusive_group()
-    verbosity.add_argument('-v', '--verbose', action='store_true', help='include individual Hermes skill skips and native profile receipts')
+    verbosity.add_argument('-v', '--verbose', action='store_true',
+                           help='include Hermes skill skips, native profile receipts and completed Orbi deployment steps')
     verbosity.add_argument('-q', '--quiet', action='store_true', help='show summary and failures only (native terminal prompts remain visible)')
     parser.add_argument('--color', choices=('auto', 'always', 'never'), default='auto',
                         help='color output (default: auto; respects NO_COLOR)')
@@ -2494,7 +2542,7 @@ def main(argv=None):
         if unknown:
             parser.error(f'unknown item(s): {", ".join(unknown)}; choose from {", ".join(ITEM_KEYS)}')
 
-    output = Output(args.color, 0 if args.quiet else 2, verbose_hermes=args.verbose)
+    output = Output(args.color, 0 if args.quiet else 2, verbose=args.verbose)
     if (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
             or os.environ.get('KIT_INSTALL_NO_PULL') or not has_checkout(ROOT)):
         result = run_suite(args, parser, output)

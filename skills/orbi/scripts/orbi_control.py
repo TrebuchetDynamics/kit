@@ -5356,7 +5356,7 @@ def installer_fleet(ctx, *, report_progress=None):
             return receipt
         for config, target in sorted(targets.items()):
             owned = tuple(unit for unit in units if unit.config == config)
-            row = {'config': str(config), 'repo': target.source_repos[0],
+            row = {'config': str(config), 'repo': target.source_repos[0], 'slots': target.max_concurrency,
                    'units': [unit.label for unit in owned], 'status': 'untouched', 'steps': [],
                    'before': [{'unit': unit.label, 'active': unit.active, 'enablement': unit.enabled,
                                'trigger': unit.triggers or None,
