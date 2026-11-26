@@ -4000,14 +4000,14 @@ def render(ctx, document, json_mode, *, verbose=False):
                       f"({engine['state']}; {engine.get('reason', engine.get('provenance'))})\n")
     if document.get('action') == 'status' and 'repo' in document:
         deployment = document['deployment']
-        if usage := deployment.get('worktree_usage'):
-            ctx.out.write(f'Worktrees: {worktree_usage_text(usage)}\n')
         engine = deployment.get('engine', {})
         ctx.out.write(f"Repository: {document['repo']}\n")
         ctx.out.write(f"Orbi: {engine.get('version') or 'unknown'} "
                       f"revision={engine.get('revision') or 'unknown'} "
                       f"({engine.get('state', 'unknown')}; {engine.get('provenance', 'no deployment metadata')})\n")
-        provider = document.get('deployment', {}).get('provider', {})
+        if usage := deployment.get('worktree_usage'):
+            ctx.out.write(f'Worktrees: {worktree_usage_text(usage)}\n')
+        provider = deployment.get('provider', {})
         if provider.get('metered'):
             ctx.out.write(f"Model: {provider['provider']}/{provider['model']} (metered)\n")
         cli = engine.get('bootstrap_cli', {})
@@ -5905,6 +5905,14 @@ def prune_fetch_base(git, repo_dir, base):
             return None, 'base fetch failed; check origin and access, then preview again'
 
 
+def prune_issue_reason(ctx, repo, number):
+    issue = github_read(ctx, ['issue', 'view', str(number), '--repo', f'github.com/{repo}', '--json', 'number,state'])
+    if (not isinstance(issue, dict) or type(issue.get('number')) is not int
+            or issue['number'] != number or issue.get('state') not in ('OPEN', 'CLOSED')):
+        return 'issue state unavailable; check gh auth status and repository access'
+    return 'issue open' if issue['state'] == 'OPEN' else None
+
+
 def prune_worktree_local_reason(git, path, branch, fields, worktrees, base, base_tip):
     try:
         checked_path(path / '.git', 'registered worktree')
@@ -6015,35 +6023,32 @@ def prune_repo_worktrees(ctx, row, target, apply):
         identity = f'{repo}#{number}'
         try:
             if base_tip:
-                issue = github_read(ctx, ['issue', 'view', str(number), '--repo', f'github.com/{repo}', '--json', 'number,state'])
-                if (not isinstance(issue, dict) or type(issue.get('number')) is not int
-                        or issue['number'] != number or issue.get('state') not in ('OPEN', 'CLOSED')):
-                    keep = 'issue state unavailable; check gh auth status and repository access'
-                elif issue['state'] == 'OPEN':
-                    keep = 'issue open'
-                else:
-                    keep = (prune_worktree_local_reason(git, path, branch, fields, worktrees, base, base_tip)
-                            or prune_worktree_live_reason(repo_dir, path, identity))
-            if keep:
-                row['kept'].append({**item, 'reason': keep})
-                continue
-            if not apply:
-                row['candidates'].append(item)
-                continue
-            usage = worktree_usage(ctx, path)
-            # Measurements can be slow; recheck registration, ancestry and cwd before removal.
-            current = registered_worktrees(git)
-            keep = 'worktree registration changed; preview again'
-            if current.get(path) == fields:
-                keep = (prune_worktree_local_reason(git, path, branch, fields, current, base, base_tip)
+                keep = (prune_issue_reason(ctx, repo, number)
+                        or prune_worktree_local_reason(git, path, branch, fields, worktrees, base, base_tip)
                         or prune_worktree_live_reason(repo_dir, path, identity))
-            if keep:
-                row['kept'].append({**item, 'reason': keep})
-                continue
-            row['candidates'].append(item)
-            git('worktree', 'remove', '--', path)
+            if not keep and apply:
+                usage = worktree_usage(ctx, path)
+                # A checkout can change, a worker can start, or the issue can reopen during measurement.
+                keep = prune_issue_reason(ctx, repo, number)
+                if not keep:
+                    current = registered_worktrees(git)
+                    if current.get(path) != fields:
+                        keep = 'worktree registration changed; preview again'
+                    else:
+                        keep = (prune_worktree_local_reason(git, path, branch, fields, current, base, base_tip)
+                                or prune_worktree_live_reason(repo_dir, path, identity))
         except (ControlError, OSError, ValueError):
-            row['kept'].append({**item, 'reason': 'Git or filesystem check failed; inspect the worktree and preview again'})
+            keep = 'Git or filesystem check failed; inspect the worktree and preview again'
+        if keep:
+            row['kept'].append({**item, 'reason': keep})
+            continue
+        row['candidates'].append(item)
+        if not apply:
+            continue
+        try:
+            git('worktree', 'remove', '--', path, timeout=MUTATION_TIMEOUT)
+        except (ControlError, OSError, ValueError):
+            row['kept'].append({**item, 'reason': 'git worktree remove did not complete; inspect the checkout and registration'})
             continue
         removed = {**item, 'branch_deleted': False, 'bytes_freed': usage['bytes']}
         row['removed'].append(removed)

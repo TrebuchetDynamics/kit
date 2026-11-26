@@ -7678,6 +7678,31 @@ class LifecycleRecordAndPruneTests(unittest.TestCase):
             proc.terminate()
             proc.wait(timeout=5)
 
+    def test_prune_worktrees_keeps_issue_reopened_during_disk_measurement(self):
+        self.git_worktree_fixture()
+        h = self.h
+        path = h.repo / '.worktrees/issue-1'
+        branch = self.fixture_worktree(1, path)
+        reopened = h.root / 'reopened'
+        (h.bin / 'du').symlink_to(h.bin / '_fake.py')
+        self.prune_rules(
+            {'tool': 'du', 'argv_contains': ['-sk', str(path)],
+             'write': {str(reopened): '1'}, 'stdout': f'1\t{path}\n'},
+            {'tool': 'gh', 'argv_contains': ['issue', 'view', ' 1 '],
+             'if_exists': str(reopened), 'stdout': '{"number":1,"state":"OPEN"}'},
+            {'tool': 'gh', 'argv_contains': ['issue', 'view', ' 1 '],
+             'stdout': '{"number":1,"state":"CLOSED"}'},
+        )
+
+        result = self.cli('prune', '--apply')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(reopened.exists())
+        row, = json.loads(result.stdout)['worktrees']
+        self.assertEqual(row['removed'], [])
+        self.assertEqual(row['kept'][0]['reason'], 'issue open')
+        self.assertTrue(path.is_dir())
+        self.assertIn(branch, self.fixture_git('branch', '--list', branch).stdout)
+
     def test_prune_worktrees_keeps_stale_ref_when_fetch_fails(self):
         origin = self.git_worktree_fixture()
         path = self.h.repo / '.worktrees/issue-1'
