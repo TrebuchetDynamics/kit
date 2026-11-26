@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -463,6 +464,79 @@ class UpdateTests(unittest.TestCase):
             {'item': 'orbi', 'status': 'installed', 'exit': 0}])
         self.assertNotIn('hosts', receipts[0])
         self.assertNotIn('hosts', receipts[2])
+
+    def test_update_refreshes_hosts_at_the_verified_revision(self):
+        detached = self.root / 'detached'
+        self.git(self.root, 'clone', str(self.remote), str(detached))
+        self.git(detached, 'checkout', '--detach')
+        for entry in ('install.sh', 'scripts/install_menu.py'):
+            target = self.remote / entry
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / entry, target)
+        shutil.copytree(ROOT / 'tmux', self.remote / 'tmux')
+        self.git(self.remote, 'add', '.')
+        self.git(self.remote, 'commit', '-m', 'verified release with installer')
+        verified = self.git(self.remote, 'rev-parse', 'HEAD')
+        dev = self.root / 'dev'
+        self.git(self.root, 'clone', str(self.remote), str(dev))
+        tx = 'tmux/tx'
+        with (dev / tx).open('a') as stream:
+            stream.write('\n# unpublished dev change\n')
+        self.git(dev, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-am', 'unpublished dev commit')
+
+        # Run the real shell/Python installer and tx install without network or live hosts.
+        tools = self.root / 'tools'
+        tools.mkdir()
+        for command in ('bash', 'cat', 'chmod', 'dirname', 'git', 'mkdir', 'sh'):
+            (tools / command).symlink_to(shutil.which(command))
+        (tools / 'python3').symlink_to(sys.executable)
+        curl = tools / 'curl'
+        curl.write_text('''#!/bin/sh
+while [ "$#" -gt 0 ] && [ "$1" != --output ]; do shift; done
+[ "$#" -ge 2 ] || exit 1
+cat > "$2" <<'INSTALL'
+#!/bin/sh
+mkdir -p "$PIBOLT_BIN_DIR"
+printf '#!/bin/sh\\necho 1.2.3\\n' > "$PIBOLT_BIN_DIR/pi-bolt"
+chmod +x "$PIBOLT_BIN_DIR/pi-bolt"
+INSTALL
+''')
+        curl.chmod(0o755)
+        prepare = self.mod.prepare
+        for host_source in (self.repo, detached):
+            with self.subTest(checkout=host_source.name):
+                self.git(host_source, 'remote', 'set-url', 'origin', str(dev))
+                (host_source / 'local-note').write_text('saved user work\n')
+                self.git(host_source, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                         'stash', 'push', '-u', '-m', 'before update')
+                stashes = self.git(host_source, 'stash', 'list')
+                self.assertTrue(stashes)
+                for _, home in self.profiles:
+                    slot = home / 'plugins/kit'
+                    slot.unlink()
+                    slot.symlink_to(host_source)
+                bin_dir = self.home / host_source.name / 'bin'
+                env = {'HOME': str(self.home), 'PATH': str(tools), 'KIT_BIN_DIR': str(bin_dir),
+                       'KIT_INSTALL_SKIP_ORBI': '1', 'GIT_CONFIG_NOSYSTEM': '1'}
+                with patch.dict(os.environ, env, clear=True), \
+                     patch.object(self.mod, 'prepare', side_effect=lambda *_: prepare(
+                         host_source, self.profiles, upstream=str(self.remote))), \
+                     patch.object(self.mod._KIT_COMPAT.peer(vars(self.mod), 'setup_bundle'),
+                                  'live_profiles', self.setup_stub.live_profiles), \
+                     patch.object(self.mod, 'finalize_profiles', return_value=[{'status': 'ready'}]), \
+                     patch.object(self.mod, 'heal_chat_menus', return_value=[]), \
+                     patch.object(self.mod, 'gateway_running', return_value=False), \
+                     contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(self.mod.main(['--hermes-home', str(self.home)]), 0, output.getvalue())
+                receipt = json.loads(output.getvalue())
+                self.assertEqual(receipt['status'], 'updated', receipt)
+                self.assertEqual(receipt['sources'][str(host_source)]['after'], verified)
+                self.assertEqual(self.git(host_source, 'rev-parse', 'HEAD'), verified)
+                self.assertEqual(self.git(host_source, 'stash', 'list'), stashes)
+                self.assertFalse([row for row in receipt['hosts'] if row['status'] == 'failed'], receipt['hosts'])
+                self.assertIn(('tx', 'installed'), [(row['item'], row['status']) for row in receipt['hosts']])
+                self.assertEqual((bin_dir / 'tx').read_bytes(), (self.remote / tx).read_bytes())
 
     def test_unavailable_or_unreported_host_installs_stay_best_effort(self):
         installer = self.repo / 'install.sh'
