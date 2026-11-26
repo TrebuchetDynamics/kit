@@ -1,6 +1,6 @@
 ---
 name: orbi
-description: "Prepare, start, inspect or stop one Orbi deployment."
+description: "Prepare, start, inspect, stop or prune Orbi deployments."
 license: MIT
 ---
 
@@ -9,7 +9,7 @@ license: MIT
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) and
 [shared communication rules](../shared/COMMUNICATION.md) within this workflow's
 scope. The [GitHub-native contract](../../docs/github-native.md) owns delivery
-gates. This skill is a lifecycle client with read-only local host inventory, not an executor.
+gates. This skill is a lifecycle client, not an executor.
 
 ## Intent and state: fast path
 
@@ -29,7 +29,7 @@ scope, restrictions and authorization. No separate model routes, validates, poll
 or paraphrases a routine command. Extra reasoning or clarification requires a
 concrete unmet need, not a fixed sequence of model turns.
 
-1. **Resolve intent.** `/orbi [status|version|setup|start|update|stop|help]` uses
+1. **Resolve intent.** `/orbi [status|version|setup|start|update|stop|prune|help]` uses
    `python3 -B <this-skill>/scripts/orbi_control.py` with the mapping below on **every host**.
    These are public skill arguments, not direct Python helper syntax; all unlisted
    actions pass through unchanged.
@@ -61,6 +61,9 @@ concrete unmet need, not a fixed sequence of model turns.
    may accompany `all`; conflicting selectors are refused before probes. Relay
    partial manager/config coverage and observed totals, never an absolute host count.
    For host inventory interpretation, see [host inventory](references/lifecycle.md#host-inventory).
+   **Prune:** forward `prune [--apply] [--json]` without repo/config selectors.
+   Preview is the default; remove stale unloaded Linux user templates only when
+   `--apply` is explicit. Do not infer apply authority from a preview.
    For repository lifecycle actions, use the requested
    repo/config or known current checkout. For `update --config PATH` without
    `--repo-dir`, let the config select its checkout; do not inject the current one.
@@ -143,7 +146,8 @@ No deployment means unconfigured. An observed revision is not a verified release
 unverifiable pin, manifest or clean source means unknown with a reason.
 
 Status leads with the repository, deployment-bound package version/revision and
-provenance, scheduler state and each observed slot. Relay `deployment.engine`
+provenance, scheduler state and each observed slot. Relay `last_lifecycle` as the
+last recorded Kit helper action, not proof of the current scheduler state. Relay `deployment.engine`
 separately from selected source/pin and `bootstrap_cli`: a matching CLI version
 is unverified runtime evidence; a mismatch never replaces the deployed version.
 Missing, modified or unpinned package/revision metadata leaves the version unknown.

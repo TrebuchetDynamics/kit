@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Orbi repository lifecycle controls and read-only local host inventory.
+"""Orbi repository lifecycle controls and local user template maintenance.
 
-`python3 -B orbi_control.py [status|version|setup|start|update|stop|help] [all] [--repo-dir PATH]
-[--config PATH] [--dry-run] [--json] [--wait]`
+`python3 -B orbi_control.py [status|version|setup|start|update|stop|prune|help] [all] [--repo-dir PATH]
+[--config PATH] [--dry-run] [--wait] [--apply] [--json]`
 
 - `status` (the default) is read-only: local reads, read-only `orbi doctor`
   and explicit `gh`/`systemctl` reads. It never fetches, installs, locks or
@@ -24,6 +24,8 @@
   was requested. It never selects a provider or harness.
 - `stop` quiesces the same owned units under lock and reports `stopped` only
   after idle readback. Neither action kills or restarts a worker directly.
+- `prune` lists stale unloaded user unit templates. `--apply` removes the
+  verified templates and reloads the user manager, without deleting configs.
 
 Linux owns the mutations; macOS also supports status/version; help works on every platform.
 All subprocesses use an argv list (no shell). Secrets are never printed: the
@@ -35,6 +37,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
+from datetime import datetime, timezone
 try:
     import fcntl
 except ModuleNotFoundError:  # pragma: no cover - Windows is unsupported and refused
@@ -141,6 +144,7 @@ class Context:
         self.out = stdout if stdout is not None else sys.stdout
         self.err = stderr if stderr is not None else sys.stderr
         self.noninteractive = noninteractive
+        self.lifecycle_home = None
 
     def which(self, name):
         return shutil.which(name, path=self.env.get('PATH'))
@@ -659,7 +663,7 @@ def file_identity(path):
 
 
 def atomic_publish(path, text, *, mode=0o600, reuse_only=False):
-    """Publish complete bytes in the same directory; never clobber new targets."""
+    """Publish complete bytes without clobbering new targets; return whether bytes changed."""
     path = checked_path(path, 'publication path')
     before = file_identity(path)
     payload = text.encode('utf-8')
@@ -668,7 +672,7 @@ def atomic_publish(path, text, *, mode=0o600, reuse_only=False):
             raise ControlError('unknown_target', 'publication target is not a regular file',
                                fix='inspect the target and preserve recovery evidence', exit_code=2)
         if before[-1] == payload:
-            return
+            return False
         if reuse_only:
             raise ControlError('publication_conflict', 'existing setup file differs from intended bytes',
                                fix='inspect the conflicting deployment-local file; repair deliberately '
@@ -696,6 +700,7 @@ def atomic_publish(path, text, *, mode=0o600, reuse_only=False):
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+    return True
 
 
 def render_env(ctx, deployment):
@@ -735,7 +740,7 @@ def write_env(ctx, deployment, *, reuse_only=False):
     # Preserve its bytes/mode while appending managed fields. Once any owned
     # field exists, config-last retry requires byte-identical intended content.
     reuse_only = reuse_only and has_managed_env_fields(deployment)
-    atomic_publish(deployment.env_path, render_env(ctx, deployment), reuse_only=reuse_only)
+    return atomic_publish(deployment.env_path, render_env(ctx, deployment), reuse_only=reuse_only)
 
 
 def write_launcher(deployment):
@@ -1814,6 +1819,63 @@ def bounded_text(path, limit=65536):
     return bounded_bytes(path, limit).decode('utf-8')
 
 
+LIFECYCLE_LIMIT = 200
+
+
+def lifecycle_lines(path):
+    try:
+        return bounded_text(checked_path(path, 'lifecycle log'), limit=1024 * 1024).splitlines()
+    except FileNotFoundError:
+        return []
+
+
+def last_lifecycle(target):
+    try:
+        line = lifecycle_lines(target.deploy_home / 'lifecycle.log')[-1:]
+        entry = json.loads(line[0]) if line else None
+        fields = ('timestamp', 'action', 'user', 'result')
+        if (isinstance(entry, dict) and all(isinstance(entry.get(key), str) for key in fields)
+                and isinstance(entry.get('argv'), list) and all(isinstance(flag, str) for flag in entry['argv'])):
+            return {key: entry[key] for key in (*fields, 'argv')}
+    except (ControlError, OSError, ValueError, RecursionError):
+        pass  # Missing or unreadable audit evidence must not break status.
+    return None
+
+
+def record_lifecycle(ctx, home, args, result):
+    if home is None:
+        return
+    try:
+        import pwd
+
+        path = home / 'lifecycle.log'
+        # Serialize appends across processes without leaving an extra lock file.
+        # The directory must already exist; never create one just to log a failure.
+        directory = os.open(checked_path(home, 'deploy home'), os.O_DIRECTORY | os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            # Audit contention must not hang an already-completed command.
+            for attempt in range(20):
+                try:
+                    fcntl.flock(directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if attempt == 19:
+                        raise
+                    time.sleep(0.05)
+            # Record option names, not user-supplied paths, identifiers or values.
+            argv = [args.action, *(flag for flag in ACTIONS[args.action]['applies']
+                                   if getattr(args, flag[2:].replace('-', '_'), None))]
+            entry = {'timestamp': datetime.now(timezone.utc).isoformat(), 'action': args.action,
+                     'argv': argv, 'user': pwd.getpwuid(os.getuid()).pw_name, 'result': result}
+            lines = lifecycle_lines(path)[1 - LIFECYCLE_LIMIT:] + [json.dumps(entry)]
+            atomic_publish(path, '\n'.join(lines) + '\n')
+        finally:
+            os.close(directory)
+    except (ControlError, OSError, ValueError, KeyError):
+        with contextlib.suppress(OSError):
+            ctx.err.write('warning=lifecycle_log_unavailable fix=inspect deploy-home log access and contention\n')
+
+
 def engine_summary(ctx, target, source, *, include_bootstrap=True):
     """Deployment-bound package metadata is not the bootstrap CLI's version."""
     result = {'state': 'unknown', 'version': None, 'revision': source.get('head'),
@@ -2002,7 +2064,8 @@ def local_deployment_summary(ctx, target, *, metadata_only=False):
             'unit_name': target.unit_name, 'pin': target.pin, 'source': source['state'],
             'bootstrap': bootstrap_evidence(ctx, target)[0] if usable else 'unavailable',
             'provider': provider_evidence(target), 'slots': target.max_concurrency,
-            'harness': harness, 'engine': engine_summary(ctx, target, source)}
+            'harness': harness, 'engine': engine_summary(ctx, target, source),
+            'last_lifecycle': last_lifecycle(target)}
 
 
 def enrich_activity(activity, queue):
@@ -2348,6 +2411,8 @@ def command_setup(ctx, args, *, prepared_binding=None):
             if bootstrap_state == 'missing':
                 bootstrap_preflight(ctx)
             steps.append({'step': 'recheck_target', 'status': 'ok'})
+            if new or args.resume_setup:
+                ctx.lifecycle_home = target.deploy_home
             if new:
                 step('stage_checkout', lambda: stage_checkout(ctx, target.deploy_home, SUPPORTED_PIN),
                      mutating=True)
@@ -2357,12 +2422,14 @@ def command_setup(ctx, args, *, prepared_binding=None):
                      mutating=True)
             if new:
                 step('write_harness_launcher', lambda: write_launcher(target), mutating=True)
-            step('write_isolation_env', lambda: write_env(ctx, target, reuse_only=new), mutating=True)
+            if step('write_isolation_env', lambda: write_env(ctx, target, reuse_only=new), mutating=True):
+                ctx.lifecycle_home = target.deploy_home
             if new:
                 step('write_config', lambda: write_config(target, repo, provider), mutating=True)
             if evidence['bootstrap'] == 'missing':
                 # Recheck conflict evidence before the later mutation-possible install.
                 step('recheck_bootstrap', lambda: bootstrap_preflight(ctx))
+                ctx.lifecycle_home = target.deploy_home
                 step('install_bootstrap', lambda: install_bootstrap(ctx, target, evidence['python']),
                      mutating=True)
             require_harness(ctx, target)
@@ -2542,6 +2609,7 @@ def activate_existing_locked(ctx, args, repo, target, identities, steps, current
     require_unit_ownership(ctx, target)
     start_plan(ctx, target)
     final_extension_env(ctx, target)
+    ctx.lifecycle_home = target.deploy_home
     current.clear()
     current.update(step='setup', mutation='possible')
     run_upstream_step(ctx, target, 'setup', '--repo', repo.full)
@@ -2794,6 +2862,7 @@ def command_stop(ctx, args):
             require_unit_ownership(ctx, target, symlink_error='unit_conflict')
             current = {'step': 'observe_scheduler', 'mutation': 'none'}
             snapshot = update_observation(ctx, target)
+            ctx.lifecycle_home = target.deploy_home
             quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current)
             current = {'step': 'release_lock', 'mutation': 'possible'}
         return {'action': 'stop', 'platform': ctx.platform, 'status': 'stopped',
@@ -3352,6 +3421,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
             evidence = prerequisites(ctx, target, action=action, provider=provider,
                                      allow_bootstrap_install=False)
             snapshot = update_observation(ctx, target)
+            ctx.lifecycle_home = target.deploy_home
             activation = 'held' if args.stop else 'pending'
             activation_reason = 'explicit --stop' if args.stop else 'maintenance scheduling request'
             if (not start or update_pending(snapshot)
@@ -3480,9 +3550,23 @@ def flatten(value, prefix=''):
     return lines
 
 
+def lifecycle_text(entry):
+    return (f"Last lifecycle: {entry['timestamp']} /orbi {' '.join(entry['argv'])} "
+            f"user={entry['user']} result={entry['result']}")
+
+
 def render(ctx, document, json_mode):
     if json_mode:
         ctx.out.write(json.dumps(document, indent=2) + '\n')
+        return
+    if document.get('action') == 'prune':
+        if not document['candidates']:
+            ctx.out.write('No verified stale user unit templates.\n')
+        for row in document['candidates']:
+            verb = 'Would remove' if document['dry_run'] else 'Removed'
+            ctx.out.write(f"{verb} {', '.join(row['units'])} ({row['reason']}: {row['config']})\n")
+        if document['dry_run'] and document['candidates']:
+            ctx.out.write('Preview only. Use /orbi prune --apply to remove these templates.\n')
         return
     if document.get('action') == 'update':
         target = document.get('deployment', {}).get('config', document.get('target', 'unknown'))
@@ -3513,6 +3597,8 @@ def render(ctx, document, json_mode):
                           f"state={row['state']} scheduler={row['scheduler']} worker={row['worker']['state']} "
                           f"issue={row['worker'].get('issue', {}).get('url', 'unknown')} "
                           f"next={row['next_trigger'] or 'unknown'} binding={row['binding']['state']}\n")
+            if row.get('last_lifecycle'):
+                ctx.out.write(lifecycle_text(row['last_lifecycle']) + '\n')
         for line in flatten(document['coverage'], 'coverage.'):
             ctx.out.write(line + '\n')
         return
@@ -3539,6 +3625,8 @@ def render(ctx, document, json_mode):
                       f"enabled={counts.get('enabled_timers', {}).get('value', 'unknown')} "
                       f"active={counts.get('active_timers', {}).get('value', 'unknown')} "
                       f"working={working if working is not None else 'unknown'}\n")
+        if document.get('deployment', {}).get('last_lifecycle'):
+            ctx.out.write(lifecycle_text(document['deployment']['last_lifecycle']) + '\n')
         for unit, slot in document.get('activity', {}).get('slots', {}).items():
             issue = slot.get('issue', {})
             identity = (f" #{issue['number']} {issue.get('title', '')} {issue['url']} "
@@ -3748,6 +3836,7 @@ def host_configs(ctx, paths, coverage):
             target = deployment_from(path, tomllib.loads(bounded_text(path)))
             summary = local_deployment_summary(ctx, target, metadata_only=True)
             deployments[key] = {'binding': {'state': 'verified', 'config': key},
+                                'last_lifecycle': last_lifecycle(target),
                                 'repo': target.source_repos[0] if len(target.source_repos) == 1 else None,
                                 'repos': list(target.source_repos), 'target': target, 'engine': summary['engine']}
         except (OSError, ValueError, UnicodeError, RuntimeError, ControlError):
@@ -4989,6 +5078,223 @@ def installer_fleet(ctx, *, report_progress=None):
     return receipt
 
 
+def prune_settings(raw, section, keys):
+    """Accept simple generated directives, not ambiguous systemd quoting or continuations."""
+    current, values = None, {key: [] for key in keys}
+    for line in raw.decode('utf-8').splitlines():
+        line = line.strip()
+        if not line or line.startswith(('#', ';')):
+            continue
+        if line.endswith('\\'):
+            raise ValueError('continued directive')
+        if line.startswith('['):
+            current = line
+        elif current == section:
+            key, sep, value = line.partition('=')
+            if sep and key.strip() in values:
+                if '\\' in value:
+                    raise ValueError('escaped directive')
+                values[key.strip()].append(value.strip())
+    return values
+
+
+def prune_config_path(ctx, value):
+    path = Path(value.replace('%h', str(home_dir(ctx))))
+    if not path.is_absolute() or '%' in str(path) or '$' in str(path):
+        raise ValueError('unverified config path')
+    return checked_path(path, 'prune config').resolve()
+
+
+def prune_candidate(ctx, service):
+    """Use an explicit generated service binding, not its name or a pin mismatch."""
+    prefix = service.name.removesuffix('@.service')
+    timer = service.with_suffix('.timer')
+    try:
+        identities = []
+        for path in (service, timer):
+            checked_path(path, 'prune unit')
+            try:
+                info = path.stat()
+            except FileNotFoundError:
+                if path == timer:
+                    continue
+                return None
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or info.st_mode & 0o022):
+                return None
+            identities.append((path, info.st_dev, info.st_ino, bounded_bytes(path)))
+        raw = identities[0][-1]
+        settings = prune_settings(raw, '[Service]', ('ExecStart', 'Environment', 'EnvironmentFile',
+                                                     'PassEnvironment', 'UnsetEnvironment'))
+        if len(settings['ExecStart']) != 1 or '' in settings['Environment']:
+            return None
+        command = host_orbi_command(shlex.split(settings['ExecStart'][0]))
+        if not command['runner']:
+            return None
+        refs = {prune_config_path(ctx, value) for value in command['configs']}
+        refs.update(prune_config_path(ctx, token.partition('=')[2])
+                    for raw_env in settings['Environment'] for token in shlex.split(raw_env)
+                    if token.startswith('ORBI_CONFIG='))
+        if len(refs) != 1 or any('ORBI_CONFIG' in raw_env for raw_env in
+                                 settings['PassEnvironment'] + settings['UnsetEnvironment']):
+            return None
+        config, = refs
+        for item in identities:
+            install = prune_settings(item[-1], '[Install]', ('Alias', 'Also'))
+            if install['Alias'] or install['Also']:
+                return None
+        if len(identities) == 2:
+            targets = prune_settings(identities[1][-1], '[Timer]', ('Unit',))['Unit']
+            if targets and targets != [prefix + '@%i.service']:
+                return None
+        for raw_env in settings['EnvironmentFile']:
+            values = shlex.split(raw_env)
+            if len(values) != 1 or re.search(r'[*?\[\]]', values[0]):
+                return None
+            value, = values
+            env_file = prune_config_path(ctx, value.removeprefix('-'))
+            try:
+                if 'ORBI_CONFIG' in bounded_text(env_file):
+                    return None  # The apparent config may not be the one this unit uses.
+            except FileNotFoundError:
+                if not value.startswith('-'):
+                    return None
+        try:
+            mode = checked_path(config, 'prune config').stat().st_mode
+        except FileNotFoundError:
+            return ({'prefix': prefix, 'config': str(config), 'reason': 'config_missing',
+                     'units': [str(item[0]) for item in identities]}, None, identities)
+        if not stat.S_ISREG(mode):
+            return None
+        target = deployment_from(config, tomllib.loads(bounded_text(config)))
+        if target.prefix != prefix or target.repo_dir is None or len(target.source_repos) != 1:
+            return None
+        try:
+            target.repo_dir.stat()
+        except FileNotFoundError:
+            return ({'prefix': prefix, 'config': str(config), 'reason': 'repo_missing',
+                     'units': [str(item[0]) for item in identities]}, target, identities)
+    except (ControlError, OSError, ValueError, RuntimeError):
+        pass  # No positive stale/ownership evidence: leave the files alone.
+    return None
+
+
+def prune_has_overrides(ctx, template):
+    """Check the manager's actual search paths for systemd drop-ins."""
+    try:
+        proc = ctx.run(['systemctl', '--user', 'show', '-p', 'UnitPath', '--value'], allow_failure=True)
+        search = [Path(path) for path in shlex.split(proc.stdout)]
+        if proc.returncode or not search or any(not path.is_absolute() for path in search):
+            raise ValueError('missing unit search path')
+        for suffix in ('.service', '.timer'):
+            prefix = template.name.removesuffix('@.service')
+            dropins = [prefix + '@' + suffix + '.d', suffix[1:] + '.d']
+            dropins.extend(prefix[:index + 1] + suffix + '.d'
+                           for index, char in enumerate(prefix) if char == '-')
+            for folder in {template.parent, *search}:
+                for name in dropins:
+                    try:
+                        (folder / name).lstat()
+                    except FileNotFoundError:
+                        continue
+                    return True
+    except (OSError, ValueError) as exc:
+        raise ControlError('scheduler_unavailable', 'cannot verify user unit search paths or overrides',
+                           fix='restore systemctl --user UnitPath and read access before retrying prune') from exc
+    return False
+
+
+def prune_has_instances(ctx, prefix):
+    """Do not probe names with `show`: that can load an otherwise unloaded unit."""
+    if any(name.startswith(prefix + '@') for name, _ in scheduler_jobs(ctx).values()):
+        return True
+    for command in ('list-unit-files', 'list-units'):
+        argv = ['systemctl', '--user', command, '--no-legend', '--no-pager', '--full', '--all']
+        if command == 'list-units':
+            argv.extend(('--plain', prefix + '@*'))
+        else:
+            # A pattern with no installed match can return nonzero; use the
+            # full typed inventory to distinguish absence from a failed read.
+            argv.append('--type=service,timer')
+        proc = ctx.run(argv, allow_failure=True)
+        if proc.returncode or len(proc.stdout) > 4 * 1024 * 1024:
+            raise ControlError('scheduler_unavailable', f'cannot read scheduler {command}',
+                               fix='restore complete systemd user-session inventory before retrying prune')
+        for line in proc.stdout.splitlines():
+            fields = line.split()
+            if not fields:
+                continue
+            unit = fields[0]
+            if len(fields) < (4 if command == 'list-units' else 2) or not FLEET_UNIT_NAME.fullmatch(unit):
+                raise ControlError('scheduler_unavailable', f'invalid scheduler {command} inventory',
+                                   fix='restore complete systemd user-session inventory before retrying prune')
+            if unit.startswith(prefix + '@') and (command == 'list-units'
+                    or unit not in {prefix + '@.timer', prefix + '@.service'}):
+                return True
+    return False
+
+
+def command_prune(ctx, args):
+    candidates, removed, audit = [], [], set()
+    error = None
+    try:
+        folder = checked_path(user_unit_dir(ctx), 'user unit directory')
+        try:
+            files = sorted(folder.iterdir())
+        except FileNotFoundError:
+            files = []
+        for service in files:
+            if not re.fullmatch(r'orbi(?:-[a-zA-Z0-9_.-]+)?@\.service', service.name):
+                continue
+            entry = prune_candidate(ctx, service)
+            if (entry is not None and not prune_has_overrides(ctx, service)
+                    and not prune_has_instances(ctx, entry[0]['prefix'])):
+                candidates.append(entry)
+        if args.apply:
+            for entry in candidates:
+                row, target, identities = entry
+                service = identities[0][0]
+                with locked(ctx, row['config'], nonblocking=True):
+                    if (prune_has_overrides(ctx, service)
+                            or prune_candidate(ctx, service) != entry
+                            or prune_has_instances(ctx, row['prefix'])):
+                        raise ControlError('prune_target_changed', f"prune target changed: {row['prefix']}",
+                                           fix='inspect the deployment and rerun /orbi prune without --apply')
+                    if target:
+                        audit.add(target.deploy_home)
+                    # There is no concrete unit to stop. Stopping a template
+                    # is invalid and stopping an instance could interrupt work.
+                    for path, *_ in reversed(identities):
+                        path.unlink()
+                        removed.append(str(path))
+    except ControlError as exc:
+        error = exc
+    except UnicodeError:
+        error = ControlError('scheduler_unavailable', 'cannot decode the user manager inventory',
+                             fix='restore readable systemd user-session inventory before retrying prune')
+    except OSError:
+        error = ControlError('filesystem_error', 'could not read or remove a user unit template',
+                             fix='inspect user unit-directory access and rerun /orbi prune without --apply')
+    if removed:
+        try:
+            ctx.run(['systemctl', '--user', 'daemon-reload'])
+        except (ControlError, OSError, UnicodeError):
+            fix = 'restore the user manager and run systemctl --user daemon-reload'
+            if error:
+                error.fix += '; ' + fix
+            else:
+                error = ControlError('daemon_reload_unverified', 'templates removed but user reload unverified',
+                                     fix=fix)
+    for home in sorted(audit):
+        record_lifecycle(ctx, home, args, error.code if error else 'pruned')
+    if error:
+        error.mutated = bool(removed)
+        error.evidence['removed'] = removed
+        raise error
+    return {'action': 'prune', 'platform': ctx.platform, 'dry_run': not args.apply,
+            'candidates': [row for row, _, _ in candidates], 'removed': removed}
+
+
 def command_status_all(ctx):
     coverage = {'state': 'ok', 'managers': {}, 'problems': [],
                 'scope': 'observed local managers only; other users, namespaces, containers and remote hosts unobserved'}
@@ -5001,7 +5307,8 @@ def command_status_all(ctx):
         row.update(repo=None, engine={'state': 'unknown', 'version': None})
         if deployment:
             bound.add(config)
-            row.update(repo=deployment['repo'], engine=deployment['engine'])
+            row.update(repo=deployment['repo'], engine=deployment['engine'],
+                       last_lifecycle=deployment.get('last_lifecycle'))
             row['binding'] = deployment['binding']
             target = deployment.get('target')
             if (ctx.platform == 'linux' and target and row['repo'] and row['kind'] == 'runner'
@@ -5013,6 +5320,7 @@ def command_status_all(ctx):
             rows.append({'manager': None, 'unit': None, 'timer': None, 'kind': 'config-only',
                          'loaded': False, 'installed': False, 'scheduler': 'prepared-only', 'state': 'prepared-only',
                          'repo': item['repo'], 'engine': item['engine'], 'binding': item['binding'],
+                         'last_lifecycle': item.get('last_lifecycle'),
                          'worker': {'state': 'not observed'}, 'next_trigger': None})
     return {'action': 'status', 'scope': 'host', 'platform': ctx.platform, 'coverage': coverage,
             'totals': {'observed_workers': sum(r['kind'] == 'runner' and r['loaded'] is True for r in rows),
@@ -5050,7 +5358,7 @@ def action_usage():
     return ('python3 -B orbi_control.py [' + '|'.join(ACTIONS) + '] [all] '
             '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] '
             '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] '
-            '[--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait]')
+            '[--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait] [--apply]')
 
 
 def command_help(ctx, args):
@@ -5062,6 +5370,7 @@ def command_help(ctx, args):
         '--json': 'print one JSON document',
         '--stop': 'update only: compatibility opt-out: quiesce, update and leave stopped',
         '--wait': f'update only: wait up to {UPDATE_WAIT_MINUTES} minutes for workers to finish; leave paused on timeout',
+        '--apply': 'prune only: remove verified stale user unit templates and reload the user manager',
         '--resume-setup': 'setup only: fill a legacy missing local provider; requires explicit '
                           '--config and complete matching --pi-* inputs; never overwrite',
         '--pi-providers': 'regular Pi metadata JSON for new setup/absent start or explicit bounded setup resume (no credentials)',
@@ -5317,6 +5626,15 @@ ACTIONS = {
                 'verified unit ownership; recovery inputs are preserved. An explicit start, plain update or an installer refresh '
                 'that selects Orbi can start scheduling again.',
     },
+    'prune': {
+        'handler': command_prune,
+        'effect': 'List stale unloaded user unit templates; --apply removes them and reloads the user manager.',
+        'mutates': 'scheduler with --apply',
+        'platforms': ['linux'],
+        'applies': ['--dry-run', '--json', '--apply'],
+        'when': 'No checkout needed. Requires an explicit missing configuration or repository directory. '
+                'Keeps loaded or installed instances, queued jobs, configs and deployment data.',
+    },
     'help': {
         'handler': command_help,
         'effect': 'Print this authoritative command reference without deployment reads.',
@@ -5365,7 +5683,7 @@ def parse_args(argv):
         usage=action_usage() + ' [-h]',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description='Direct Python helper syntax (setup is non-activating). Public /orbi setup maps to start; '
-                    '/orbi setup --prepare-only maps to helper setup.\nRepository-scoped Orbi lifecycle controls:\n'
+                    '/orbi setup --prepare-only maps to helper setup.\nOrbi lifecycle controls:\n'
                     + '\n'.join(f"{name} [{entry['mutates']}]: {entry['effect']}"
                                 for name, entry in ACTIONS.items())
                     + ' Default: status. Linux mutates; macOS also supports status/version; '
@@ -5380,6 +5698,7 @@ def parse_args(argv):
     parser.add_argument('--dry-run', action='store_true',
                         help='show the plan without locking, writing, installing or activating')
     parser.add_argument('--json', action='store_true', help='print one JSON document')
+    parser.add_argument('--apply', action='store_true', help='prune only: remove stale unit templates')
     parser.add_argument('--stop', action='store_true',
                         help='update only: compatibility opt-out: quiesce, update and leave stopped')
     parser.add_argument('--wait', action='store_true',
@@ -5425,12 +5744,19 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                 'unknown_action', f"unknown action '{args.action}'", exit_code=2,
                 fix='run /orbi help for the supported actions and their effects')
         if args.scope is not None and (args.action != 'status' or any(
-                (args.repo_dir is not None, args.config is not None, args.dry_run, args.stop, args.wait,
+                (args.repo_dir is not None, args.config is not None, args.dry_run, args.stop, args.wait, args.apply,
                  args.resume_setup, args.harness is not None, args.pi_providers is not None,
                  args.pi_provider is not None, args.pi_model is not None, args.pi_thinking is not None))):
             raise ControlError('invalid_host_selection',
                                'literal all requires status with no repo/config or mutation selectors',
                                fix='use /orbi status all [--json] without selectors', exit_code=2)
+        if args.apply and args.action != 'prune':
+            raise ControlError('invalid_apply_selection', '--apply requires prune',
+                               fix='use /orbi prune to preview before applying', exit_code=2)
+        if args.action == 'prune' and (args.repo_dir is not None or args.config is not None
+                                       or (args.dry_run and args.apply)):
+            raise ControlError('invalid_prune_selection', 'prune is host-scoped and --apply conflicts with --dry-run',
+                               fix='use /orbi prune to preview or /orbi prune --apply without selectors', exit_code=2)
         if args.action == 'version' and args.dry_run:
             raise ControlError('invalid_version_selection', '--dry-run does not apply to read-only version',
                                fix='use /orbi version [--repo-dir PATH] [--config PATH] [--json]', exit_code=2)
@@ -5466,7 +5792,7 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             if ctx.platform == 'darwin':
                 raise ControlError(
                     'unsupported_platform',
-                    'macOS supports status/version only; setup/start/update/stop is refused before any '
+                    'macOS supports status/version only; setup/start/update/stop/prune is refused before any '
                     'side effect',
                     fix='run `/orbi status` on macOS; use Linux for authorized lifecycle mutations',
                     exit_code=2)
@@ -5476,12 +5802,14 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                 'read-only (status/version)',
                 fix='run status on a supported host', exit_code=2)
         document = entry['handler'](ctx, args)
+        record_lifecycle(ctx, ctx.lifecycle_home, args, document.get('status'))
         if args.action == 'help':
             render_help(ctx, document, args.json)
         else:
             render(ctx, document, args.json)
         return 0
     except ControlError as exc:
+        record_lifecycle(ctx, ctx.lifecycle_home, args, exc.code)
         if args.action in ('setup', 'start') and 'steps' not in exc.evidence:
             exc.evidence = {**exc.evidence, 'target': args.config, 'original_error': exc.code,
                             'activated': False, 'scheduler': {'state': 'unavailable'},
