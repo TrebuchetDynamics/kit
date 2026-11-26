@@ -1707,7 +1707,8 @@ units = state[manager]
 if verb == 'list-units':
     assert {'--plain', '--no-legend', '--full'} <= set(args)
     for n, u in units.items():
-        print(n, 'loaded', u['ActiveState'], 'running', 'An example unit description')
+        if '@.' not in n:
+            print(n, 'loaded', u['ActiveState'], 'running', 'An example unit description')
 elif verb == 'list-unit-files':
     for n, u in units.items():
         print(n, u.get('UnitFileState', 'static'), '-')
@@ -1775,6 +1776,14 @@ Path.iterdir = iterdir
 
     def test_plain_install_updates_and_restarts_the_verified_fleet(self):
         receipt, state, head = self.orbi_fleet_fixture()
+        vendor = self.home / '.config/systemd/user/vendor-shell@.service'
+        vendor.parent.mkdir(parents=True)
+        vendor.write_text('[Service]\nExecStart=/usr/bin/tmux unbind-key -a; \\\n  new-session\n')
+        states = json.loads(state.read_text())
+        states['--user'][vendor.name] = {'UnitFileState': 'static'}
+        state.write_text(json.dumps(states))
+        worker = Path(states['--system']['working-extra.service']['FragmentPath'])
+        worker.write_text(worker.read_text().replace(' --config ', ' \\\n  --config '))
         result = self.install(env={'KIT_INSTALL_REPORT': str(receipt), **self.unreadable_root_fixture()})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         summary = result.stdout.split('Summary:', 1)[1]
@@ -1956,6 +1965,37 @@ Path.iterdir = iterdir
         self.assertIn('working-extra.service: effective worker/exporter command is unverified', result.stdout)
         self.assertEqual(state.read_bytes(), original)
         self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_for_an_unparsable_candidate_without_leaking_its_contents(self):
+        receipt, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        service = json.loads(original)['--system']['working-extra.service']
+        fragment = Path(service['FragmentPath'])
+        private = 'private-unit-definition-value'
+        fragment.write_text(fragment.read_text().replace(' --config ', f' \\\n  --config "{private} '))
+        result = self.install('--only', 'orbi', env={'KIT_INSTALL_REPORT': str(receipt)})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        message = 'system:working-extra.service: unit definition is unparsable'
+        self.assertIn(f'Orbi fleet held: {message}', result.stdout)
+        row = next(r for r in map(json.loads, receipt.read_text().splitlines()) if r['item'] == 'orbi')
+        self.assertEqual(row['orbi_fleet']['status'], 'held')
+        self.assertEqual(row['orbi_fleet']['error']['message'], message)
+        for hidden in (private, str(fragment), 'No closing quotation', 'No escaped character', 'ValueError'):
+            self.assertNotIn(hidden, result.stdout + result.stderr + receipt.read_text())
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi'), [])
+
+    def test_orbi_holds_before_downtime_for_a_continued_privileged_command(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        service = json.loads(original)['--system']['working-extra.service']
+        fragment = Path(service['FragmentPath'])
+        fragment.write_text(fragment.read_text().replace('ExecStart=', 'ExecStart=\\\n  +'))
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('working-extra.service: effective worker/exporter command is unverified', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi'), [])
 
     def test_orbi_holds_when_effective_worker_and_fragment_name_different_configs(self):
         _, state, _ = self.orbi_fleet_fixture()
