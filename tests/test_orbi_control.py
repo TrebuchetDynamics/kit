@@ -5003,14 +5003,16 @@ class HostStatusTests(unittest.TestCase):
         self.assertTrue(any(r['unit'] == 'orbi@21.service' for r in doc['rows']))
         self.assertNotIn('do not echo', json.dumps(doc))
 
-    def test_help_advertises_literal_host_mode_and_rejects_all_on_mutations(self):
+    def test_help_advertises_literal_host_modes_and_rejects_all_on_other_actions(self):
         out = io.StringIO()
         helper.main(['help', '--json'], stdout=out)
         help_doc = json.loads(out.getvalue())
         self.assertTrue(any(e['command'] == '/orbi status all --json' for e in help_doc['examples']))
         self.assertIn('status all', help_doc['actions']['status']['effect'])
         self.assertEqual(help_doc['options']['--work']['applies_to'], ['status'])
-        for action in ('setup', 'start', 'stop', 'update'):
+        self.assertTrue(any(e['command'] == '/orbi update all --dry-run' for e in help_doc['examples']))
+        self.assertEqual(help_doc['options']['--wait-minutes']['applies_to'], ['update'])
+        for action in ('setup', 'start', 'stop', 'version', 'prune', 'help'):
             with self.subTest(action=action):
                 out = io.StringIO()
                 code = helper.main([action, 'all', '--json'], stdout=out, env=self.h.env)
@@ -6473,6 +6475,225 @@ class ExplicitStopUpdateTests(PauseUpdateTests):
     update_flags = ['--stop']
 
 
+class FleetUpdateTests(unittest.TestCase):
+    def test_update_all_rejects_conflicting_options_before_discovery(self):
+        with tempfile.TemporaryDirectory() as root:
+            h = Harness(Path(root))
+            for flags in (['--wait'], ['--stop'], ['--work'], ['--verbose'],
+                          ['--config', 'missing'], ['--wait-minutes', '0']):
+                with self.subTest(flags=flags):
+                    out, err = io.StringIO(), io.StringIO()
+                    code = helper.main(['update', 'all', '--json', *flags], cwd=h.root,
+                                       env=h.env, platform='linux', stdout=out, stderr=err)
+                    self.assertEqual(code, 2, out.getvalue())
+                    self.assertFalse(h.calls())
+
+    def test_update_all_reports_discovered_configs_without_mutating_on_shared_failure(self):
+        for manager_error in (True, False):
+            with self.subTest(manager_error=manager_error), tempfile.TemporaryDirectory() as root:
+                h = Harness(Path(root))
+                a = h.add_deployment_a()
+                h.rules(*HostStatusTests.lists(self, '--user'),
+                        *HostStatusTests.lists(self, '--system', error=manager_error),
+                        dict(SchedulingUpdateTests.latest_release, stdout=''))
+                out, err = io.StringIO(), io.StringIO()
+                before = snapshot(h.home)
+                code = helper.main(['update', 'all', '--json'], cwd=h.root, env=h.env,
+                                   platform='linux', stdout=out, stderr=err)
+                doc = json.loads(out.getvalue())
+                self.assertEqual(code, 1, doc)
+                self.assertEqual(doc['status'], 'incomplete')
+                self.assertEqual(len(doc['deployments']), 1)
+                row = doc['deployments'][0]
+                self.assertEqual(row['config'], str(a['config']))
+                self.assertEqual(row['failed_step'], 'verify_discovery' if manager_error else 'resolve_release')
+                self.assertEqual(row['error']['code'], 'scheduler_unavailable' if manager_error else 'release_unverified')
+                self.assertFalse(row['error']['mutated'])
+                self.assertEqual(snapshot(h.home), before)
+                self.assertFalse([call for call in h.calls() if call['tool'] == 'orbi'])
+
+    def test_update_all_refuses_ambiguous_unit_bindings_and_shared_engine_checkouts(self):
+        for shared_engine in (False, True):
+            with self.subTest(shared_engine=shared_engine), tempfile.TemporaryDirectory() as root:
+                h = Harness(Path(root))
+                a = h.add_deployment_a()
+                other = h.data_home / 'another' / 'orbi.toml'
+                other.parent.mkdir()
+                config_text = a['config'].read_text().replace('other/repo-a', 'other/repo-b')
+                if not shared_engine:
+                    config_text = config_text.replace(str(a['deploy']), str(other.parent))
+                other.write_text(config_text)
+                rules = [*HostStatusTests.lists(self, '--user'), SchedulingUpdateTests.latest_release]
+                if shared_engine:
+                    rules.extend(HostStatusTests.lists(self, '--system'))
+                else:
+                    # Neither observed config is safe to update underneath this live worker.
+                    unit = 'orbi-shared.service'
+                    fragment = h.root / unit
+                    fragment.write_text(f'[Service]\nEnvironment="ORBI_CONFIG={a["config"]}"\n'
+                                        f'Environment="ORBI_CONFIG={other}"\n')
+                    rules.extend(HostStatusTests.lists(self, '--system', [HostStatusTests.unit(self, unit, 'active')]))
+                    rules.append(HostStatusTests.detail(self, '--system', unit, FragmentPath=fragment))
+                h.rules(*rules)
+                out = io.StringIO()
+                code = helper.main(['update', 'all', '--json'], cwd=h.root, env=h.env,
+                                   platform='linux', stdout=out)
+                doc = json.loads(out.getvalue())
+                self.assertEqual(code, 1, doc)
+                self.assertEqual({row['config'] for row in doc['deployments']}, {str(a['config']), str(other)})
+                for row in doc['deployments']:
+                    self.assertEqual(row['error']['code'], 'config_conflict' if shared_engine else 'unit_conflict')
+                    self.assertFalse(row['error']['mutated'])
+                self.assertFalse([call for call in h.calls() if call['tool'] == 'orbi'])
+
+    def test_update_all_from_unrelated_directory_preserves_scheduling_and_reports_pending(self):
+        with tempfile.TemporaryDirectory() as root:
+            h = Harness(Path(root))
+            legacy = h.add_deployment_a()
+            template = legacy['config'].read_text().replace('max_concurrency = 2', 'max_concurrency = 1')
+            legacy['config'].unlink()
+            (h.unit_dir / 'orbi-a@.service').unlink()
+            (h.unit_dir / 'orbi-a@.timer').unlink()
+            old_manifest = '[project]\nname = "orbi-cli"\nversion = "0.7.41"\n'
+            new_manifest = old_manifest.replace('0.7.41', '0.7.42')
+            rules = [*HostStatusTests.lists(self, '--user'), *HostStatusTests.lists(self, '--system'),
+                     SchedulingUpdateTests.latest_release]
+            # JSON listings are for host discovery; the scoped quiesce listing uses text.
+            for rule in rules[:4]:
+                rule['argv_contains'].append('--output=json')
+            expected = {}
+            for index, name in enumerate(('idle', 'stopped', 'drains', 'busy')):
+                name = f'{index}-{name}'
+                repo, deploy = h.root / name, h.data_home / name
+                config = deploy / 'orbi.toml'
+                expected[name] = (repo, config)
+                repo.mkdir()
+                (deploy / '.git').mkdir(parents=True)
+                (deploy / '.orbi').mkdir()
+                config.write_text(template.replace(str(legacy['repo']), str(repo))
+                                  .replace(str(legacy['deploy']), str(deploy))
+                                  .replace('other/repo-a', f'other/{name}').replace('"a"', f'"{name}"'))
+                (deploy / '.orbi/pi-providers.json').write_text(json.dumps(legacy['metadata']))
+                manifest = deploy / 'pyproject.toml'
+                manifest.write_text(old_manifest)
+                timer, service = f'orbi-{name}@1.timer', f'orbi-{name}@1.service'
+                timer_file = h.unit_dir / f'orbi-{name}@.timer'
+                service_file = h.unit_dir / f'orbi-{name}@.service'
+                timer_file.write_text('[Timer]\n')
+                service_file.write_text(f'[Service]\nEnvironment="ORBI_CONFIG={config}"\n')
+                paused, synced = str(deploy / 'paused'), str(deploy / 'synced')
+                scheduled = index != 1
+                rules += [
+                    {'tool': 'git', 'argv_contains': [str(repo), 'worktree', 'list'],
+                     'stdout': f'worktree {repo}\n'},
+                    {'tool': 'git', 'argv_contains': [str(repo), 'config', 'remote.origin.url'],
+                     'stdout': f'https://github.com/other/{name}.git\n'},
+                    {'tool': 'git', 'argv_contains': [str(deploy), 'config', 'remote.origin.url'],
+                     'stdout': OFFICIAL + '\n'},
+                    {'tool': 'git', 'argv_contains': [str(deploy), 'rev-parse', '--show-toplevel'],
+                     'stdout': str(deploy) + '\n'},
+                    {'tool': 'git', 'argv_contains': [str(deploy), 'rev-parse', '--git-common-dir'],
+                     'stdout': str(deploy / '.git') + '\n'},
+                    {'tool': 'orbi', 'argv_contains': ['sync-engine-source', str(config)],
+                     'write': {synced: '1', str(manifest): new_manifest}},
+                    {'tool': 'git', 'argv_contains': [str(deploy), 'rev-parse', 'HEAD'],
+                     'if_exists': synced, 'stdout': NEW_PIN + '\n'},
+                    {'tool': 'git', 'argv_contains': [str(deploy), 'rev-parse', 'HEAD'],
+                     'stdout': OLD_PIN + '\n'},
+                    {'tool': 'git', 'argv_contains': [str(deploy), 'show', 'HEAD:pyproject.toml'],
+                     'if_exists': synced, 'stdout': new_manifest},
+                    {'tool': 'git', 'argv_contains': [str(deploy), 'show', 'HEAD:pyproject.toml'],
+                     'stdout': old_manifest},
+                    h.loaded_unit_rule(timer), *h.enable_timer_rules(timer),
+                    {'tool': 'systemctl', 'argv_contains': ['show', 'FragmentPath', timer],
+                     'stdout': str(timer_file) + '\n'},
+                    {'tool': 'systemctl', 'argv_contains': ['show', 'FragmentPath', service],
+                     'stdout': str(service_file) + '\n'},
+                    {'tool': 'systemctl', 'argv_contains': ['disable', timer], 'write': {paused: '1'}},
+                    {'tool': 'systemctl', 'argv_contains': ['show', 'ActiveState', timer],
+                     'if_exists': paused, 'stdout': 'inactive\n'},
+                    {'tool': 'systemctl', 'argv_contains': ['is-enabled', timer],
+                     'if_exists': paused, 'stdout': 'disabled\n', 'exit': 1},
+                    {'tool': 'systemctl', 'argv_contains': ['show', 'ActiveState', timer],
+                     'stdout': 'active\n' if scheduled else 'inactive\n'},
+                    {'tool': 'systemctl', 'argv_contains': ['is-enabled', timer],
+                     'stdout': 'enabled\n' if scheduled else 'disabled\n', 'exit': int(not scheduled)},
+                    {'tool': 'systemctl', 'argv_contains': ['show', 'ActiveState', service],
+                     'if_exists': str(deploy / 'drained'), 'stdout': 'inactive\n'},
+                    {'tool': 'systemctl', 'argv_contains': ['show', 'ActiveState', service],
+                     'stdout': 'active\n' if index >= 2 else 'inactive\n'},
+                ]
+            h.rules(*rules)
+            before = snapshot(h.home)
+            preview = subprocess.run([sys.executable, '-B', str(HELPER), 'update', 'all', '--dry-run'],
+                                     cwd=h.root, env=h.env, text=True, capture_output=True, timeout=45)
+            self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
+            self.assertIn('Orbi update all: planned; coverage=ok', preview.stdout)
+            self.assertIn('version 0.7.41 -> 0.7.41; scheduling stopped -> stopped', preview.stdout)
+            self.assertEqual(snapshot(h.home), before)
+            self.assertFalse([c for c in h.calls() if 'ls-remote' in c['argv']])
+            h.clear_calls()
+            out, err = io.StringIO(), io.StringIO()
+            elapsed, sleeps = 0, []
+
+            def sleep(seconds):
+                nonlocal elapsed
+                self.assertLess(len(sleeps), 2, 'fleet wait did not honor its deadline')
+                name = ('2-drains', '3-busy')[len(sleeps)]
+                _, config = expected[name]
+                self.assertTrue(config.with_name('paused').exists())
+                self.assertFalse(config.with_name('synced').exists())
+                with self.assertRaises(helper.ControlError) as contention:
+                    with helper.locked(helper.Context(env=h.env), config, nonblocking=True):
+                        self.fail('paused update released its lock during drain')
+                self.assertEqual(contention.exception.code, 'deployment_locked')
+                if not sleeps:
+                    config.with_name('drained').touch()
+                    elapsed += 60
+                else:
+                    elapsed += seconds
+                sleeps.append(seconds)
+
+            with mock.patch.object(helper, 'time', mock.Mock(monotonic=lambda: elapsed, sleep=sleep)):
+                code = helper.main(['update', 'all', '--wait-minutes', '2', '--json'], cwd=h.root,
+                                   env=h.env, platform='linux', stdout=out, stderr=err)
+            doc = json.loads(out.getvalue())
+            self.assertEqual(doc.get('status'), 'incomplete', doc)
+            self.assertEqual(code, 1, doc)
+            self.assertEqual(sleeps, [60, 60])
+            self.assertEqual([r['config'] for r in doc['deployments']],
+                             [str(config) for _, config in expected.values()])
+            for index, row in enumerate(doc['deployments']):
+                self.assertEqual(row['old_version'], '0.7.41')
+                self.assertEqual(row['new_version'], '0.7.41' if index == 3 else '0.7.42')
+                self.assertEqual(row['scheduling_before'], 'stopped' if index == 1 else 'running')
+                self.assertEqual(row['scheduling_after'], 'stopped' if index == 1 else 'running')
+                self.assertEqual(row['status'], 'pending' if index == 3 else 'updated')
+                self.assertEqual(row['version_drift'], 'remaining' if index == 3 else 'none')
+            pending = doc['deployments'][-1]
+            self.assertEqual(pending['error']['code'], 'update_busy')
+            self.assertIn('Original scheduling was restored', pending['error']['message'])
+            self.assertEqual([job['unit'] for job in pending['pending_services']], ['orbi-3-busy@1.service'])
+            repo, config = expected['3-busy']
+            self.assertEqual(shlex.split(pending['repair_command']), ['/orbi', 'update', '--repo-dir',
+                             str(repo), '--config', str(config), '--wait'])
+            self.assertIn('3-busy', err.getvalue())
+            calls = h.calls()
+            self.assertFalse([c for c in calls if c['tool'] == 'systemctl'
+                              and set(c['argv']) & {'stop', 'restart', 'kill'}])
+            for name, (repo, config) in expected.items():
+                sync = [c for c in calls if c['tool'] == 'orbi' and c['argv'][0] == 'sync-engine-source'
+                        and str(config) in c['argv']]
+                self.assertEqual([c['cwd'] for c in sync], [] if name == '3-busy' else [str(repo)])
+            self.assertFalse([c for c in calls if c['tool'] == 'systemctl'
+                              and set(c['argv']) & {'enable', 'disable'} and 'orbi-1-stopped@1.timer' in c['argv']])
+            busy_mutations = [c for c in calls if c['tool'] == 'systemctl'
+                              and set(c['argv']) & {'enable', 'disable'} and 'orbi-3-busy@1.timer' in c['argv']]
+            self.assertEqual([c['argv'][1] for c in busy_mutations], ['disable', 'enable'])
+            self.assertFalse([c for c in calls if c['tool'] == 'orbi'
+                              and c['argv'][0] in {'setup', 'install-units'} and str(config) in c['argv']])
+
+
 class SchedulingUpdateTests(unittest.TestCase):
     """Plain command regression: same verified invocation resumes scheduling."""
 
@@ -6532,6 +6753,31 @@ class SchedulingUpdateTests(unittest.TestCase):
             ('orbi', 'install-units'), ('systemctl', 'enable')]
         positions = [operations.index(operation) for operation in expected]
         self.assertEqual(positions, sorted(positions))
+
+    def test_start_names_post_install_setup_failure_and_uses_json_result_path(self):
+        timer = f'{self.prefix}@1.timer'
+        for failed in (True, False):
+            with self.subTest(failed=failed):
+                self.h = self.fresh(f'fixture-result-{failed}')
+                extra = [{'tool': 'orbi', 'argv_contains': ['setup', '--json'],
+                          'exec': ['systemctl', '--user', 'enable', '--now', timer],
+                          **({'exit': 1, 'stderr': 'setup_failed reason=checkout is not clean: ' + SECRET}
+                             if failed else {'stdout': '{"setup":"ok"}\n'})},
+                         {'tool': 'orbi', 'argv_contains': ['setup'], 'exit': 2,
+                          'stderr': 'fixture requires setup JSON result mode'}]
+                self.active_rules(extra=[self.latest_release, *extra], initially_active=False)
+                code, doc, err = self.h.run('start')
+                self.assertNotIn(SECRET, json.dumps(doc) + err)
+                self.assertEqual(doc['scheduler']['timers'][timer]['active'], 'active', doc)
+                if failed:
+                    self.assertNotEqual(code, 0)
+                    self.assertEqual(doc['steps'][-1]['step'], 'check_checkout')
+                    self.assertIn('check_checkout', doc['error']['message'])
+                    self.assertIn('inspect git status in the configured repo_dir', doc['error']['fix'])
+                    self.assertIn('/orbi start --repo-dir', doc['repair_command'])
+                else:
+                    self.assertEqual(code, 0, doc)
+                    self.assertEqual(doc['status'], 'started')
 
     def test_start_current_enabled_active_deployment_does_not_mutate(self):
         for services in ({}, {1: 'active'}):
@@ -7988,6 +8234,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                 '--dry-run': ['setup', 'start', 'update', 'stop', 'prune'],
                                 '--stop': ['update'],
                                 '--wait': ['update'],
+                                '--wait-minutes': ['update'],
                                 '--apply': ['prune'],
                                 '--json': list(expected),
                                 '--pi-providers': ['setup', 'start'],
