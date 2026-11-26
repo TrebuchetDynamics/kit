@@ -326,7 +326,8 @@ stash remains available for manual recovery. Unpacked non-Git releases still wor
 `--no-pull` or `KIT_INSTALL_NO_PULL=1` explicitly installs the checkout as-is without
 stashing or pulling. `--help`, `--list` and `--dry-run` never stash or pull.
 
-`--full` (`--all`) and `--verbose` (`-v`) are the defaults. Missing hosts other than
+`--full` (`--all`) is the default, with live output and exact commands. Use
+`--verbose` (`-v`) to see completed Orbi deployment steps. Missing hosts other than
 Pi are skipped, while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
 installs nothing. Both entrypoints check for updates on every run under existing source/pin policies.
 Only complete changes to installed payloads or effective settings can restart a proven active consumer, once.

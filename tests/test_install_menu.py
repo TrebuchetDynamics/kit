@@ -1248,8 +1248,7 @@ if [[ "$*" == *list-units* ]]; then echo 'kit-unknown.service loaded active runn
         self.assertEqual(self.calls('systemctl --user try-restart'),
                          ['systemctl --user try-restart kit-bolt.service'])
 
-    def test_outer_and_real_nested_installer_preserve_native_gateway_decisions(self):
-        self.recording_services()
+    def nested_installer_fixture(self):
         source = self.home / 'nested-source'
         (source / 'scripts').mkdir(parents=True)
         shutil.copy2(INSTALL, source / 'install.sh')
@@ -1276,6 +1275,12 @@ if __name__ == '__main__':
         print(json.dumps({{'status': 'updated', 'gateway_restart': os.environ['NATIVE_DISPOSITION'],
                            'hosts': updater.refresh_hosts(Path(__file__).resolve().parents[1])}}))
 ''')
+        return source / 'install.sh'
+
+    def test_outer_and_real_nested_installer_preserve_native_gateway_decisions(self):
+        self.recording_services()
+        installer = self.nested_installer_fixture()
+        source = installer.parent
         report = self.home / 'report.jsonl'
         for command in ((), ('update',)):
             for disposition in ('deferred', 'pending', 'not_needed'):
@@ -1876,6 +1881,55 @@ Path.iterdir = iterdir
         self.assertNotIn('verify_scheduling', summary)
         self.assertNotIn('orbi.toml', summary)
 
+    def test_delegated_orbi_shows_rows_and_honors_verbose(self):
+        installer = self.nested_installer_fixture()
+        for flags in ((), ('--verbose',)):
+            with self.subTest(flags=flags):
+                self.orbi_fleet_fixture()
+                config = self.home / 'paused/orbi.toml'
+                config.write_text(config.read_text().replace('example/paused', 'fork/working'))
+                result = subprocess.run(['bash', str(installer), '--only', 'hermes', *flags],
+                                        env={**self.env, 'NATIVE_DISPOSITION': 'not_needed'},
+                                        capture_output=True, text=True, timeout=120, cwd=self.project)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                progress, summary = result.stdout.rsplit('\nSummary:', 1)
+                self.assertRegex(progress, r'(?m)^  example/working  started \(up to date\), 1 slot')
+                row = next(line for line in progress.splitlines() if line.startswith('  fork/working  started'))
+                self.assertTrue(row.startswith('  fork/working  started (updated), 1 slot'), row)
+                if flags:
+                    self.assertIn('completed: set_release_track, sync_engine_source', row)
+                else:
+                    self.assertEqual(row, '  fork/working  started (updated), 1 slot')
+                self.assertRegex(summary, r'orbi\s+installed\s+Hermes delegated: Orbi fleet completed: 2 started')
+                self.assertNotIn('started (', summary)
+
+    def test_delegated_orbi_replays_diagnostics_when_quiet_or_interrupted(self):
+        installer = self.nested_installer_fixture()
+        config = str(self.home / 'working/orbi.toml')
+        for flags, fault, failure in (
+            (('--quiet',), {'ELAPSED_TIMER': 'working-worker.timer'}, 'verify_scheduling:'),
+            ((), {'ELAPSED_TIMER': 'working-worker.timer'}, 'verify_scheduling:'),
+            ((), {'INTERRUPT_INSTALLER': config}, 'apply_release: fleet refresh did not return a terminal receipt'),
+        ):
+            with self.subTest(flags=flags, fault=fault):
+                self.orbi_fleet_fixture()
+                if 'INTERRUPT_INSTALLER' in fault:
+                    # The updater runs the installed clone, which may predate progress_only.
+                    helper = installer.parent / 'skills/orbi/scripts/orbi_control.py'
+                    helper.write_text(helper.read_text().replace(", 'progress_only': True", ''))
+                result = subprocess.run(['bash', str(installer), '--only', 'hermes', *flags],
+                                        env={**self.env, 'NATIVE_DISPOSITION': 'not_needed', **fault},
+                                        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120,
+                                        cwd=self.project)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                progress, summary = result.stdout.rsplit('\nSummary:', 1)
+                diagnostics = [line for line in progress.splitlines() if line.startswith('  FAILED: Orbi fleet')]
+                self.assertEqual(len(diagnostics), 1, result.stdout)
+                self.assertIn(failure, diagnostics[0])
+                self.assertIn('completed: disable_trigger system:working-worker.timer', progress)
+                self.assertRegex(summary, r'orbi\s+failed\s+Hermes delegated: Orbi fleet incomplete:')
+                self.assertNotIn('completed:', summary)
+
     def test_plain_install_holds_for_an_unreadable_live_account(self):
         receipt, state, _ = self.orbi_fleet_fixture()
         original = state.read_bytes()
@@ -1985,6 +2039,8 @@ Path.iterdir = iterdir
         self.assertIn('system:working-worker.timer verify_scheduling: '
                       'system:working-worker.timer: timer not confirmed enabled and scheduling', progress)
         self.assertIn(working['config'], progress)
+        self.assertRegex(progress, r'(?m)^  paused  started \(updated\), 1 slot$')
+        self.assertNotIn(paused['config'], progress)
         self.assertIn('completed: disable_trigger system:working-worker.timer', progress)
         self.assertIn('start_trigger_requested system:working-worker.timer', progress)
         self.assertIn('No rollback attempted', progress)

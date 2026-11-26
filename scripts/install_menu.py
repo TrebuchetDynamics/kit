@@ -1164,23 +1164,29 @@ def orbi_fleet_details(receipt, *, verbose=False):
         lines[0] += f": {where + ': ' if where else ''}{error['message']}"
         if error.get('fix'):
             lines.append(error['fix'])
-    for row in receipt['deployments']:
-        update = row.get('engine_update', 'not_applied').replace('_', ' ')
-        if failed:
-            lines.append(f"{row['config']}: {row['status']} ({update})")
+    deployments = receipt['deployments']
+    names = Counter(row['repo'].rsplit('/', 1)[-1] for row in deployments)
+    for row in deployments:
+        result = f"{row['status']} ({row.get('engine_update', 'not_applied').replace('_', ' ')})"
+        needs_repair = failed and row['status'] != 'started'
+        if needs_repair:
+            line = f"{row['config']}: {result}"
         else:
-            name = ' '.join(row['repo'].rsplit('/', 1)[-1].splitlines())
-            slots = row['slots']
-            lines.append(f"{name}  {row['status']} ({update}), {slots} {'slot' if slots == 1 else 'slots'}")
-        if verbose or failed:
+            slug = row['repo'].rsplit('/', 1)[-1]
+            # Different owners can deploy repositories with the same basename.
+            name = ' '.join((row['repo'] if names[slug] > 1 else slug).splitlines())
+            slots = row.get('slots', 'unknown')  # older delegated receipts omit the count
+            line = f"{name}  {result}, {slots} {'slot' if slots == 1 else 'slots'}"
+            if verbose:
+                line += f"; {row['config']}"
+        if verbose or needs_repair:
             steps = ', '.join(step['step'] + (' ' + step['unit'] if 'unit' in step else '')
                               for step in row['steps'])
-            if verbose and not failed:
-                lines[-1] += f"; {row['config']}"
             if steps:
-                lines[-1] += f'; completed: {steps}'
-            if failed:
-                lines[-1] += f"; {row['recovery']}"
+                line += f'; completed: {steps}'
+            if needs_repair:
+                line += f"; {row['recovery']}"
+        lines.append(line)
     if 'recovery' in receipt:
         lines.append(receipt['recovery'])
     return '\n  '.join(lines)
@@ -2054,11 +2060,15 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
         if item.key not in chosen:
             if item.key == 'orbi' and delegated_orbi:
                 fleet = delegated_orbi['orbi_fleet']
-                # A terminal failure was already printed by the quiet delegate unless
-                # its output was suppressed here. Progress-only receipts never printed it.
-                if fleet.get('error') and (fleet.get('progress_only') or fleet['status'] == 'unverified'
-                                          or not (output.verbosity or sys.stdin.isatty())):
-                    output.line('  FAILED: ' + orbi_fleet_details(fleet), 'failed')
+                # The quiet delegate prints terminal failures unless we suppress the
+                # stream. An older delegate signals interruption only in the message.
+                error = fleet.get('error')
+                if error and (fleet.get('progress_only') or fleet['status'] == 'unverified'
+                              or error['message'] == 'fleet refresh did not return a terminal receipt'
+                              or not (output.verbosity or sys.stdin.isatty())):
+                    output.line('  FAILED: ' + orbi_fleet_details(fleet, verbose=output.verbose), 'failed')
+                elif fleet['status'] == 'completed' and output.verbosity:
+                    output.line('  Hermes delegated: ' + orbi_fleet_details(fleet, verbose=output.verbose))
                 record('orbi', delegated_orbi['status'], 'Hermes delegated: ' + orbi_fleet_summary(fleet),
                        delegated_orbi['exit'], orbi_fleet=fleet)
             else:
@@ -2117,7 +2127,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                                 detail.append(orbi_fleet_summary(fleet))
                                 if fleet['status'] != 'completed':
                                     outcome, exit_code = 'failed', 1
-                                    output.line('  FAILED: ' + orbi_fleet_details(fleet), 'failed')
+                                    output.line('  FAILED: ' + orbi_fleet_details(fleet, verbose=output.verbose), 'failed')
                                 elif output.verbosity:
                                     output.line('  ' + orbi_fleet_details(fleet, verbose=output.verbose))
                                 break
