@@ -4317,6 +4317,12 @@ FLEET_UNIT_PROPS = ('Id', 'Names', 'LoadState', 'ActiveState', 'SubState', 'Frag
                     'Requires', 'Requisite', 'Wants', 'WantedBy', 'BindsTo', 'Conflicts', 'ConflictedBy')
 
 
+FLEET_UNIT_LIST_PROPS = frozenset({
+    'PartOf', 'ConsistsOf', 'BoundBy', 'RequiredBy', 'PropagatesStopTo', 'OnFailure', 'OnSuccess',
+    'Upholds', 'UpheldBy', 'Requires', 'Requisite', 'Wants', 'WantedBy', 'BindsTo', 'Conflicts',
+    'ConflictedBy', 'DropInPaths', 'Names', 'TriggeredBy'})
+
+
 def fleet_unit(ctx, manager, name):
     if not FLEET_UNIT_NAME.fullmatch(name):
         fleet_refuse(f'{manager.name}: invalid installed or queued unit identity')
@@ -4508,8 +4514,19 @@ def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', r
                 or install_targets != {'timers.target'}
                 or re.search(r'^\s*(Also|Alias|RequiredBy|UpheldBy)\s*=', definition, re.M)):
             fleet_refuse(f'{label}: timer enable/disable may change other unit bindings')
+    def bound_value(prop):
+        # A daemon reload (for example, from disabling a timer) may reorder
+        # dependency lists; their membership, not their order, is the binding.
+        value = values.get(prop)
+        if prop in FLEET_UNIT_LIST_PROPS and value is not None:
+            try:
+                return tuple(sorted(set(shlex.split(value))))
+            except ValueError:
+                fleet_refuse(f'{label}: unit dependencies are unreadable')
+        return value
+
     binding = (tuple(fleet_owned_fragment(path, manager.uid) for path, _ in fragments),
-               tuple(values.get(prop) for prop in FLEET_UNIT_PROPS if prop not in {
+               tuple(bound_value(prop) for prop in FLEET_UNIT_PROPS if prop not in {
                    'ActiveState', 'SubState', 'UnitFileState', 'Result', 'ExecMainStartTimestampMonotonic',
                    'ExecMainStatus', 'ConditionResult', 'Names', 'TriggeredBy', 'WantedBy', 'ExecStart', 'ExecStartPre'}))
     # Execution status fields change when a service stops. Keep just the executable/argv.
@@ -4634,15 +4651,21 @@ def fleet_recheck_key(units, targets, jobs):
     """What must not change between the frozen plan and the first stop.
 
     The stop phase re-reads live jobs and worker states, and cancels or stops
-    only Orbi units. Unrelated units' jobs and a oneshot worker started by its
-    own timer are therefore not plan changes. Activity of timers and persistent
+    only Orbi units. Unrelated units' jobs and the activity of a oneshot service
+    or a timer-started worker are therefore not plan changes. Activity of timers and persistent
     services decides what is restored, and system-manager Orbi jobs decide the
     cancel permission checked before the plan, so those stay compared.
     """
     names = {(unit.manager, unit.name) for unit in units}
+    # A timer worker's restore uses the live interruption seen while stopping.
+    worker_timers = {(unit.manager, unit.triggers) for unit in units if unit.triggers}
+
+    def transient(unit):
+        return not unit.triggers and (unit.service_type == 'oneshot'
+                                      or ((unit.manager, unit.name) in worker_timers and unit.runner))
+
     return (
-        tuple(dataclasses.replace(unit, active='') if unit.service_type == 'oneshot' and not unit.triggers else unit
-              for unit in units),
+        tuple(dataclasses.replace(unit, active='') if transient(unit) else unit for unit in units),
         targets,
         {manager: {job: entry for job, entry in pending.items()
                    if manager.name == 'system' and (manager, entry[0]) in names}
