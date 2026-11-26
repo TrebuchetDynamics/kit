@@ -3981,7 +3981,8 @@ def host_darwin(ctx, coverage):
 
 
 # Installer-only inventory is stricter than the observational `status all`.
-# Never interpret missing, truncated or denied evidence as an empty fleet.
+# Never interpret incomplete evidence as an empty fleet; disclose any offline
+# non-lingering accounts whose definition folders could not be read.
 @dataclasses.dataclass(frozen=True)
 class FleetManager:
     name: str
@@ -4016,11 +4017,17 @@ def fleet_managers(ctx):
     # The caller bus alone is not coverage. Check local accounts for installed
     # evidence and /run/user for live managers, including users with custom XDG paths.
     accounts = ctx.run(['getent', '-s', 'files', 'passwd']).stdout.splitlines()
-    runtime = Path('/run/user')
-    active = {int(p.name) for p in runtime.iterdir() if p.name.isdecimal()} if runtime.is_dir() else set()
+    try:
+        active = {int(p.name) for p in Path('/run/user').iterdir() if p.name.isdecimal()}
+    except FileNotFoundError:
+        active = set()
+    except (OSError, ValueError) as error:
+        fleet_refuse(f'cannot verify running user managers ({type(error).__name__})')
     if len(accounts) > HOST_LIST_LIMIT or len(active) > HOST_DETAIL_LIMIT:
         fleet_refuse('local account coverage exceeds the inventory limit')
     known = {uid}
+    not_checked = []
+    lingering = None
     for row in accounts:
         fields = row.split(':')
         if len(fields) != 7 or not fields[2].isdecimal() or not Path(fields[5]).is_absolute():
@@ -4033,32 +4040,60 @@ def fleet_managers(ctx):
         known.add(other_uid)
         manager = FleetManager(f'user:{name}', ('--user', f'--machine={name}@.host'),
                                other_uid, other_home)
-        if other_uid in active or fleet_offline_user_evidence(ctx, manager):
+        live = other_uid in active
+        evidence = fleet_offline_user_evidence(ctx, manager, live=live)
+        if evidence is None:
+            if not live:
+                if lingering is None:
+                    try:
+                        lingering = {p.name for p in Path('/var/lib/systemd/linger').iterdir()}
+                    except (OSError, ValueError) as error:
+                        fleet_refuse(f'{manager.name}: cannot verify linger state ({type(error).__name__})')
+                if name not in lingering:
+                    not_checked.append(name)
+                    continue
+            fleet_refuse(f'{manager.name}: cannot verify installed definitions (PermissionError)')
+        if live or evidence:
             managers.append(manager)
     if active - known:
         fleet_refuse('unidentified local user managers: ' + ', '.join(map(str, sorted(active - known))))
-    return managers
+    return tuple(managers), tuple(sorted(not_checked))
 
 
-def fleet_offline_user_evidence(ctx, manager):
+def fleet_offline_user_evidence(ctx, manager, *, live):
+    """True for Orbi evidence, False for none, None for denied folder listing."""
+    unreadable = False
     for relative in ('.config/systemd/user.control', '.config/systemd/user', '.local/share/systemd/user'):
         folder = manager.home / relative
         try:
-            for index, path in enumerate(folder.iterdir()):
+            paths = folder.iterdir()
+            if live:
+                next(paths, None)  # check directory access; read units only through the existing manager inventory
+                continue
+            for index, path in enumerate(paths):
                 if index >= HOST_LIST_LIMIT:
                     fleet_refuse(f'{manager.name}: installed definitions exceed inventory limit')
                 if path.suffix not in {'.timer', '.service'}:
                     continue
-                if path.is_symlink() and path.resolve() == Path('/dev/null'):
-                    continue
-                item = host_definition(ctx, path, manager='user', user_home=manager.home)
+                try:
+                    if path.is_symlink() and path.resolve() == Path('/dev/null'):
+                        continue
+                    item = host_definition(ctx, path, manager='user', user_home=manager.home)
+                except FileNotFoundError:
+                    continue  # missing unit or dangling symlink, not an empty folder
+                except PermissionError:
+                    fleet_refuse(f'{manager.name}: cannot verify installed definitions (PermissionError)')
                 if item['orbi'] or item['referenced']:
+                    if unreadable:
+                        fleet_refuse(f'{manager.name}: cannot verify installed definitions (PermissionError)')
                     return True
         except FileNotFoundError:
             continue
+        except PermissionError:
+            unreadable = True  # still look for readable Orbi evidence in the other folders
         except (OSError, ValueError) as error:
             fleet_refuse(f'{manager.name}: cannot verify installed definitions ({type(error).__name__})')
-    return False
+    return None if unreadable else False
 
 
 def fleet_jobs(ctx, manager):
@@ -4565,7 +4600,10 @@ def installer_fleet(ctx, *, report_progress=None):
                 fleet_refuse(f'macOS: deployment coverage or launchd mutation unsupported ({subject}); '
                              'no deployment upgraded')
             return receipt
-        managers = fleet_managers(ctx)
+        manager_coverage = fleet_managers(ctx)
+        managers, not_checked = manager_coverage
+        if not_checked:
+            receipt['not_checked'] = list(not_checked)
         units, targets, jobs = fleet_inventory(ctx, managers)
         coverage = {'state': 'ok', 'problems': []}
         configs = host_config_paths(ctx, coverage)
@@ -4624,7 +4662,7 @@ def installer_fleet(ctx, *, report_progress=None):
                 current = {'step': 'preflight_deployment', 'config': str(config)}
                 before[config] = fleet_preflight_target(ctx, target)
             current = {}
-            if fleet_managers(ctx) != managers or fleet_inventory(ctx, managers) != (units, targets, jobs):
+            if fleet_managers(ctx) != manager_coverage or fleet_inventory(ctx, managers) != (units, targets, jobs):
                 fleet_refuse('fleet inventory or jobs changed after preflight')
             for config, target in targets.items():
                 if (setup_file_identities(target) != before[config][0]
@@ -4686,7 +4724,7 @@ def installer_fleet(ctx, *, report_progress=None):
                 elif unit.label in previously_active:
                     interrupted.add(unit.label)  # ran at entry but finished during trigger shutdown
             current = {'step': 'verify_fleet_quiescent'}
-            if fleet_managers(ctx) != managers:
+            if fleet_managers(ctx) != manager_coverage:
                 fleet_refuse('local manager coverage changed while stopping')
             stopped, bound, _ = fleet_inventory(ctx, managers, known_units=units)
             if ([(u.manager, u.name, u.config, u.binding) for u in stopped] !=

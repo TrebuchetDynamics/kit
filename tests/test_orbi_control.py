@@ -3728,6 +3728,107 @@ class InstallerFleetTests(unittest.TestCase):
         root = self.enterContext(tempfile.TemporaryDirectory())
         self.h = Harness(Path(root))
 
+    @contextlib.contextmanager
+    def other_account(self, *, active=False, linger=(), definitions=PermissionError):
+        ctx = helper.Context(env=self.h.env, platform='linux')
+        home = self.h.root / 'private-other-home'
+        uid = 1001 if os.getuid() != 1001 else 1002
+        passwd = f'other:x:{uid}:{uid}:Other:{home}:/bin/sh\n'
+        original_iterdir = Path.iterdir
+
+        def iterdir(path):
+            if path == Path('/run/user'):
+                return iter([path / str(uid)] if active else [])
+            if path == Path('/var/lib/systemd/linger'):
+                if isinstance(linger, type):
+                    raise linger(13, SECRET, str(path))
+                return iter(path / name for name in linger)
+            if path == home / '.config/systemd/user.control' and definitions is not None:
+                raise definitions(SECRET)
+            return original_iterdir(path)
+
+        with mock.patch.object(Path, 'iterdir', iterdir), mock.patch.object(
+                ctx, 'run', return_value=subprocess.CompletedProcess([], 0, passwd, '')):
+            yield ctx, home
+
+    def test_fleet_excludes_and_discloses_unreadable_offline_account(self):
+        with self.other_account() as (ctx, home):
+            managers, not_checked = helper.fleet_managers(ctx)
+            self.assertEqual([manager.name for manager in managers], ['system', 'user'])
+            self.assertEqual(not_checked, ('other',))
+            with mock.patch.object(helper, 'fleet_inventory', return_value=([], {}, {})):
+                receipt = helper.installer_fleet(ctx)
+        self.assertEqual(receipt['status'], 'no_deployments')
+        self.assertEqual(receipt['not_checked'], ['other'])
+        for private in (str(home), SECRET, 'PermissionError'):
+            self.assertNotIn(private, json.dumps(receipt))
+
+    def test_fleet_holds_when_unreadable_account_is_live_or_lingering(self):
+        for options in ({'active': True}, {'linger': ('other',)}):
+            with self.subTest(options=options), self.other_account(**options) as (ctx, home), \
+                    mock.patch.object(helper, 'fleet_inventory') as inventory:
+                receipt = helper.installer_fleet(ctx)
+                self.assertEqual(receipt['status'], 'held')
+                self.assertEqual(receipt['error']['message'],
+                                 'user:other: cannot verify installed definitions (PermissionError)')
+                self.assertFalse(receipt.get('not_checked'))
+                self.assertNotIn(str(home), json.dumps(receipt))
+                self.assertNotIn(SECRET, json.dumps(receipt))
+                inventory.assert_not_called()
+
+    def test_fleet_holds_when_linger_directory_cannot_be_listed(self):
+        for error in (PermissionError, FileNotFoundError):
+            with self.subTest(error=error), self.other_account(linger=error) as (ctx, home):
+                receipt = helper.installer_fleet(ctx)
+                self.assertEqual(receipt['status'], 'held')
+                self.assertIn('cannot verify linger', receipt['error']['message'])
+                for private in (str(home), '/var/lib/systemd/linger', SECRET):
+                    self.assertNotIn(private, json.dumps(receipt))
+
+    def test_fleet_holds_on_other_definition_errors(self):
+        for error in (NotADirectoryError, ValueError):
+            with self.subTest(error=error), self.other_account(definitions=error) as (ctx, home):
+                receipt = helper.installer_fleet(ctx)
+                self.assertEqual(receipt['status'], 'held')
+                self.assertEqual(receipt['error']['message'],
+                                 f'user:other: cannot verify installed definitions ({error.__name__})')
+                self.assertNotIn(str(home), json.dumps(receipt))
+                self.assertNotIn(SECRET, json.dumps(receipt))
+
+    def test_fleet_holds_for_an_unreadable_unit_file_in_a_listable_folder(self):
+        with self.other_account(definitions=None) as (ctx, home):
+            directory = home / '.config/systemd/user'
+            directory.mkdir(parents=True)
+            unit = directory / 'private.service'
+            unit.touch()
+            with mock.patch.object(helper, 'host_definition', side_effect=PermissionError(13, SECRET, str(unit))):
+                receipt = helper.installer_fleet(ctx)
+        self.assertEqual(receipt['status'], 'held')
+        self.assertEqual(receipt['error']['message'],
+                         'user:other: cannot verify installed definitions (PermissionError)')
+        self.assertNotIn('not_checked', receipt)
+        self.assertNotIn(str(unit), json.dumps(receipt))
+        self.assertNotIn(SECRET, json.dumps(receipt))
+
+    def test_fleet_holds_if_a_folder_is_denied_but_other_readable_evidence_names_orbi(self):
+        with self.other_account() as (ctx, home):
+            directory = home / '.config/systemd/user'
+            directory.mkdir(parents=True)
+            orbi = directory / 'delivery.service'
+            orbi.write_text('[Service]\nExecStart=/bin/orbi\n')
+            dangling = directory / 'missing.service'
+            dangling.symlink_to(directory / 'absent')
+            iterdir = Path.iterdir
+            with mock.patch.object(Path, 'iterdir', lambda path: (
+                    iter((dangling, orbi)) if path == directory else iterdir(path))), \
+                    mock.patch.object(helper, 'fleet_inventory', return_value=([], {}, {})) as inventory:
+                receipt = helper.installer_fleet(ctx)
+            inventory.assert_not_called()
+        self.assertEqual(receipt['status'], 'held')
+        self.assertEqual(receipt['error']['message'],
+                         'user:other: cannot verify installed definitions (PermissionError)')
+        self.assertNotIn('not_checked', receipt)
+
     def test_fleet_manager_bounds_reads_and_allows_time_for_service_transitions(self):
         ctx = helper.Context(env=self.h.env, platform='linux')
         manager = helper.FleetManager('system', ('--system',), 0, Path('/root'))

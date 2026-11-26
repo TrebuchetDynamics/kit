@@ -65,6 +65,12 @@ Run from a clone of this repository. The shell installers are thin wrappers.
 | `python3 scripts/install-graphify.py` | `--hermes-home ROOT`, `--profile NAME` (both required), `--dry-run` | Installs Graphify's Hermes skill into selected existing profiles; installs the `graphifyy` tool with `uv tool install` when missing. |
 | `python3 scripts/check.py` | `--list`, `--timeout SECONDS` (default 1800 per test process) | Runs the offline test inventory; see [testing](testing.md). |
 
+During the [Orbi refresh](installation.md#orbi-cli), the installer lists an
+account as `not checked` without failing the refresh only when it cannot list the
+account's user unit folders due to permissions, finds no readable Orbi evidence,
+and verifies that the account has neither a running manager nor a linger marker.
+Unverifiable linger state still holds the refresh for an unreadable account.
+
 ## Repository helpers used by workflows
 
 These ship inside the bundle and are run by skills against your project. Paths are
