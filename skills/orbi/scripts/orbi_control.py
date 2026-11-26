@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Orbi repository lifecycle controls and local user template maintenance.
+"""Orbi repository lifecycle controls, read-only host inventory and local user template maintenance.
 
 `python3 -B orbi_control.py [status|version|setup|start|update|stop|prune|help] [all] [--repo-dir PATH]
-[--config PATH] [--dry-run] [--wait] [--apply] [--json]`
+[--config PATH] [--dry-run] [--wait] [--apply] [--json] [--verbose]`
 
 - `status` (the default) is read-only: local reads, read-only `orbi doctor`
   and explicit `gh`/`systemctl` reads. It never fetches, installs, locks or
@@ -43,6 +43,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - Windows is unsupported and refused
     fcntl = None
 import hashlib
+from itertools import islice
 import json
 import os
 import plistlib
@@ -3555,7 +3556,7 @@ def lifecycle_text(entry):
             f"user={entry['user']} result={entry['result']}")
 
 
-def render(ctx, document, json_mode):
+def render(ctx, document, json_mode, *, verbose=False):
     if json_mode:
         ctx.out.write(json.dumps(document, indent=2) + '\n')
         return
@@ -3587,6 +3588,9 @@ def render(ctx, document, json_mode):
             ctx.out.write(f"Next: {document['next_action']}\n")
         return
     if document.get('scope') == 'host':
+        if not verbose:
+            render_host_compact(ctx, document)
+            return
         ctx.out.write(f"Host Orbi: coverage={document['coverage']['state']}; observed workers="
                       f"{document['totals']['observed_workers']} (not an absolute host total)\n")
         for row in document['rows']:
@@ -3641,6 +3645,64 @@ def render(ctx, document, json_mode):
         ctx.out.write(line + '\n')
 
 
+def render_host_compact(ctx, document):
+    groups = {}
+    unbound = []
+    for row in document['rows']:
+        if config := row['binding']['config']:
+            groups.setdefault(config, []).append(row)
+        elif row['kind'] == 'runner':
+            unbound.append(row)
+    coverage = document['coverage']
+    manager_unavailable = any(item['state'] != 'ok' for item in coverage['managers'].values())
+    unbound_busy = any(row['scheduler'] in DRAIN_STATES for row in unbound)
+    header = (f"Host Orbi: coverage={coverage['state']}; "
+              f"{len(groups)} deployments, {document['totals']['observed_workers']} observed workers")
+    if unbound:
+        header += f'; workers without a config: {len(unbound)} (--verbose to list)'
+    ctx.out.write(header + '\n')
+    for config, rows in sorted(groups.items()):
+        first = rows[0]
+        workers = [row for row in rows if row['kind'] == 'runner']
+        busy = [row for row in workers if row['scheduler'] in DRAIN_STATES]
+        timers = [timer for row in workers for timer in row.get('timers', {}).values()]
+        scheduled = [timer for timer in timers if timer['state'] in ACTIVE_STATES]
+        if busy:
+            state = 'running'
+        elif scheduled or any(row['state'] == 'idle' for row in workers):
+            state = 'idle'
+        elif (first['binding']['state'] != 'verified' or (not workers and (manager_unavailable or unbound_busy))
+              or any(row['scheduler'] == 'unknown' for row in workers)
+              or any(timer['state'] == 'unknown' for timer in timers)):
+            state = 'unknown'
+        else:
+            state = 'stopped'
+        issues = {row['worker'].get('issue', {}).get('number') for row in busy}
+        numbers = [f'#{number}' for number in sorted(issues - {None})]
+        if None in issues:
+            numbers.append('unknown')
+        # systemd's printed calendar timestamps start with a weekday; sort by date/time.
+        next_run = min((timer['next_trigger'] for timer in scheduled
+                        if re.match(r'^\S+ \d{4}-\d\d-\d\d ', timer['next_trigger'] or '')),
+                       key=lambda stamp: stamp.split(' ', 1)[1], default='unknown')
+        selection = '/'.join(first.get(key) or 'unknown' for key in ('provider', 'model', 'thinking'))
+        repos = ','.join(first.get('repos', [])) or config
+        line = (f"{repos} slots={len(busy)}/{first.get('max_concurrency', '?')} {selection} "
+                f"state={state} issues={','.join(numbers) or '-'} next={next_run}")
+        ctx.out.write(' '.join(line.splitlines()) + '\n')
+    problems = coverage['problems']
+    other = [p for p in problems if not p.get('non_orbi')]
+    if count := len(problems) - len(other):
+        ctx.out.write(f"coverage {coverage['state']}: {count} non-Orbi units unreadable (--verbose to list)\n")
+    if other:
+        first = other[0]
+        reason, manager = first['reason'], first['manager']
+        subject = f'{manager}: ' if manager and not reason.startswith(f'{manager}:') else ''
+        detail = ' '.join((subject + reason).splitlines())
+        more = f' (+{len(other) - 1} more)' if len(other) > 1 else ''
+        ctx.out.write(f"coverage {coverage['state']}: {detail}{more} (--verbose for details and repair)\n")
+
+
 def render_error(ctx, action, exc, json_mode):
     document = {'action': action,
                 'error': {'code': exc.code, 'message': exc.message,
@@ -3678,6 +3740,8 @@ HOST_DETAIL_LIMIT = 256
 # Orbi's; ordinary hosts have hundreds of unrelated units in the system manager.
 FLEET_CLASSIFY_LIMIT = 2048
 HOST_LIST_LIMIT = 8192
+HOST_PROC = Path('/proc')
+HOST_CGROUP = Path('/sys/fs/cgroup')
 
 
 def host_read_failure(proc):
@@ -3686,10 +3750,13 @@ def host_read_failure(proc):
                                  proc.stderr or '', re.I) else 'failed'
 
 
-def host_problem(coverage, manager, reason):
+def host_problem(coverage, manager, reason, *, non_orbi=False,
+                 fix='restore read access to local scheduler/config evidence and rerun status all; no sudo'):
     coverage['state'] = 'partial'
-    coverage['problems'].append({'manager': manager, 'reason': reason,
-                                'fix': 'restore read access to local scheduler/config evidence and rerun status all; no sudo'})
+    problem = {'manager': manager, 'reason': reason, 'fix': fix}
+    if non_orbi:
+        problem['non_orbi'] = True  # No observed Orbi evidence, not proof of absence.
+    coverage['problems'].append(problem)
 
 
 def host_definition_dirs(ctx, manager):
@@ -3754,14 +3821,14 @@ def systemd_logical_lines(text):
         line = line.removesuffix('\r')
         if line.lstrip().startswith(('#', ';')):
             continue
-        if line.endswith('\\'):
+        if (len(line) - len(line.rstrip('\\'))) % 2:
             pending.append(line[:-1])
         else:
             lines.append(' '.join([*pending, line]))
             pending.clear()
     if pending:
-        # With no following line, preserve the dangling escape for validation.
-        lines.append(' '.join(pending) + '\\')
+        # systemd still replaces the continuation marker at EOF.
+        lines.append(' '.join(pending) + ' ')
     return '\n'.join(lines)
 
 
@@ -3770,7 +3837,7 @@ class UnitParseError(ValueError):
 
 
 def host_definition(ctx, path, *, working_directory=None, instance=None, manager='user', user_home=None,
-                    verify_paths=False, text=None):
+                    verify_paths=False, template=False, text=None):
     """Extract config references only; never return commands or environment contents."""
     text = systemd_logical_lines(bounded_text(path) if text is None else text)
     references = []
@@ -3792,6 +3859,8 @@ def host_definition(ctx, path, *, working_directory=None, instance=None, manager
         references.append(str(Path(cwd) / 'orbi.toml'))
     expanded = []
     for value in references:
+        if template and re.search(r'%[iI]', str(Path(cwd or '.') / value)):
+            continue  # A bare template has no instance-specific config to verify.
         # %h belongs to the manager, not the invoking user. Do not attribute a
         # system unit to the caller's home when the manager home is unobserved.
         if manager == 'user':
@@ -3799,7 +3868,7 @@ def host_definition(ctx, path, *, working_directory=None, instance=None, manager
         if instance is not None:
             value = value.replace('%i', instance)
         expanded.append(value)
-    return {'configs': host_resolve_configs(expanded, cwd, verify_paths=verify_paths), 'referenced': bool(references),
+    return {'configs': host_resolve_configs(expanded, cwd, verify_paths=verify_paths), 'referenced': bool(expanded),
             'runner': runner, 'orbi': orbi, 'command': bool(commands)}
 
 
@@ -3863,7 +3932,9 @@ def host_configs(ctx, paths, coverage):
             deployments[key] = {'binding': {'state': 'verified', 'config': key},
                                 'last_lifecycle': last_lifecycle(target),
                                 'repo': target.source_repos[0] if len(target.source_repos) == 1 else None,
-                                'repos': list(target.source_repos), 'target': target, 'engine': summary['engine']}
+                                'repos': list(target.source_repos), 'target': target, 'engine': summary['engine'],
+                                'provider': target.data.get('pi_provider'), 'model': target.data.get('pi_model'),
+                                'thinking': target.data.get('pi_thinking'), 'max_concurrency': target.max_concurrency}
         except (OSError, ValueError, UnicodeError, RuntimeError, ControlError):
             deployments[key] = {'binding': {'state': 'unreadable', 'config': key},
                                 'repo': None, 'engine': {'state': 'unknown', 'version': None}}
@@ -3872,7 +3943,7 @@ def host_configs(ctx, paths, coverage):
 
 
 def host_linux(ctx, coverage):
-    records, paths = [], host_config_paths(ctx, coverage)
+    records, paths, worker_bindings = [], host_config_paths(ctx, coverage), {}
     for manager in ('user', 'system'):
         flag = '--' + manager
         evidence = {'state': 'ok', 'lists': {}, 'failures': {},
@@ -3927,11 +3998,15 @@ def host_linux(ctx, coverage):
                 host_problem(coverage, manager, 'installed definition directory unreadable: ' + str(folder))
         if count > HOST_LIST_LIMIT:
             host_problem(coverage, manager, 'installed definition scan truncated')
+        masked_templates = {name for name, item in installed.items()
+                            if name.endswith(('@.service', '@.timer')) and item.get('state') in {'masked', 'masked-runtime'}}
         metadata = {}
         unparsable = set()
         for name, path in definitions.items():
+            if name in masked_templates:
+                continue
             try:
-                item = host_definition(ctx, path, manager=manager)
+                item = host_definition(ctx, path, manager=manager, template=name.endswith(('@.service', '@.timer')))
                 if 'orbi' in name.lower() or item['configs'] or item['orbi']:
                     metadata[name] = item
                     installed.setdefault(name, {'state': 'unknown'})
@@ -3943,24 +4018,29 @@ def host_linux(ctx, coverage):
             except (OSError, ValueError):
                 if 'orbi' in name.lower():
                     metadata[name] = {'configs': [], 'unreadable': True}
-                    host_problem(coverage, manager, 'installed definition unreadable: ' + name)
+                    if not name.endswith(('@.service', '@.timer')):
+                        host_problem(coverage, manager, 'installed definition unreadable: ' + name)
         for name in definitions:
             if name.endswith('.timer') and name[:-6] + '.service' in metadata:
                 metadata.setdefault(name, {'configs': [], 'runner': False})
         # Detail listed loaded/installed units (also arbitrary names), and local
         # definitions. Only Orbi/config-evidenced units survive the output filter.
         names = sorted(set(loaded) | set(installed) | set(metadata))
-        if len(names) > HOST_DETAIL_LIMIT:
+        templates = {n for n in names if n.endswith(('@.service', '@.timer'))}
+        query_names = [n for n in names if n not in templates]
+        if len(query_names) > HOST_DETAIL_LIMIT:
             host_problem(coverage, manager, f'unit detail limit {HOST_DETAIL_LIMIT}; remaining identities unobserved')
-            names = sorted(names, key=lambda n: ('orbi' not in n.lower() and n not in metadata, n))[:HOST_DETAIL_LIMIT]
-        details = {}
-        for name in names:
+            query_names = sorted(query_names, key=lambda n: ('orbi' not in n.lower() and n not in metadata, n))[:HOST_DETAIL_LIMIT]
+        # A bare template has no runtime properties; inspect its fragment instead.
+        details = {name: {} for name in names if name in templates}
+        failures = {}
+        for name in query_names:
             values = {}
             failure = 'invalid'
             try:
                 proc = ctx.run(['systemctl', flag, 'show', name,
                                 *[arg for prop in ('Id', 'LoadState', 'ActiveState', 'SubState', 'Result',
-                                                  'MainPID', 'InvocationID', 'WorkingDirectory', 'FragmentPath',
+                                                  'MainPID', 'InvocationID', 'ControlGroup', 'WorkingDirectory', 'FragmentPath',
                                                   'DropInPaths', 'UnitFileState', 'Unit', 'Triggers',
                                                   'LastTriggerUSec', 'NextElapseUSecRealtime') for arg in ('-p', prop)]],
                                allow_failure=True)
@@ -3971,25 +4051,25 @@ def host_linux(ctx, coverage):
                 if values.get('Id') != name:
                     raise ValueError('missing unit identity')
             except (ControlError, ValueError) as exc:
-                if isinstance(exc, ControlError):
-                    failure = exc.code
-                # Failed arbitrary-name reads also leave possible Orbi units
-                # undiscovered; they cannot certify complete coverage.
-                host_problem(coverage, manager, 'unit details ' + failure + ': ' + name)
+                failures[name] = exc.code if isinstance(exc, ControlError) else failure
             details[name] = values
+        names = sorted(details)
+        for name, values in details.items():
             # Read actual fragments/drop-ins; do not trust basename or unit_name.
             refs, unreadable, runner, referenced, command, orbi = set(), False, False, False, False, False
             fragment = values.get('FragmentPath') or definitions.get(name)
-            sources = [str(fragment)] if fragment else []
+            masked_template = name in masked_templates
+            sources = [str(fragment)] if fragment and not masked_template else []
             try:
                 sources.extend(shlex.split(values.get('DropInPaths', '')))
             except ValueError:
+                unparsable.add(name)
                 unreadable = True
             for source in sources:
                 try:
                     instance = name.split('@', 1)[1].rsplit('.', 1)[0] if '@' in name and '@.' not in name else None
                     item = host_definition(ctx, source, working_directory=values.get('WorkingDirectory'),
-                                           instance=instance, manager=manager)
+                                           instance=instance, manager=manager, template=name in templates)
                     refs.update(item['configs'])
                     runner |= item['runner']
                     command |= item['command']
@@ -4000,17 +4080,26 @@ def host_linux(ctx, coverage):
                     unreadable = True
                 except (OSError, ValueError):
                     unreadable = True
-            if not sources and name in metadata:
+            if not sources and name in metadata and not masked_template:
                 refs.update(metadata[name]['configs'])
                 unreadable = metadata[name].get('unreadable', False)
+            if name in templates and not masked_template and (not sources or unreadable):
+                if name not in unparsable:
+                    failures[name] = 'template fragment unreadable'
+                unreadable = True
             paths.update(refs)
             metadata[name] = {'configs': sorted(refs), 'unreadable': unreadable,
                               'runner': runner, 'referenced': referenced, 'command': command, 'orbi': orbi}
         for name in sorted(unparsable):
-            host_problem(coverage, manager, f'{manager}:{name}: unit definition is unparsable')
+            host_problem(coverage, manager, f'{manager}:{name}: unit definition is unparsable',
+                         fix='inspect and correct the named unit definition, then rerun status all')
         relevant = {n for n in names if 'orbi' in n.lower() or metadata[n]['configs'] or metadata[n]['orbi']}
         relevant.update(n for n in names if n.endswith('.timer') and
                         (details[n].get('Unit') or details[n].get('Triggers') or n[:-6] + '.service') in relevant)
+        for name, failure in failures.items():
+            # An unreadable arbitrary unit still cannot certify complete coverage.
+            reason = failure if name in templates else 'unit details ' + failure
+            host_problem(coverage, manager, reason + ': ' + name, non_orbi=name not in relevant)
         # Pair by exact service identity/explicit timer target, not slot number.
         pairs = {}
         for name in sorted(relevant):
@@ -4032,7 +4121,9 @@ def host_linux(ctx, coverage):
             unreadable = any(metadata[n].get('unreadable') for n in members)
             unresolved = any(metadata[n].get('referenced') and not metadata[n]['configs'] for n in members)
             binding = 'conflicting' if len(refs) > 1 else 'unreadable' if unreadable or unresolved else 'verified' if refs else 'unknown'
-            if binding in {'conflicting', 'unreadable'}:
+            # Template fragment failures already have a per-unit diagnostic above.
+            if binding == 'conflicting' or unresolved or any(
+                    metadata[n]['unreadable'] for n in members if n not in templates):
                 host_problem(coverage, manager, binding + ' config binding: ' + unit)
             kind = ('template' if '@.' in unit else 'timer' if unit.endswith('.timer') else
                     'runner' if metadata.get(unit, {}).get('runner') or
@@ -4056,6 +4147,8 @@ def host_linux(ctx, coverage):
                               'stopped' if state == 'inactive' and (not timer or timer_state == 'inactive') else state)
             if kind != 'runner':
                 worker = {'state': 'not a worker'}
+            elif state == 'active':
+                worker_bindings[manager, unit] = service
             timers = {n: {'state': details[n].get('ActiveState') or loaded.get(n, {}).get('active', 'unknown'),
                           'enabled': details[n].get('UnitFileState', 'unknown'),
                           'next_trigger': details[n].get('NextElapseUSecRealtime') or None}
@@ -4068,7 +4161,7 @@ def host_linux(ctx, coverage):
                             'next_trigger': timer_values.get('NextElapseUSecRealtime') or None,
                             'binding': {'state': binding, 'config': refs[0] if binding == 'verified' else None},
                             'worker': worker})
-    return records, paths
+    return records, paths, worker_bindings
 
 
 def host_darwin(ctx, coverage):
@@ -4177,9 +4270,9 @@ def host_darwin(ctx, coverage):
                     loaded = False
                     state = 'unloaded'
                 else:
-                    host_problem(coverage, manager, 'job state unavailable: ' + label)
+                    host_problem(coverage, manager, 'job state unavailable: ' + label, non_orbi=label not in labels)
             except ControlError:
-                host_problem(coverage, manager, 'job state unavailable: ' + label)
+                host_problem(coverage, manager, 'job state unavailable: ' + label, non_orbi=label not in labels)
             if label not in labels and not config:
                 continue
             if loaded is not False and state == 'unknown':
@@ -5126,6 +5219,94 @@ def installer_fleet(ctx, *, report_progress=None):
     return receipt
 
 
+def host_slot_issue(main, pid, repo_dir):
+    """Read only a slot record locked by this service PID, not a stale file."""
+    try:
+        for fd in islice((main / 'fd').iterdir(), HOST_DETAIL_LIMIT):
+            try:
+                path = fd.readlink()
+                if path.parent != repo_dir / '.orbi/slots' or not re.fullmatch(r'slot-[1-9][0-9]*', path.name):
+                    continue
+                lock = bounded_text(main / 'fdinfo' / fd.name, 4096)
+                if not re.search(rf'^lock:\s+[0-9]+: FLOCK\s+ADVISORY\s+WRITE\s+{pid}\s', lock, re.M):
+                    continue
+                owner, _, identity = bounded_text(fd, 1024).partition('\n')
+                if owner == pid:
+                    return identity.strip()
+            except (OSError, ValueError):
+                continue  # descriptors can close or become unreadable during inspection
+    except OSError:
+        pass
+    return ''
+
+
+def host_worktree_branches(ctx, repo_dir, group, pid):
+    """Only worktrees in use by processes of this unit are candidate evidence."""
+    try:
+        pids = bounded_text(HOST_CGROUP / group.relative_to('/') / 'cgroup.procs', 4096).splitlines()
+    except (OSError, ValueError):
+        return set()
+    if pid not in pids:
+        return set()
+    root = repo_dir / '.worktrees'
+    worktrees = set()
+    for child in pids:
+        if not re.fullmatch(r'[1-9][0-9]*', child):
+            continue
+        try:
+            parts = (HOST_PROC / child / 'cwd').readlink().relative_to(root).parts
+            if parts:
+                worktree = root / parts[0]
+                if (worktree / '.git').is_file():
+                    worktrees.add(worktree)
+        except (OSError, ValueError):
+            continue
+    branches = set()
+    for worktree in sorted(worktrees)[:HOST_DETAIL_LIMIT]:
+        try:
+            proc = ctx.run(['git', '-C', str(worktree), 'symbolic-ref', '--quiet', 'HEAD'],
+                           env={k: v for k, v in ctx.env.items() if not k.startswith('GIT_')}, allow_failure=True)
+        except (ControlError, OSError, UnicodeError):
+            continue
+        if not proc.returncode and len(proc.stdout) <= 1024 and proc.stdout.startswith('refs/heads/'):
+            branches.add(proc.stdout.removeprefix('refs/heads/').rstrip('\n'))
+    return branches
+
+
+def host_worker_issue(ctx, row, target, binding):
+    pid = binding.get('MainPID', '')
+    invocation = binding.get('InvocationID', '')
+    if not re.fullmatch(r'[1-9][0-9]*', pid) or not re.fullmatch(r'[0-9a-f]{32}', invocation):
+        return None
+    repo_dir = target.repo_dir or target.config_path.parent
+    slot = host_slot_issue(HOST_PROC / pid, pid, repo_dir)
+    identities = [(repo, m[1]) for repo in target.source_repos
+                  if (m := re.fullmatch(re.escape(repo) + r'#([1-9][0-9]{0,19})', slot))]
+    provenance = 'current service PID + locked Orbi slot'
+    if not identities:
+        group = Path(binding.get('ControlGroup', ''))
+        if not group.is_absolute() or '..' in group.parts or group.name != row['unit']:
+            return None
+        branches = host_worktree_branches(ctx, repo_dir, group, pid)
+        identities = [(repo, m[1]) for repo in target.source_repos for branch in branches
+                      if (m := re.fullmatch(re.escape(f"orbi/{repo.replace('/', '-')}-issue-")
+                                            + r'([1-9][0-9]{0,19})', branch))]
+        provenance = 'current service cgroup + Orbi worktree branch'
+    if len(identities) != 1:
+        return None
+    try:
+        current = service_binding(ctx, row['unit'], row['manager'])
+    except (ControlError, OSError, UnicodeError):
+        return None
+    if (current.get('ActiveState') != 'active'
+            or any(current.get(key) != binding.get(key) for key in
+                   ('MainPID', 'InvocationID', 'WorkingDirectory', 'FragmentPath'))):
+        return None
+    repo, number = identities[0]
+    return {'state': 'running', 'issue': {'number': int(number),
+            'url': f'https://github.com/{repo}/issues/{number}'}, 'provenance': provenance}
+
+
 def prune_settings(raw, section, keys):
     """Accept simple generated directives, not ambiguous systemd quoting or continuations."""
     current, values = None, {key: [] for key in keys}
@@ -5346,8 +5527,13 @@ def command_prune(ctx, args):
 def command_status_all(ctx):
     coverage = {'state': 'ok', 'managers': {}, 'problems': [],
                 'scope': 'observed local managers only; other users, namespaces, containers and remote hosts unobserved'}
-    rows, paths = host_linux(ctx, coverage) if ctx.platform == 'linux' else host_darwin(ctx, coverage)
+    worker_bindings = {}
+    if ctx.platform == 'linux':
+        rows, paths, worker_bindings = host_linux(ctx, coverage)
+    else:
+        rows, paths = host_darwin(ctx, coverage)
     deployments = host_configs(ctx, paths, coverage)
+    config_fields = ('repos', 'provider', 'model', 'thinking', 'max_concurrency')
     bound = set()
     for row in rows:
         config = row['binding']['config']
@@ -5359,17 +5545,24 @@ def command_status_all(ctx):
                        last_lifecycle=deployment.get('last_lifecycle'))
             row['binding'] = deployment['binding']
             target = deployment.get('target')
-            if (ctx.platform == 'linux' and target and row['repo'] and row['kind'] == 'runner'
-                    and row['scheduler'] == 'active'):
-                repo = Repo(target.repo_dir or target.deploy_home, row['repo'], *row['repo'].split('/', 1), None)
-                row['worker'] = current_run(ctx, target, repo, row['unit'], manager=row['manager'])
+            if target:
+                row.update({key: deployment[key] for key in config_fields})
+                binding = worker_bindings.get((row['manager'], row['unit']))
+                if binding is not None:
+                    if row['repo']:
+                        repo = Repo(target.repo_dir or target.deploy_home, row['repo'], *row['repo'].split('/', 1), None)
+                        row['worker'] = current_run(ctx, target, repo, row['unit'], manager=row['manager'])
+                    if row['worker']['state'] == 'active/issue unknown':
+                        if worker := host_worker_issue(ctx, row, target, binding):
+                            row['worker'] = worker
     for config, item in deployments.items():
         if config not in bound:
             rows.append({'manager': None, 'unit': None, 'timer': None, 'kind': 'config-only',
                          'loaded': False, 'installed': False, 'scheduler': 'prepared-only', 'state': 'prepared-only',
                          'repo': item['repo'], 'engine': item['engine'], 'binding': item['binding'],
                          'last_lifecycle': item.get('last_lifecycle'),
-                         'worker': {'state': 'not observed'}, 'next_trigger': None})
+                         'worker': {'state': 'not observed'}, 'next_trigger': None,
+                         **{key: item[key] for key in config_fields if key in item}})
     return {'action': 'status', 'scope': 'host', 'platform': ctx.platform, 'coverage': coverage,
             'totals': {'observed_workers': sum(r['kind'] == 'runner' and r['loaded'] is True for r in rows),
                        'observed_running_services': sum(r['kind'] == 'runner' and r['scheduler'] in ACTIVE_STATES for r in rows),
@@ -5404,7 +5597,7 @@ def command_version(ctx, args):
 
 def action_usage():
     return ('python3 -B orbi_control.py [' + '|'.join(ACTIONS) + '] [all] '
-            '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] '
+            '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] [--verbose] '
             '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] '
             '[--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait] [--apply]')
 
@@ -5416,6 +5609,7 @@ def command_help(ctx, args):
         '--config': 'explicit native Orbi config; update binds its repo_dir if --repo-dir is omitted',
         '--dry-run': 'preview without locking, writing, installing or activating',
         '--json': 'print one JSON document',
+        '--verbose': 'status all only: print per-unit rows and full coverage details in text',
         '--stop': 'update only: compatibility opt-out: quiesce, update and leave stopped',
         '--wait': f'update only: wait up to {UPDATE_WAIT_MINUTES} minutes for workers to finish; leave paused on timeout',
         '--apply': 'prune only: remove verified stale user unit templates and reload the user manager',
@@ -5438,7 +5632,8 @@ def command_help(ctx, args):
                                           if flag in entry['applies']]}
                     for flag, effect in options.items()},
         'quickstart': [
-            '/orbi status all [--json] inventories accessible local host managers without a checkout or GitHub auth. '
+            '/orbi status all shows one row per deployment without a checkout or GitHub auth. '
+            'Use --verbose for per-unit text or --json for structured inventory. '
             'Preserve literal status all in one helper call; never inject --repo-dir or --config. '
             'Other lifecycle/mutation selectors conflict and are refused before probes. Coverage and totals are observed, not an absolute host census.',
             'Bare /orbi or status inspects only. For a genuinely absent deployment with no explicit --config, '
@@ -5617,10 +5812,10 @@ ACTIONS = {
                   'Literal status all inspects accessible local host services without repository binding or network.',
         'mutates': 'none',
         'platforms': ['linux', 'darwin'],
-        'applies': ['--repo-dir', '--config', '--json'],
+        'applies': ['--repo-dir', '--config', '--json', '--verbose'],
         'when': 'Run by default to inspect a canonical GitHub checkout; no deployment is required '
                 '(an absent deployment is reported as absent). Use status all for host inventory from any directory; '
-                'only --json may accompany all.',
+                'only --json or --verbose may accompany all.',
     },
     'version': {
         'handler': command_version,
@@ -5746,6 +5941,7 @@ def parse_args(argv):
     parser.add_argument('--dry-run', action='store_true',
                         help='show the plan without locking, writing, installing or activating')
     parser.add_argument('--json', action='store_true', help='print one JSON document')
+    parser.add_argument('--verbose', action='store_true', help='status all only: show per-unit text and coverage details')
     parser.add_argument('--apply', action='store_true', help='prune only: remove stale unit templates')
     parser.add_argument('--stop', action='store_true',
                         help='update only: compatibility opt-out: quiesce, update and leave stopped')
@@ -5797,7 +5993,10 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
                  args.pi_provider is not None, args.pi_model is not None, args.pi_thinking is not None))):
             raise ControlError('invalid_host_selection',
                                'literal all requires status with no repo/config or mutation selectors',
-                               fix='use /orbi status all [--json] without selectors', exit_code=2)
+                               fix='use /orbi status all without selectors', exit_code=2)
+        if args.verbose and args.scope != 'all':
+            raise ControlError('invalid_host_selection', '--verbose requires status all',
+                               fix='use /orbi status all --verbose, or omit --verbose', exit_code=2)
         if args.apply and args.action != 'prune':
             raise ControlError('invalid_apply_selection', '--apply requires prune',
                                fix='use /orbi prune to preview before applying', exit_code=2)
@@ -5854,7 +6053,7 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
         if args.action == 'help':
             render_help(ctx, document, args.json)
         else:
-            render(ctx, document, args.json)
+            render(ctx, document, args.json, verbose=args.verbose)
         return 0
     except ControlError as exc:
         record_lifecycle(ctx, ctx.lifecycle_home, args, exc.code)
