@@ -4212,11 +4212,15 @@ class HostStatusTests(unittest.TestCase):
         self.assertEqual(snapshot(self.h.home), before)
         for call in self.h.calls():
             tool, argv = call['tool'], call['argv']
-            self.assertIn(tool, ('systemctl', 'git', 'journalctl'))
-            if tool == 'systemctl':
+            self.assertIn(tool, ('systemctl', 'git', 'journalctl', 'launchctl', 'gh'))
+            if tool == 'gh':
+                self.assertEqual(argv, ['api', 'rate_limit'])
+            elif tool == 'systemctl':
                 self.assertIn(argv[1], ('list-units', 'list-unit-files', 'show'))
             elif tool == 'git':
                 self.assertTrue(any(part in argv for part in ('rev-parse', 'show', 'diff', 'symbolic-ref')))
+            elif tool == 'launchctl':
+                self.assertEqual(argv[0], 'print')
             else:
                 self.assertIn('-n', argv)
                 self.assertIn('100', argv)
@@ -4303,8 +4307,15 @@ class HostStatusTests(unittest.TestCase):
             files.append({'unit_file': str(path), 'state': 'disabled'})
         units.extend(self.unit(f'vendor-{index}.service') for index in range(58))
         show = []
+        budget_calls = []
+        budget = {'resources': {'core': {'limit': 5000, 'remaining': 4711, 'reset': 1795672327},
+                                'graphql': {'limit': 5000, 'remaining': 0, 'reset': 1795672553}}}
 
         def fake_run(ctx, argv, **kwargs):
+            if argv[0] == 'gh':
+                self.assertEqual(argv, ['gh', 'api', 'rate_limit'])
+                budget_calls.append(argv)
+                return subprocess.CompletedProcess(argv, 0, json.dumps(budget), '')
             if argv[:2] == ['systemctl', '--user']:
                 if argv[2] == 'list-units':
                     return subprocess.CompletedProcess(argv, 0, json.dumps(units), '')
@@ -4329,6 +4340,12 @@ class HostStatusTests(unittest.TestCase):
         self.assertEqual(len(data), 7)
         self.assertEqual(sum('owner/repo-1' in line for line in data), 2)
         self.assertLessEqual(len(text.splitlines()), 10)
+        self.assertEqual(len(budget_calls), 3)  # one per invocation, never an issue list
+        for output in (text, verbose):
+            self.assertIn('GraphQL 0/5000 (resets 2026-11-26T05:55:53Z)', output)
+            self.assertIn('REST 4711/5000 (resets 2026-11-26T05:52:07Z)', output)
+        self.assertEqual(doc['github_budget']['rest']['remaining'], 4711)
+        self.assertNotIn('work', doc)
         for token in ('slots=1/2', 'example/model-id/high', 'state=running', 'issues=unknown',
                       'next=Sun 2026-11-22 08:00:00 UTC', 'state=idle', 'state=stopped'):
             self.assertIn(token, text)
@@ -4346,6 +4363,92 @@ class HostStatusTests(unittest.TestCase):
         self.assertEqual((row['provider'], row['model'], row['thinking'], row['max_concurrency']),
                          ('example', 'model-id', 'high', 2))
         self.assertFalse(any('@.' in name for name in show))
+
+    def test_github_work_lists_each_repo_once_and_never_advises_on_unknown(self):
+        units, details = [], []
+        for name, repo, worker_state, timer_state in (
+                ('idle', 'owner/empty', 'inactive', 'active'),
+                ('stopped', 'owner/empty', 'inactive', 'inactive'),
+                ('running', 'owner/ready', 'active', 'active'),
+                ('unavailable', 'owner/denied', 'active', 'active')):
+            folder = self.h.data_home / name
+            folder.mkdir()
+            config = folder / 'orbi.toml'
+            config.write_text(f'source_repos = ["{repo}"]\n')
+            template = self.h.unit_dir / f'orbi-{name}@.service'
+            template.write_text(f'[Service]\nExecStart=/bin/orbi --config {config}\n')
+            service, timer = f'orbi-{name}@1.service', f'orbi-{name}@1.timer'
+            units.extend((self.unit(service, worker_state), self.unit(timer, timer_state)))
+            details.extend((self.detail('--user', service, FragmentPath=template),
+                            self.detail('--user', timer, Unit=service)))
+        self.h.rules(*self.lists('--user', units), *self.lists('--system'), *details)
+        original = helper.Context.run
+        calls = []
+
+        def fake_run(ctx, argv, *, timeout=helper.PROBE_TIMEOUT, **kwargs):
+            if argv[0] != 'gh':
+                return original(ctx, argv, timeout=timeout, **kwargs)
+            self.assertGreater(timeout, 0)
+            self.assertLessEqual(timeout, 20)
+            calls.append(argv)
+            if argv == ['gh', 'api', 'rate_limit']:
+                raise helper.ControlError('command_timeout', SECRET, fix='')
+            self.assertEqual(argv[:3], ['gh', 'issue', 'list'])
+            for option, value in (('--state', 'open'), ('--json', 'number'),
+                                  ('--search', 'label:ai-ready,ai-fix-needed')):
+                self.assertEqual(argv[argv.index(option) + 1], value)
+            repo = argv[argv.index('--repo') + 1]
+            if repo == 'owner/denied':
+                return subprocess.CompletedProcess(argv, 1, '[]', SECRET)
+            numbers = [{'number': 41}, {'number': 42}] if repo == 'owner/ready' else []
+            return subprocess.CompletedProcess(argv, 0, json.dumps(numbers), '')
+
+        before = snapshot(self.h.home)
+        suggestion = 'no work: consider /orbi stop owner/empty or set owner/empty slots 1'
+        with mock.patch.object(helper.Context, 'run', fake_run):
+            for flags, json_mode in (([], True), ([], False), (['--verbose'], False)):
+                with self.subTest(flags=flags, json_mode=json_mode):
+                    calls.clear()
+                    code, result, err = self.invoke('--work', *flags, json_mode=json_mode)
+                    self.assertEqual(code, 0, err)
+                    self.assertNotIn(SECRET, str(result) + err)
+                    self.assertEqual(sum(call[1:3] == ['api', 'rate_limit'] for call in calls), 1)
+                    self.assertCountEqual([call[call.index('--repo') + 1] for call in calls
+                                           if call[1] == 'issue'],
+                                          ['owner/empty', 'owner/ready', 'owner/denied'])
+                    if json_mode:
+                        self.assertEqual(result['github_budget'], {'graphql': None, 'rest': None})
+                        self.assertEqual(result['work'], {'owner/empty': 0, 'owner/ready': 2,
+                                                          'owner/denied': None})
+                        self.assertEqual(result['suggestions'], [suggestion])
+                    else:
+                        self.assertIn('GraphQL unknown; REST unknown', result)
+                        self.assertIn('check gh auth status', result)
+                        self.assertEqual([line for line in result.splitlines() if line.startswith('no work:')],
+                                         [suggestion])
+        self.assert_read_only(before)
+
+    def test_github_work_cli_success_and_unavailable(self):
+        self.h.add_deployment_a()
+        unit = 'orbi-a@1.service'
+        for failure in (False, True):
+            with self.subTest(failure=failure):
+                self.h.clear_calls()
+                self.h.rules(*self.lists('--user', [self.unit(unit, 'active')]), *self.lists('--system'),
+                             self.detail('--user', unit, FragmentPath=self.h.unit_dir / 'orbi-a@.service'),
+                             {'tool': 'gh', 'argv_contains': ['api', 'rate_limit'],
+                              'stdout': '{"resources":{"core":{"limit":60,"remaining":18,"reset":1795672327}}}'},
+                             {'tool': 'gh', 'argv_contains': ['issue', 'list', 'other/repo-a'],
+                              'stdout': SECRET if failure else '[]'})
+                proc = subprocess.run([sys.executable, '-B', str(HELPER), 'status', 'all', '--work'],
+                                      cwd=self.cwd, env=self.h.env, capture_output=True, text=True, timeout=30)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertIn('GraphQL unknown; REST 18/60', proc.stdout)
+                self.assertIn('other/repo-a slots=1/2', proc.stdout)
+                self.assertIn('work=unknown' if failure else 'work=0', proc.stdout)
+                self.assertEqual('no work: consider /orbi stop other/repo-a or set other/repo-a slots 1'
+                                 in proc.stdout, not failure)
+                self.assertNotIn(SECRET, proc.stdout + proc.stderr)
 
     def test_template_config_specifier_is_only_resolved_for_the_instance(self):
         config = self.h.root / 'worker-17' / 'native.toml'
@@ -4658,6 +4761,7 @@ class HostStatusTests(unittest.TestCase):
         help_doc = json.loads(out.getvalue())
         self.assertTrue(any(e['command'] == '/orbi status all --json' for e in help_doc['examples']))
         self.assertIn('status all', help_doc['actions']['status']['effect'])
+        self.assertEqual(help_doc['options']['--work']['applies_to'], ['status'])
         for action in ('setup', 'start', 'stop', 'update'):
             with self.subTest(action=action):
                 out = io.StringIO()
@@ -4720,10 +4824,15 @@ class HostStatusTests(unittest.TestCase):
                                  cwd=self.cwd, env=self.h.env, capture_output=True, text=True, timeout=30)
         self.assertEqual(failure.returncode, 2)
         self.assertIn('--verbose requires status all', failure.stderr)
+        failure = subprocess.run([sys.executable, '-B', str(HELPER), 'status', '--work'],
+                                 cwd=self.cwd, env=self.h.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(failure.returncode, 2)
+        self.assertIn('--work requires status all', failure.stderr)
+        self.assertIn('fix=use /orbi status all --work', failure.stderr)
         self.assertEqual(self.h.calls(), calls_before)
         self.assert_read_only(before)
 
-    def test_current_issue_binds_to_system_manager_invocation_without_network(self):
+    def test_current_issue_binds_to_system_manager_invocation_without_issue_lookup(self):
         a = self.h.add_deployment_a()
         unit = 'orbi-a@17.service'
         invocation, pid, run = 'c' * 32, '222', '1234abcd'
@@ -4857,8 +4966,8 @@ class HostStatusTests(unittest.TestCase):
         self.assertEqual(rows[denied]['scheduler'], 'unknown')
         self.assertEqual(doc['coverage']['state'], 'partial')
         self.assertNotIn(SECRET, json.dumps(doc))
-        self.assertEqual(snapshot(self.h.home), before)
-        self.assertTrue(all(c['tool'] == 'launchctl' and c['argv'][0] == 'print' for c in self.h.calls()))
+        self.assert_read_only(before)
+        self.assertEqual([c['argv'] for c in self.h.calls() if c['tool'] != 'launchctl'], [['api', 'rate_limit']])
 
     def test_macos_installed_is_not_loaded_and_loaded_orphans_are_observed(self):
         folder = self.h.home / 'Library/LaunchAgents'
@@ -4885,8 +4994,8 @@ class HostStatusTests(unittest.TestCase):
         self.assertEqual(rows['org.orbi.custom.runner.9']['scheduler'], 'unloaded')
         self.assertEqual(rows['org.orbi.orphan.runner.7']['worker']['state'], 'active/issue unknown')
         self.assertEqual(doc['coverage']['state'], 'partial')
-        self.assertEqual(snapshot(self.h.home), before)
-        self.assertTrue(all(c['tool'] == 'launchctl' and c['argv'][0] == 'print' for c in self.h.calls()))
+        self.assert_read_only(before)
+        self.assertEqual([c['argv'] for c in self.h.calls() if c['tool'] != 'launchctl'], [['api', 'rate_limit']])
 
 
 class VersionActionTests(unittest.TestCase):
