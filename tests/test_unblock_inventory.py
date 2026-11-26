@@ -120,6 +120,7 @@ class UnblockInventoryTests(unittest.TestCase):
             'answer', q='q2', action='accept', value=option['label'], by='orbi')
         older_owner = {**issue(9, 'owner-task', 'ai-planning', 'ai-blocked'),
                        'created_at': '2026-05-04T09:00:00Z'}
+        base_block_url = f'https://github.com/{REPO}/issues/11#issuecomment-110'
         result, doc = self.run_cli(
             *self.service_rules(),
             self.api(REPO, 'issues?state=open&per_page=100',
@@ -127,10 +128,12 @@ class UnblockInventoryTests(unittest.TestCase):
                       issue(4, 'ai-pr-opened'), issue(5, 'ai-planning', 'ai-epic'), issue(6, 'ai-ready'),
                       {**issue(8, 'owner-task'), 'created_at': '2026-11-26T11:00:00Z'},
                       {**issue(10, 'owner-task'), 'pull_request': {}, 'created_at': '2026-01-01T00:00:00Z'}],
-                     [issue(7, 'ai-planning'), issue(42, 'ai-in-progress'), older_owner]),
+                     [issue(7, 'ai-planning'), issue(11, 'ai-blocked'), issue(42, 'ai-in-progress'), older_owner]),
             self.api(REPO, 'issues?state=closed&per_page=100',
                      [issue(15, 'ai-ready'), issue(16, 'ai-ops-only'),
-                      {**issue(17, 'ai-blocked'), 'pull_request': {}}, issue(18, 'owner-task', 'ai-blocked')]),
+                      {**issue(17, 'ai-blocked'), 'pull_request': {}}, issue(18, 'owner-task', 'ai-blocked')],
+                     [issue(19, 'ai-blocked', 'ai-merged', 'bug'), issue(20, 'ai-fix-needed'),
+                      issue(21, 'ai-in-progress'), issue(22, 'ai-pr-opened')]),
             # Orbi can update a deduplicated failure in place, behind a newer comment ID.
             self.api(REPO, 'issues/1/comments?per_page=100',
                      [{'body': latest, 'updated_at': '2026-11-26T12:00:00Z'}],
@@ -141,6 +144,11 @@ class UnblockInventoryTests(unittest.TestCase):
                      [{'body': question}, reply(3, 108), {'body': rejected}]),
             self.api(REPO, 'issues/4/comments?per_page=100', [{'body': automatic}]),
             self.api(REPO, 'issues/7/comments?per_page=100', [{'body': question}, reply(7, 109)]),
+            self.api(REPO, 'issues/11/comments?per_page=100', [{'html_url': base_block_url,
+                     'body': marker('failure', schema=1, reason_code='base_ci_red', action_code='fix_ticket',
+                                    retry_safe=False, outcome='blocked') + '\n' + marker(
+                         'base-ci-red', schema=1, state='waiting', base_branch='release', base_sha=HEAD,
+                         pr=22, failing_checks=['test'])}]),
             self.api(REPO, 'issues/42/comments?per_page=100', []),
             self.api(REPO, 'pulls?state=open&per_page=100', [self.pr(22)], [self.pr(11)]),
             *self.pr_reads(22, bucket=None), *self.pr_reads(11),
@@ -167,8 +175,10 @@ class UnblockInventoryTests(unittest.TestCase):
         second_issue, = second['open_issues']
         self.assertIs(second_issue['live_local_worker'], False)
         by_number = {i['number']: i for i in first['open_issues']}
-        self.assertEqual(list(by_number), [1, 2, 3, 4, 7, 42])
+        self.assertEqual(list(by_number), [1, 2, 3, 4, 7, 11, 42])
         self.assertEqual(by_number[1]['failure'], {'reason_code': 'review_budget_exhausted', 'action_code': 'decide'})
+        self.assertEqual(by_number[11]['failure'], {'reason_code': 'base_ci_red', 'action_code': 'fix_ticket',
+                                                  'comment_url': base_block_url})
         self.assertIsNone(by_number[2]['open_question'])
         self.assertEqual(by_number[3]['open_question']['id'], 'q2')
         self.assertEqual(by_number[3]['open_question']['recommended_option'], option)
@@ -176,7 +186,10 @@ class UnblockInventoryTests(unittest.TestCase):
         self.assertEqual(by_number[7]['open_question']['recommended_option'], option)
         self.assertIs(by_number[42]['live_local_worker'], True)
         self.assertIs(by_number[4]['live_local_worker'], False)
-        self.assertEqual([i['number'] for i in first['closed_issues']], [15])
+        self.assertEqual({i['number']: i['labels'] for i in first['closed_issues']}, {
+            15: ['ai-ready'], 19: ['ai-blocked', 'ai-merged', 'bug'], 20: ['ai-fix-needed'],
+            21: ['ai-in-progress'], 22: ['ai-pr-opened'],
+        })
         wait, absent = first['open_prs']
         self.assertEqual((wait['number'], wait['head'], wait['head_sha'], wait['mergeability']),
                          (11, 'task-11', HEAD, 'MERGEABLE'))

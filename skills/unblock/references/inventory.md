@@ -33,7 +33,11 @@ Each repository has the following fields:
 
 Issues and PRs are sorted numerically. `failure` is null or has the latest
 `orbi:failure:v1` `reason_code` and `action_code`, by comment update time (Orbi
-can update a repeated failure in place). `open_question` is null or has `id`,
+can update a repeated failure in place). A `base_ci_red` failure also has
+`comment_url` (null if unavailable), pointing to the comment with the block details.
+Use that link and `closed_issues` as starting observations for the
+[stale state readbacks](../SKILL.md#stale-issue-state), not as authorization or
+proof of the latest trusted failure. `open_question` is null or has `id`,
 `question` (text) and `recommended_option` (the option object from the marker,
 or null). The latest `orbi:question:v1` is omitted when Orbi records an automatic
 answer in the same requeue comment or a success receipt for a later matching

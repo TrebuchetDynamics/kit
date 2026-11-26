@@ -64,6 +64,10 @@ def latest_failure(comments):
             failure = {key: record[key] for key in ('reason_code', 'action_code')}
             if not all(isinstance(code, str) and code for code in failure.values()):
                 raise ValueError('invalid failure codes')
+            if failure['reason_code'] == 'base_ci_red':
+                # Point to the same comment as the failure marker, not an older
+                # base-red record. Trust and readback belong to the recovery skill.
+                failure['comment_url'] = comment.get('html_url')
             return failure
     return None
 
