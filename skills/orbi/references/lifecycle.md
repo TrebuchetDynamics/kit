@@ -845,6 +845,12 @@ by installed `orbi*.service` units. A remote machine's ownership is not
 visible; report it as unavailable and never claim a cross-machine lock or
 aggregate capacity guarantee. `max_concurrency` is per deployment.
 
+For repository-scoped discovery, a valid config must own the repository before
+an invalid discovered config can be skipped. If the invalid file's text names
+this repository, repair it before retrying. Skipped configs are named in a
+warning on stderr. Explicit and canonical-checkout config errors still refuse
+the command, and multiple valid owners are still ambiguous.
+
 ## Partial failure and recovery
 
 Mutations report completed steps and the failed step with a precise `error=`

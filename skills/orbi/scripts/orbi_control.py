@@ -337,11 +337,12 @@ def explicit_config_file(value):
     return path
 
 
-def load_deployments(ctx, repo_path, explicit_config=None):
+def load_deployments(ctx, repo_path, explicit_config=None, *, repo_full=None):
     paths = []
     if explicit_config:
         paths.append(explicit_config_file(explicit_config))
     paths.append(repo_path / 'orbi.toml')
+    strict_paths = set(paths)
     share = data_home(ctx)
     if share.is_dir():
         paths.extend(sorted(share.glob('*/orbi.toml')))
@@ -351,7 +352,7 @@ def load_deployments(ctx, repo_path, explicit_config=None):
             config = installed_config(service, home_dir(ctx))
             if config is not None:
                 paths.append(config)
-    deployments, seen = [], set()
+    deployments, invalid, seen = [], [], set()
     for candidate in paths:
         resolved = checked_path(candidate, 'config').resolve()
         key = str(resolved)
@@ -360,12 +361,36 @@ def load_deployments(ctx, repo_path, explicit_config=None):
         seen.add(key)
         if not resolved.is_file():
             continue
-        deployments.append(deployment_from(resolved))
+        try:
+            deployments.append(deployment_from(resolved))
+        except ControlError as exc:
+            if candidate in strict_paths or repo_full is None:
+                raise
+            invalid.append((resolved, exc))
+    if invalid:
+        if not any(repo_full in item.source_repos for item in deployments):
+            raise invalid[0][1]
+        # A broken TOML file can still name the repo. Do not confuse it with a longer name.
+        repo_name = re.compile(rf'(?<![\w.-]){re.escape(repo_full)}(?![\w.-])', re.ASCII)
+        for path, exc in invalid:
+            try:
+                raw = path.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                raw = ''
+            if repo_name.search(raw):
+                raise exc
+            warning = f'warning=invalid_discovered_config path={path} fix=repair or remove the config\n'
+            with contextlib.suppress(OSError, ValueError):
+                if ctx.err is sys.__stderr__:
+                    # A failed buffered write could also fail on interpreter exit.
+                    os.write(ctx.err.fileno(), warning.encode(ctx.err.encoding or 'utf-8', 'backslashreplace'))
+                else:
+                    ctx.err.write(warning)
     return deployments
 
 
 def select_target(ctx, repo, explicit_config=None, *, require=False):
-    deployments = load_deployments(ctx, repo.path, explicit_config)
+    deployments = load_deployments(ctx, repo.path, explicit_config, repo_full=repo.full)
     matching = [item for item in deployments if repo.full in item.source_repos]
     if len(matching) > 1:
         paths = ', '.join(str(item.config_path) for item in matching)
