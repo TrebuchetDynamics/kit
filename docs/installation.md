@@ -334,8 +334,17 @@ paused deployments**, even if the engine is already current. No approval record
 or prompt is required. The installer inventories installed and loaded units and
 queued jobs in the system and user managers, including other local accounts with
 unit evidence. Remote machines, containers and separate namespaces are outside
-that inventory. Inaccessible managers, ambiguous unit/config/owner bindings or
-missing noninteractive write access hold the entire Orbi fleet before any stop.
+that inventory. If a local account's user unit folders cannot be listed due to
+permissions, the installer leaves it unchecked only if there is no runtime
+entry for its UID, the linger directory can be listed and has no marker for the
+account, and no readable unit evidence names Orbi. The Orbi receipt records only
+the unchecked account names, and the summary shows
+`not checked: <account> (home unreadable, no running manager, no linger)`.
+This skip does not fail the refresh. Unverified
+coverage for other accounts, inaccessible managers, ambiguous unit/config/owner
+bindings or missing noninteractive write access hold the entire Orbi fleet
+before any stop.
+
 The deployment file and engine execution owner must match the installing account;
 Kit does not switch users, invoke sudo or make access changes. The installer
 checks the current exact engine pin and runs `orbi check` before any stop, then

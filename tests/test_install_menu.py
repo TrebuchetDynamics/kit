@@ -1749,12 +1749,43 @@ else:
         state.write_text(json.dumps(states))
         return receipt, state, head
 
+    def unreadable_root_fixture(self):
+        uid = 0 if os.getuid() else 65533
+        home = self.home / 'private-root-home'
+        self.fake('getent', LOGGING + f'echo "root:x:{uid}:{uid}:Root:{home}:/bin/sh"\n')
+        imports = self.home / 'imports'
+        imports.mkdir()
+        (imports / 'sitecustomize.py').write_text(f'''
+import os
+from pathlib import Path
+original_iterdir = Path.iterdir
+
+def iterdir(path):
+    if path == Path('/run/user'):
+        return iter([path / '{uid}'] if os.environ.get('FAKE_ROOT_ACTIVE') else [])
+    if path == Path('/var/lib/systemd/linger'):
+        return iter([path / 'operator'])
+    if path.is_relative_to({str(home)!r}):
+        raise PermissionError(13, 'private definition error', str(path))
+    return original_iterdir(path)
+
+Path.iterdir = iterdir
+''')
+        return {'PYTHONPATH': str(imports)}
+
     def test_plain_install_updates_and_restarts_the_verified_fleet(self):
         receipt, state, head = self.orbi_fleet_fixture()
-        result = self.install(env={'KIT_INSTALL_REPORT': str(receipt)})
+        result = self.install(env={'KIT_INSTALL_REPORT': str(receipt), **self.unreadable_root_fixture()})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        rows = next(r['orbi_fleet']['deployments'] for r in map(json.loads, receipt.read_text().splitlines())
-                    if r['item'] == 'orbi')
+        summary = result.stdout.split('Summary:', 1)[1]
+        self.assertIn('not checked: root (home unreadable, no running manager, no linger)', summary)
+        fleet = next(r['orbi_fleet'] for r in map(json.loads, receipt.read_text().splitlines()) if r['item'] == 'orbi')
+        self.assertEqual(fleet['status'], 'completed')
+        self.assertEqual(fleet['not_checked'], ['root'])
+        for private in ('private-root-home', 'private definition error', 'PermissionError'):
+            self.assertNotIn(private, result.stdout + result.stderr + receipt.read_text())
+        self.assertNotIn('--machine=root@.host', '\n'.join(self.calls('systemctl')))
+        rows = fleet['deployments']
         self.assertEqual([(r['status'], r['engine_update']) for r in rows],
                          [('started', 'updated'), ('started', 'up_to_date')])
         self.assertEqual([r['step'] for r in rows[0]['steps'] if r['step'].startswith('verify_')],
@@ -1779,6 +1810,28 @@ else:
         self.assertEqual(json.loads(state.read_text())['--user']['paused-worker.timer']['ActiveState'], 'active')
         self.assertEqual(self.calls('uv'), [])
         self.assertFalse((ROOT / 'skills/orbi/scripts/__pycache__').exists())
+
+    def test_plain_install_holds_for_an_unreadable_live_account(self):
+        receipt, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        result = self.install(env={'KIT_INSTALL_REPORT': str(receipt), 'FAKE_ROOT_ACTIVE': '1',
+                                   **self.unreadable_root_fixture()})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('FAILED: Orbi fleet held: user:root: cannot verify installed definitions (PermissionError)',
+                      result.stdout)
+        self.assertIn('./install.sh --skip orbi', result.stdout)
+        self.assertNotIn('not checked: root', result.stdout)
+        self.assertNotIn('private definition error', result.stdout + result.stderr + receipt.read_text())
+        self.assertNotIn('private-root-home', result.stdout + result.stderr + receipt.read_text())
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi'), [])
+
+    def test_orbi_cli_only_summary_discloses_unchecked_accounts(self):
+        result = self.install('--only', 'orbi', '--quiet', env=self.unreadable_root_fixture())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = result.stdout.split('Summary:', 1)[1]
+        self.assertIn('not checked: root (home unreadable, no running manager, no linger)', summary)
+        self.assertIn('CLI only, no deployment configured or started', summary)
 
     def test_orbi_holds_the_whole_fleet_for_an_inaccessible_other_local_account(self):
         receipt, state, _ = self.orbi_fleet_fixture()

@@ -1137,9 +1137,8 @@ def refresh_orbi_fleet(*, report_progress=None):
 
 
 def orbi_fleet_summary(receipt):
-    if receipt['status'] == 'no_deployments':
-        return 'No installed Orbi deployment verified; CLI only'
-    lines = [f"Orbi fleet {receipt['status']}"]
+    lines = ['No installed Orbi deployment verified; CLI only' if receipt['status'] == 'no_deployments'
+             else f"Orbi fleet {receipt['status']}"]
     if 'error' in receipt:
         error = receipt['error']
         where = ' '.join(error[key] for key in ('config', 'unit', 'step') if error.get(key))
@@ -1154,6 +1153,8 @@ def orbi_fleet_summary(receipt):
                      + (f"; {row['recovery']}" if receipt['status'] != 'completed' else ''))
     if 'recovery' in receipt:
         lines.append(receipt['recovery'])
+    lines.extend(f'not checked: {name} (home unreadable, no running manager, no linger)'
+                 for name in receipt.get('not_checked', ()))
     return '\n  '.join(lines)
 
 
@@ -2077,6 +2078,8 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                             fleet = message
                             message = orbi_fleet_summary(fleet)
                             if fleet['status'] == 'no_deployments':
+                                if fleet.get('not_checked'):
+                                    detail.append(message)
                                 message = install_orbi(output)
                             elif fleet['status'] != 'completed':
                                 outcome, exit_code = 'failed', 1
