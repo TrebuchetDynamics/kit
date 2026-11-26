@@ -239,6 +239,43 @@ class PluginSettingsTests(unittest.TestCase):
 
 
 class RuntimeFactsTests(unittest.TestCase):
+    def test_split_plugin_modules_are_checked_without_loading_them(self):
+        pre = module('setup_preflight')
+        missing = 'Hermes lacks inject_message(origin=...) support'
+        cases = (
+            ('keyword-only origin', '*, session_key=None, origin=None', []),
+            ('no origin', '*, session_key=None', [missing]),
+            ('no method', None, [missing]),
+        )
+        for layout, params, expected in cases:
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                cli = home / 'hermes_cli'
+                cli.mkdir()
+                guard = 'raise AssertionError("Hermes modules must not be executed during preflight")\n'
+                (cli / 'plugins.py').write_text(guard)
+                (cli / 'plugins_content.py').write_text(guard + 'def register_skill(): pass\n')
+                context = guard
+                if params is not None:
+                    context += ('class PluginContext:\n'
+                                f'    def inject_message(self, content, role="user", {params}): pass\n')
+                (cli / 'plugins_context.py').write_text(context)
+                (cli / 'unrelated.py').write_text('def inject_message(origin=None): pass\n')
+                config = home / 'config.yaml'
+                config.write_text('memory: {}\n')
+                before = {p: p.read_bytes() for p in home.rglob('*') if p.is_file()}
+                with patch.object(pre, 'selected_source', return_value=home), \
+                     patch.object(pre.Path, 'home', return_value=home), \
+                     patch.object(sys, 'path', [str(home), *sys.path]), \
+                     patch.object(pre.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
+                    errors = pre.runtime_check(ROOT, home, [('default', home)], True)
+                self.assertEqual(errors, expected)
+                run.assert_called_once()
+                self.assertEqual(run.call_args.args[0], [
+                    sys.executable, '-B', str(ROOT / 'src/kit_runtime/install/preflight_config.py'),
+                    '--core', str(config)])
+                self.assertEqual(before, {p: p.read_bytes() for p in home.rglob('*') if p.is_file()})
+
     def test_valid_facts_preserve_interpreter_selection_and_validator_verdict(self):
         pre = module('setup_preflight')
         for code in (0, 1, 3):
