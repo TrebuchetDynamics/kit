@@ -69,8 +69,10 @@ concrete unmet need, not a fixed sequence of model turns.
    unavailable GitHub data and observed totals, never an absolute host count.
    For host inventory interpretation, see [host inventory](references/lifecycle.md#host-inventory).
    **Prune:** forward `prune [--apply] [--json]` without repo/config selectors.
-   Preview is the default; remove stale unloaded Linux user templates only when
-   `--apply` is explicit. Do not infer apply authority from a preview.
+   On Linux, preview is the default. Both modes fetch the configured base for
+   worktree checks; only explicit `--apply` removes verified finished task worktrees
+   and stale unloaded user templates. Relay why worktrees stayed and the estimated
+   bytes freed. See [prune safety checks](references/lifecycle.md#prune).
    For `set`, pass the deployment selector literally; do not inject `--repo-dir`
    or `--config`. See [change slots or model](#change-slots-or-model).
    For other repository lifecycle actions, use the requested
@@ -188,7 +190,8 @@ No deployment means unconfigured. An observed revision is not a verified release
 unverifiable pin, manifest or clean source means unknown with a reason.
 
 Status leads with the repository, deployment-bound package version/revision and
-provenance, scheduler state and each observed slot. Relay `last_lifecycle` as the
+provenance, scheduler state and each observed slot. Relay `.worktrees/` disk use
+per deployment, or the reason it could not be measured. Relay `last_lifecycle` as the
 last recorded Kit helper action, not proof of the current scheduler state. Relay `deployment.engine`
 separately from selected source/pin and `bootstrap_cli`: a matching CLI version
 is unverified runtime evidence; a mismatch never replaces the deployed version.
