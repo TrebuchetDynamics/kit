@@ -25,8 +25,9 @@ Each repository has the following fields:
 | Field | Contents |
 | --- | --- |
 | `deployments` | Observations sorted by `config` path, `manager` and `unit`. Includes `kind`, `state`, `scheduler`, `timer_state` and `worker_state` from local status. A config with no bound unit has a `config-only` row (`prepared-only`, with null manager and unit). Multiple configs or units can refer to one repository. |
-| `open_issues` | Issues with `ai-blocked`, `ai-fix-needed`, `ai-decision`, `ai-in-progress`, `ai-pr-opened`, or `ai-planning` without `ai-epic`. Rows contain `number`, `url`, `title`, sorted `labels`, `failure`, `open_question`, and `live_local_worker`. |
-| `closed_issues` | Rows with `number`, `url`, `title` and sorted `labels`. Includes the open state labels plus `ai-ready`, `ai-awaiting-merge`, `ai-merged`, `ai-needs-detail` and `ai-paused`; `ai-planning` on a closed epic also counts. A purpose or gate label alone is not a delivery state. |
+| `open_issues` | Issues with `ai-blocked`, `ai-fix-needed`, `ai-decision`, `ai-in-progress`, `ai-pr-opened`, or `ai-planning` without `ai-epic`. Rows contain `number`, `url`, `title`, sorted `labels`, `failure`, `open_question`, and `live_local_worker`. Excludes `owner-task`, even with an `ai-*` label. |
+| `owner_tasks` | `count` of open owner tasks and `oldest` (`url` and `created_at`, or `null` if none). No owner task comments are read. The entire field is `null` if open issue inventory is unavailable. |
+| `closed_issues` | Rows with `number`, `url`, `title` and sorted `labels`. Includes the open state labels plus `ai-ready`, `ai-awaiting-merge`, `ai-merged`, `ai-needs-detail` and `ai-paused`; `ai-planning` on a closed epic also counts. Excludes `owner-task`. A purpose or gate label alone is not a delivery state. |
 | `open_prs` | All open PRs, linked or not. Rows contain `number`, `url`, `head` (branch), `head_sha`, `mergeability` (`MERGEABLE`, `CONFLICTING`, `UNKNOWN`) and `required_checks`. |
 | `errors` | Array of repository read gaps, empty if none. An unavailable list is `null`, not `[]`. A detail error can leave a list populated but the affected detail unknown. |
 

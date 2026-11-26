@@ -48,7 +48,7 @@ require it, and do not treat a missing ledger as an empty queue.
 
 ## Default dispatch
 
-All issues default to `ai-ready`, regardless of who opens them. This includes
+Ordinary issues default to `ai-ready`, regardless of who opens them. This includes
 external reports; issue authors are not trusted instruction authorities. Keep
 credentials scoped and preserve existing CI, branch protection, sensitive-change
 controls and any required human acceptance independently of dispatch. Branch
@@ -56,11 +56,13 @@ protection is not a Kit setup/start prerequisite.
 
 Install `.github/workflows/issue-ready.yml` in each participating repository. It
 labels newly opened/reopened ordinary issues without executing their text. It
-preserves `ai-planning`, `ai-epic`, explicit `ai-paused` and Orbi ownership/recovery
-states. It does not relabel on edits or label removal, which would defeat pauses
+preserves `owner-task`, `ai-planning`, `ai-epic`, explicit `ai-paused` and Orbi
+ownership/recovery states. Update the installed workflow before publishing
+[owner tasks](../skills/shared/PLAN-HANDOFF.md#owner-tasks). It does not relabel on
+edits or label removal, which would defeat pauses
 and recovery. Existing issues need an ownership-aware backfill. Issue producers
-using Actions' `GITHUB_TOKEN` must publish readiness themselves: their events do
-not trigger another workflow.
+using Actions' `GITHUB_TOKEN` must publish readiness themselves for eligible worker
+issues: their events do not trigger another workflow.
 
 Kit creates planning issues with `ai-planning` atomically, creates the full batch
 and native dependency edges, reads it all back, then adds `ai-ready` last. A large
@@ -104,7 +106,10 @@ the target repository. Depend on executable children rather than an open epic;
 use `epic` for coordination membership. A ready issue may wait on an undispatched
 prerequisite: its native edge preserves that wait. The helper resolves numeric
 issue IDs for the native REST API. `kind: "epic"` creates coordination-only work; `epic: "KEY"` links a child.
-`ready: false` requires `pending_reason` and keeps the issue undispatched.
+For worker tasks, `ready: false` requires `pending_reason` and keeps the issue
+undispatched. Use `kind: "owner-task"` for a defined human-only action instead;
+see [owner tasks](../skills/shared/PLAN-HANDOFF.md#owner-tasks) for the checklist
+and dependent issue reference.
 
 ```sh
 python3 scripts/github_issues.py --repo OWNER/REPO --batch /tmp/batch.json
@@ -130,6 +135,17 @@ another client can edit after a final read and before the separate label write.
 Serialize publishers of the same batch; this rule is not cross-client exclusion,
 and GitHub offers no atomic issue-create idempotency key or read/label transaction.
 Do not use this helper to overwrite an existing edited issue.
+
+### One-time review of legacy owner work
+
+The 2026-11-26 [fleet audit](https://github.com/TrebuchetDynamics/kit/issues/352)
+found 16 open non-epic `ai-planning` issues aged 3–206 days; most were waiting on
+owner approval, store release, real hardware or live-system evidence. For each
+participating repository, review its current open `ai-planning` issues excluding
+epics and existing `owner-task` issues. Report only confirmed owner-only candidates
+with the issue link, missing human input and what it unblocks. Leave all labels
+unchanged; do not infer owner-only work from age or convert unresolved intent.
+This is a one-time report for maintainers, not a step in every `/unblock` pass.
 
 ## Cutover
 

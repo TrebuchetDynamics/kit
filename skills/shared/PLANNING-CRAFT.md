@@ -196,8 +196,9 @@ finished without anyone:
 - **Prerequisites are in scope.** If a defect already in the code would stop the
   task's checks, such as a broken test or a missing fixture, the task may repair
   it. Do not forbid "unrelated" fixes that the task's own checks depend on.
-- **Offline acceptance.** Acceptance is what the worker can check here. Devices,
-  production, live services and human review go under live checks, not Acceptance.
+- **Offline acceptance for worker issues.** Acceptance is what the worker can
+  check here. Devices, production, live services and human review go under live
+  checks, not worker Acceptance.
 - **Independent tasks first.** Prefer tasks with disjoint `touches` that can run
   at once. For a dependency chain longer than three tasks, state why each link
   depends on the last. Split a task that touches unrelated areas.
@@ -210,7 +211,9 @@ finished without anyone:
 - **Questions only for the owner's part.** These are credentials, devices,
   spending, a change to third-party software, and product, security or scope
   decisions. Anything else is the planner's call, recorded as such. Don't leave
-  it for the worker to ask about.
+  it for the worker to ask about. Publish an already-defined action only a human
+  can complete as an [owner task](PLAN-HANDOFF.md#owner-tasks), not `ai-planning`.
+  Keep genuinely unresolved intent in planning with its resume condition.
 
 ## Size each task
 

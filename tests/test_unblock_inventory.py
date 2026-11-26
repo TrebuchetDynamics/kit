@@ -118,15 +118,19 @@ class UnblockInventoryTests(unittest.TestCase):
         rejected = '<!-- orbi-answer-command-rejected comment=IC_kwFixture108 -->'
         automatic = '<!-- orbi:comment=requeued -->\n' + question.replace('authority', 'pick_best') + '\n' + marker(
             'answer', q='q2', action='accept', value=option['label'], by='orbi')
+        older_owner = {**issue(9, 'owner-task', 'ai-planning', 'ai-blocked'),
+                       'created_at': '2026-05-04T09:00:00Z'}
         result, doc = self.run_cli(
             *self.service_rules(),
             self.api(REPO, 'issues?state=open&per_page=100',
                      [issue(1, 'ai-blocked'), issue(2, 'ai-fix-needed'), issue(3, 'ai-decision'),
-                      issue(4, 'ai-pr-opened'), issue(5, 'ai-planning', 'ai-epic'), issue(6, 'ai-ready')],
-                     [issue(7, 'ai-planning'), issue(42, 'ai-in-progress')]),
+                      issue(4, 'ai-pr-opened'), issue(5, 'ai-planning', 'ai-epic'), issue(6, 'ai-ready'),
+                      {**issue(8, 'owner-task'), 'created_at': '2026-11-26T11:00:00Z'},
+                      {**issue(10, 'owner-task'), 'pull_request': {}, 'created_at': '2026-01-01T00:00:00Z'}],
+                     [issue(7, 'ai-planning'), issue(42, 'ai-in-progress'), older_owner]),
             self.api(REPO, 'issues?state=closed&per_page=100',
                      [issue(15, 'ai-ready'), issue(16, 'ai-ops-only'),
-                      {**issue(17, 'ai-blocked'), 'pull_request': {}}]),
+                      {**issue(17, 'ai-blocked'), 'pull_request': {}}, issue(18, 'owner-task', 'ai-blocked')]),
             # Orbi can update a deduplicated failure in place, behind a newer comment ID.
             self.api(REPO, 'issues/1/comments?per_page=100',
                      [{'body': latest, 'updated_at': '2026-11-26T12:00:00Z'}],
@@ -149,6 +153,12 @@ class UnblockInventoryTests(unittest.TestCase):
         self.assertEqual(doc['schema_version'], 1)
         self.assertEqual([r['repo'] for r in doc['repositories']], [REPO, 'second/repo'])
         first, second = doc['repositories']
+        self.assertEqual(first['owner_tasks'], {'count': 2, 'oldest': {
+            'url': older_owner['html_url'], 'created_at': older_owner['created_at']}})
+        self.assertEqual(second['owner_tasks'], {'count': 0, 'oldest': None})
+        self.assertFalse(any(call['tool'] == 'gh' and '/comments?' in arg
+                             and any(f'/issues/{n}/' in arg for n in (8, 9, 10, 18))
+                             for call in self.h.calls() for arg in call['argv']))
         self.assertEqual(next(d for d in first['deployments'] if d['unit'] == self.worker)['state'],
                          'running')
         self.assertIn('prepared-only', {d['state'] for d in first['deployments']})
@@ -194,3 +204,18 @@ class UnblockInventoryTests(unittest.TestCase):
         self.assertEqual(first['open_prs'][0]['head_sha'], '2' * 40)
         self.assertEqual(first['open_prs'][0]['required_checks'], {'result': 'unknown', 'checks': []})
         self.assertEqual(second['errors'], [])
+
+    def test_cli_marks_owner_task_coverage_unavailable_when_open_issue_list_fails(self):
+        result, doc = self.run_cli(
+            *self.service_rules(number=None),
+            self.api(REPO, 'issues?state=open&per_page=100', error=True),
+            self.api(REPO, 'issues?state=closed&per_page=100', []),
+            self.api(REPO, 'pulls?state=open&per_page=100', []),
+            *(self.api('second/repo', path, []) for path in ('issues?state=open&per_page=100',
+                                                            'issues?state=closed&per_page=100',
+                                                            'pulls?state=open&per_page=100')))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('open issues: gh api exited 1; verify gh authentication', result.stderr)
+        first, second = doc['repositories']
+        self.assertIsNone(first['owner_tasks'])
+        self.assertEqual(second['owner_tasks'], {'count': 0, 'oldest': None})

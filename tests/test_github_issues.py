@@ -105,6 +105,13 @@ class FakeGitHub:
         return copy.deepcopy(issue)
 
 
+def owner_task():
+    issue = task('hardware', kind='owner-task')
+    issue.update(scope='Unblocks cache-qualification after the device check.',
+                 acceptance='- [ ] Owner posts the physical-device test result')
+    return issue
+
+
 class PublicationTests(unittest.TestCase):
     def apply_cli(self, api, batch):
         with tempfile.TemporaryDirectory() as tmp:
@@ -115,6 +122,41 @@ class PublicationTests(unittest.TestCase):
                     redirect_stdout(stdout), redirect_stderr(stderr):
                 status = publisher.main(['--repo', 'example/repo', '--batch', str(path), '--apply'])
         return status, stdout.getvalue(), stderr.getvalue()
+
+    def test_cli_publishes_owner_task_without_dispatch_and_reuses_it(self):
+        api = FakeGitHub()
+        owner = owner_task()
+        batch = {'issues': [owner, task('cache-qualification', blocked_by=['hardware'])]}
+        status, stdout, stderr = self.apply_cli(api, batch)
+        self.assertEqual((status, stderr), (0, ''))
+        result = json.loads(stdout)
+        self.assertEqual([row['labels'] for row in result], [['owner-task'], ['ai-ready']])
+        self.assertIn(owner['acceptance'], api.issues[1]['body'])
+        self.assertIn(owner['scope'], api.issues[1]['body'])
+        self.assertEqual(api.dependencies[2], {api.issues[1]['id']})
+        creates = [data for method, path, data in api.events if (method, path) == ('POST', 'issues')]
+        self.assertEqual(creates[0]['labels'], ['owner-task'])
+        self.assertIn('owner-task', api.label_names)
+        self.assertFalse(any(method != 'GET' and path.startswith('issues/1/labels')
+                             for method, path, _ in api.events))
+
+        api.events.clear()
+        self.assertEqual(self.apply_cli(api, batch), (0, stdout, ''))
+        self.assertFalse(any(method != 'GET' for method, _, _ in api.events))
+
+    def test_cli_rejects_owner_task_label_drift_without_relabeling(self):
+        batch = {'issues': [owner_task()]}
+        for drift in ([], ['owner-task', 'ai-ready'], ['owner-task', 'ai-in-progress']):
+            with self.subTest(drift=drift):
+                api = FakeGitHub()
+                status, _, stderr = self.apply_cli(api, batch)
+                self.assertEqual((status, stderr), (0, ''))
+                api.issues[1]['labels'] = [{'name': name} for name in drift]
+                api.events.clear()
+                status, stdout, stderr = self.apply_cli(api, batch)
+                self.assertEqual((status, stdout), (1, ''))
+                self.assertIn('#1: expected owner-task without ai-* labels; reconcile manually', stderr)
+                self.assertFalse(any(method != 'GET' for method, _, _ in api.events))
 
     def partial_receipt(self, stderr):
         diagnostic, receipt = stderr.split('\n', 1)
@@ -746,7 +788,7 @@ class DefaultDispatchTests(unittest.TestCase):
         driver = r'''
 const script = new (Object.getPrototypeOf(async function(){}).constructor)('github', 'context', 'core', process.argv[1]);
 (async () => {
-  for (const label of [null, 'ai-planning', 'ai-epic', 'ai-paused', 'ai-in-progress',
+  for (const label of [null, 'owner-task', 'ai-planning', 'ai-epic', 'ai-paused', 'ai-in-progress',
       'ai-pr-opened', 'ai-fix-needed', 'ai-awaiting-merge', 'ai-merged', 'ai-blocked', 'ai-needs-detail', 'ai-ready']) {
     for (const state of ['open', 'closed']) {
       const calls = [];
