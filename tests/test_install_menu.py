@@ -25,6 +25,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL = ROOT / 'install.sh'
 sys.path.insert(0, str(ROOT / "scripts"))
+import checkout_lock  # noqa: E402
 import install_menu  # noqa: E402
 NEW = 'git:github.com/TrebuchetDynamics/kit'
 ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
@@ -1707,7 +1708,8 @@ units = state[manager]
 if verb == 'list-units':
     assert {'--plain', '--no-legend', '--full'} <= set(args)
     for n, u in units.items():
-        print(n, 'loaded', u['ActiveState'], 'running', 'An example unit description')
+        if '@.' not in n:
+            print(n, 'loaded', u['ActiveState'], 'running', 'An example unit description')
 elif verb == 'list-unit-files':
     for n, u in units.items():
         print(n, u.get('UnitFileState', 'static'), '-')
@@ -1775,6 +1777,14 @@ Path.iterdir = iterdir
 
     def test_plain_install_updates_and_restarts_the_verified_fleet(self):
         receipt, state, head = self.orbi_fleet_fixture()
+        vendor = self.home / '.config/systemd/user/vendor-shell@.service'
+        vendor.parent.mkdir(parents=True)
+        vendor.write_text('[Service]\nExecStart=/usr/bin/tmux unbind-key -a; \\\n  new-session\n')
+        states = json.loads(state.read_text())
+        states['--user'][vendor.name] = {'UnitFileState': 'static'}
+        state.write_text(json.dumps(states))
+        worker = Path(states['--system']['working-extra.service']['FragmentPath'])
+        worker.write_text(worker.read_text().replace(' --config ', ' \\\n  --config '))
         result = self.install(env={'KIT_INSTALL_REPORT': str(receipt), **self.unreadable_root_fixture()})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         summary = result.stdout.split('Summary:', 1)[1]
@@ -1956,6 +1966,37 @@ Path.iterdir = iterdir
         self.assertIn('working-extra.service: effective worker/exporter command is unverified', result.stdout)
         self.assertEqual(state.read_bytes(), original)
         self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_holds_for_an_unparsable_candidate_without_leaking_its_contents(self):
+        receipt, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        service = json.loads(original)['--system']['working-extra.service']
+        fragment = Path(service['FragmentPath'])
+        private = 'private-unit-definition-value'
+        fragment.write_text(fragment.read_text().replace(' --config ', f' \\\n  --config "{private} '))
+        result = self.install('--only', 'orbi', env={'KIT_INSTALL_REPORT': str(receipt)})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        message = 'system:working-extra.service: unit definition is unparsable'
+        self.assertIn(f'Orbi fleet held: {message}', result.stdout)
+        row = next(r for r in map(json.loads, receipt.read_text().splitlines()) if r['item'] == 'orbi')
+        self.assertEqual(row['orbi_fleet']['status'], 'held')
+        self.assertEqual(row['orbi_fleet']['error']['message'], message)
+        for hidden in (private, str(fragment), 'No closing quotation', 'No escaped character', 'ValueError'):
+            self.assertNotIn(hidden, result.stdout + result.stderr + receipt.read_text())
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi'), [])
+
+    def test_orbi_holds_before_downtime_for_a_continued_privileged_command(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        original = state.read_bytes()
+        service = json.loads(original)['--system']['working-extra.service']
+        fragment = Path(service['FragmentPath'])
+        fragment.write_text(fragment.read_text().replace('ExecStart=', 'ExecStart=\\\n  +'))
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('working-extra.service: effective worker/exporter command is unverified', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertEqual(self.calls('orbi'), [])
 
     def test_orbi_holds_when_effective_worker_and_fragment_name_different_configs(self):
         _, state, _ = self.orbi_fleet_fixture()
@@ -3480,6 +3521,7 @@ class PullCheckoutTests(unittest.TestCase):
         scripts = self.other / 'scripts'
         scripts.mkdir()
         shutil.copy2(ROOT / 'scripts/install_menu.py', scripts / 'install_menu.py')
+        shutil.copy2(ROOT / 'scripts/checkout_lock.py', scripts / 'checkout_lock.py')
         shutil.copy2(INSTALL, self.other / 'install.sh')
         manifest = self.other / '.agents/plugins/marketplace.json'
         manifest.parent.mkdir(parents=True)
@@ -3557,6 +3599,7 @@ class PullCheckoutTests(unittest.TestCase):
                 self.assertEqual(self.git('status', '--porcelain'), '')
 
     def test_a_clean_checkout_behind_its_upstream_is_fast_forwarded(self):
+        self.record_writer(os.getppid())
         said, commands = [], []
         def run(args, **kwargs):
             commands.append(args[3:])
@@ -3585,7 +3628,32 @@ class PullCheckoutTests(unittest.TestCase):
     def stashes(self):
         return self.git('stash', 'list', '--format=%H').splitlines()
 
+    def record_writer(self, pid):
+        _, started, _ = checkout_lock.process(pid)
+        checkout_lock.write(self.clone / '.git', {'session': 'fixture-writer', 'pid': pid,
+                                                   'started': started, 'files': ['g']})
+
+    def test_live_writer_blocks_stash_but_dead_writer_allows_it(self):
+        self.dirty()
+        before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
+        owner = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        try:
+            self.record_writer(owner.pid)
+            with self.assertRaisesRegex(RuntimeError, r'fixture-writer.*wait.*commit.*--no-pull'):
+                install_menu.pull_checkout(self.clone)
+            self.assertEqual((self.head(self.clone), self.stashes(), self.git('status', '--porcelain')), before)
+            self.assertEqual((self.clone / 'g').read_text(), 'staged\nunstaged\n')
+        finally:
+            owner.terminate()
+            owner.wait(timeout=5)
+
+        self.assertTrue(install_menu.pull_checkout(self.clone, write=lambda _: None))
+        self.assertEqual(len(self.stashes()), 1)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertEqual(self.head(self.clone), self.head(self.other))
+
     def test_local_changes_are_kept_in_an_object_addressed_stash(self):
+        self.record_writer(os.getpid())  # a record for the installer itself does not block it
         (self.clone / 'older').write_text('old')
         self.git('stash', 'push', '--include-untracked', '-m', 'older')
         older = self.stashes()
@@ -3755,6 +3823,7 @@ def restart_services(output, observations=None, settled=None):
 '''
         (scripts / 'install_menu.py').write_text(source.replace("if __name__ == '__main__':",
                                                               fixture + "if __name__ == '__main__':"))
+        shutil.copy2(ROOT / 'scripts/checkout_lock.py', scripts / 'checkout_lock.py')
         shutil.copy2(INSTALL, self.other / 'install.sh')
         self.run_git('git', '-C', str(self.other), 'add', '.')
         self.run_git('git', '-C', str(self.other), 'commit', '-qm', 'installer fixture')
@@ -3915,6 +3984,7 @@ def restart_services(output, observations=None, settled=None):
 
     def test_entrypoint_bypasses_and_previews_leave_checkout_and_stashes_unchanged(self):
         self.installer_fixture()
+        self.record_writer(os.getpid())  # live for the child installer
         (self.clone / 'older').write_text('older')
         self.git('stash', 'push', '-u', '-m', 'older')
         self.dirty()
@@ -3933,9 +4003,23 @@ def restart_services(output, observations=None, settled=None):
                 result = self.entry(*args, env=env)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(state(), before)
-                if args[0] in ('--help', '--list', '--dry-run'):
-                    self.assertEqual([event[0] for event in self.events()], ['load'])
+                expected = ['load'] if args[0] in ('--help', '--list', '--dry-run') else ['load', 'component', 'restart']
+                self.assertEqual([event[0] for event in self.events()], expected)
                 self.trace.write_text('')
+
+    def test_entrypoint_refuses_live_writer_before_component_and_restart(self):
+        self.installer_fixture()
+        self.record_writer(os.getpid())
+        self.dirty()
+        before = (self.head(self.clone), self.stashes(), self.git('status', '--porcelain'))
+        args = ['--only', 'tx', '--quiet']
+        result = self.entry(*args)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r'FAILED: checkout preparation: .*fixture-writer.*wait.*commit.*--no-pull')
+        self.assertIn('Nothing installed or restarted', result.stdout)
+        self.assertEqual(self.events(), [['load', 'clean-v1', args, '']])
+        self.assertEqual((self.head(self.clone), self.stashes(), self.git('status', '--porcelain')), before)
+        self.assertEqual((self.clone / 'g').read_text(), 'staged\nunstaged\n')
 
     def test_entrypoint_refuses_foreign_git_environment_before_mutation(self):
         self.installer_fixture()

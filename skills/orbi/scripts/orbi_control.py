@@ -3907,8 +3907,9 @@ def render_host_compact(ctx, document):
         ctx.out.write(f"coverage {coverage['state']}: {count} non-Orbi units unreadable (--verbose to list)\n")
     if other:
         first = other[0]
-        subject = f"{first['manager']}: " if first['manager'] else ''
-        detail = ' '.join((subject + first['reason']).splitlines())
+        reason, manager = first['reason'], first['manager']
+        subject = f'{manager}: ' if manager and not reason.startswith(f'{manager}:') else ''
+        detail = ' '.join((subject + reason).splitlines())
         more = f' (+{len(other) - 1} more)' if len(other) > 1 else ''
         ctx.out.write(f"coverage {coverage['state']}: {detail}{more} (--verbose for details and repair)\n")
 
@@ -3964,10 +3965,10 @@ def host_read_failure(proc):
                                  proc.stderr or '', re.I) else 'failed'
 
 
-def host_problem(coverage, manager, reason, *, non_orbi=False):
+def host_problem(coverage, manager, reason, *, non_orbi=False,
+                 fix='restore read access to local scheduler/config evidence and rerun status all; no sudo'):
     coverage['state'] = 'partial'
-    problem = {'manager': manager, 'reason': reason,
-               'fix': 'restore read access to local scheduler/config evidence and rerun status all; no sudo'}
+    problem = {'manager': manager, 'reason': reason, 'fix': fix}
     if non_orbi:
         problem['non_orbi'] = True  # No observed Orbi evidence, not proof of absence.
     coverage['problems'].append(problem)
@@ -4028,22 +4029,47 @@ def host_resolve_configs(references, cwd=None, *, verify_paths=False):
     return sorted(resolved)
 
 
+def systemd_logical_lines(text):
+    """Fold systemd.syntax(7) continuations, ignoring intervening comments."""
+    lines, pending = [], []
+    for line in text.removesuffix('\n').split('\n'):
+        line = line.removesuffix('\r')
+        if line.lstrip().startswith(('#', ';')):
+            continue
+        if (len(line) - len(line.rstrip('\\'))) % 2:
+            pending.append(line[:-1])
+        else:
+            lines.append(' '.join([*pending, line]))
+            pending.clear()
+    if pending:
+        # systemd still replaces the continuation marker at EOF.
+        lines.append(' '.join(pending) + ' ')
+    return '\n'.join(lines)
+
+
+class UnitParseError(ValueError):
+    """A tokenization failure, distinct from an unreadable metadata file."""
+
+
 def host_definition(ctx, path, *, working_directory=None, instance=None, manager='user', user_home=None,
-                    verify_paths=False, template=False):
+                    verify_paths=False, template=False, text=None):
     """Extract config references only; never return commands or environment contents."""
-    text = bounded_text(path)
+    text = systemd_logical_lines(bounded_text(path) if text is None else text)
     references = []
-    for assignment in re.findall(r'^Environment=(.*)$', text, re.M):
-        references.extend(token.partition('=')[2] for token in shlex.split(assignment)
-                          if token.startswith('ORBI_CONFIG='))
-    commands = [host_orbi_command(shlex.split(command))
-                for command in re.findall(r'^ExecStart=(.+)$', text, re.M)]
+    try:
+        for assignment in re.findall(r'^Environment=(.*)$', text, re.M):
+            references.extend(token.partition('=')[2] for token in shlex.split(assignment)
+                              if token.startswith('ORBI_CONFIG='))
+        commands = [host_orbi_command(shlex.split(command))
+                    for command in re.findall(r'^ExecStart=(.+)$', text, re.M)]
+    except ValueError:
+        raise UnitParseError('unit definition is unparsable') from None
     for command in commands:
         references.extend(command['configs'])
     runner = any(command['runner'] for command in commands)
     orbi = any(command['orbi'] for command in commands)
     directories = re.findall(r'^WorkingDirectory=(.+)$', text, re.M)
-    cwd = working_directory or (directories[0].strip('"\x27') if len(directories) == 1 else None)
+    cwd = working_directory or (directories[0].strip().strip('"\x27') if len(directories) == 1 else None)
     if not references and orbi and cwd and (Path(cwd) / 'orbi.toml').is_file():
         references.append(str(Path(cwd) / 'orbi.toml'))
     expanded = []
@@ -4190,6 +4216,7 @@ def host_linux(ctx, coverage):
         masked_templates = {name for name, item in installed.items()
                             if name.endswith(('@.service', '@.timer')) and item.get('state') in {'masked', 'masked-runtime'}}
         metadata = {}
+        unparsable = set()
         for name, path in definitions.items():
             if name in masked_templates:
                 continue
@@ -4199,7 +4226,11 @@ def host_linux(ctx, coverage):
                     metadata[name] = item
                     installed.setdefault(name, {'state': 'unknown'})
                     paths.update(item['configs'])
-            except (OSError, UnicodeError, ValueError):
+            except (UnitParseError, UnicodeError):
+                unparsable.add(name)
+                if 'orbi' in name.lower():
+                    metadata[name] = {'configs': [], 'unreadable': True}
+            except (OSError, ValueError):
                 if 'orbi' in name.lower():
                     metadata[name] = {'configs': [], 'unreadable': True}
                     if not name.endswith(('@.service', '@.timer')):
@@ -4247,6 +4278,7 @@ def host_linux(ctx, coverage):
             try:
                 sources.extend(shlex.split(values.get('DropInPaths', '')))
             except ValueError:
+                unparsable.add(name)
                 unreadable = True
             for source in sources:
                 try:
@@ -4258,17 +4290,24 @@ def host_linux(ctx, coverage):
                     command |= item['command']
                     orbi |= item['orbi']
                     referenced |= item['referenced']
-                except (OSError, UnicodeError, ValueError):
+                except (UnitParseError, UnicodeError):
+                    unparsable.add(name)
+                    unreadable = True
+                except (OSError, ValueError):
                     unreadable = True
             if not sources and name in metadata and not masked_template:
                 refs.update(metadata[name]['configs'])
                 unreadable = metadata[name].get('unreadable', False)
             if name in templates and not masked_template and (not sources or unreadable):
-                failures[name] = 'template fragment unreadable'
+                if name not in unparsable:
+                    failures[name] = 'template fragment unreadable'
                 unreadable = True
             paths.update(refs)
             metadata[name] = {'configs': sorted(refs), 'unreadable': unreadable,
                               'runner': runner, 'referenced': referenced, 'command': command, 'orbi': orbi}
+        for name in sorted(unparsable):
+            host_problem(coverage, manager, f'{manager}:{name}: unit definition is unparsable',
+                         fix='inspect and correct the named unit definition, then rerun status all')
         relevant = {n for n in names if 'orbi' in n.lower() or metadata[n]['configs'] or metadata[n]['orbi']}
         relevant.update(n for n in names if n.endswith('.timer') and
                         (details[n].get('Unit') or details[n].get('Triggers') or n[:-6] + '.service') in relevant)
@@ -4563,6 +4602,8 @@ def fleet_offline_user_evidence(ctx, manager, *, live):
                     if path.is_symlink() and path.resolve() == Path('/dev/null'):
                         continue
                     item = host_definition(ctx, path, manager='user', user_home=manager.home)
+                except ValueError:
+                    fleet_refuse(f'{manager.name}:{path.name}: unit definition is unparsable')
                 except FileNotFoundError:
                     continue  # missing unit or dangling symlink, not an empty folder
                 except PermissionError:
@@ -4644,7 +4685,10 @@ def fleet_unit(ctx, manager, name):
 
 def fleet_fragments(ctx, manager, name, values):
     label = f'{manager.name}:{name}'
-    fragments = [values.get('FragmentPath'), *shlex.split(values.get('DropInPaths', ''))]
+    try:
+        fragments = [values.get('FragmentPath'), *shlex.split(values.get('DropInPaths', ''))]
+    except ValueError:
+        fleet_refuse(f'{label}: unit definition is unparsable')
     if fragments == ['/dev/null'] and values.get('LoadState') == 'masked':
         return []
     items = []
@@ -4654,7 +4698,9 @@ def fleet_fragments(ctx, manager, name, values):
             item = host_definition(ctx, fragment, working_directory=values.get('WorkingDirectory'),
                                    instance=instance or None, manager=manager.flags[0][2:],
                                    user_home=manager.home, verify_paths=True)
-        except (OSError, ValueError) as error:
+        except ValueError:
+            fleet_refuse(f'{label}: unit definition is unparsable')
+        except OSError as error:
             fleet_refuse(f'{label}: unit fragment is unreadable ({type(error).__name__})')
         items.append((Path(fragment), item))
     if not items and values.get('LoadState') != 'not-found':
@@ -4701,7 +4747,7 @@ def fleet_service(ctx, manager, name, values, fragments):
     if not (exporter or command['orbi'] or any(item['orbi'] or item['referenced'] for _, item in fragments)):
         return None  # A similar basename without Orbi evidence is not ownership.
     if (not (command['runner'] or exporter) or any(
-            re.search(r'^\s*ExecStart\s*=\s*[-:@]*[+!]', bounded_text(path), re.M)
+            re.search(r'^\s*ExecStart\s*=\s*[-:@]*[+!]', systemd_logical_lines(bounded_text(path)), re.M)
             for path, _ in fragments)):
         fleet_refuse(f'{label}: effective worker/exporter command is unverified; refusing Orbi subcommands')
     if exporter and not refs:
@@ -4876,8 +4922,14 @@ def fleet_inventory(ctx, managers, *, known_units=()):
                 path = template_path(template)
                 if path is None:
                     continue
-                item = host_definition(ctx, path, instance='1', manager=manager.flags[0][2:],
-                                       user_home=manager.home, verify_paths=True)
+                try:
+                    definition = bounded_text(path)
+                    if 'orbi' not in definition.lower():
+                        continue
+                    item = host_definition(ctx, path, instance='1', manager=manager.flags[0][2:],
+                                           user_home=manager.home, verify_paths=True, text=definition)
+                except ValueError:
+                    fleet_refuse(f'{manager.name}:{template}: unit definition is unparsable')
                 if not (item['orbi'] or item['referenced']):
                     continue
                 if len(item['configs']) != 1:
