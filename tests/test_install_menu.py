@@ -1609,7 +1609,7 @@ esac
         row = next(row for row in map(json.loads, receipt.read_text().splitlines()) if row['item'] == 'orbi')
         self.assertEqual(row['orbi_fleet']['status'], 'held')
 
-    def orbi_fleet_fixture(self):
+    def orbi_fleet_fixture(self, extra_deployments=()):
         receipt = self.home / 'install.jsonl'
         states = {'--system': {}, '--user': {}}
         head = 'a' * 40
@@ -1628,12 +1628,15 @@ case "$1" in
 esac
 ''')
         bootstrap.chmod(0o755)
-        for manager, slug, previous in (('--system', 'working', head), ('--user', 'paused', old)):
+        deployments = [('--system', 'working', 'working', head, 1), ('--user', 'paused', 'paused', old, 1)]
+        deployments.extend(('--user', directory, repo, old, slots) for directory, repo, slots in extra_deployments)
+        for manager, slug, repo, previous, slots in deployments:
             deploy = self.home / slug
             deploy.mkdir(exist_ok=True)
             (deploy / '.git').mkdir(exist_ok=True)
             config = deploy / 'orbi.toml'
-            config.write_text(f'source_repos = ["example/{slug}"]\nengine_source_track = "sha:{previous}"\n')
+            config.write_text(f'source_repos = ["example/{repo}"]\nengine_source_track = "sha:{previous}"\n'
+                              + (f'max_concurrency = {slots}\n' if slots != 1 else ''))
             (deploy / 'head').write_text(previous)
             (deploy / 'sync-attempted').unlink(missing_ok=True)
             (deploy / 'units').mkdir(exist_ok=True)
@@ -1641,6 +1644,8 @@ esac
                                        ('service', 'extra', slug == 'working'),
                                        ('service', 'queued', False),
                                        ('timer', 'worker', slug == 'working'), ('timer', 'queued', False)):
+                if slug not in ('working', 'paused') and slot != 'worker':
+                    continue
                 name = f'{slug}-{slot}.{kind}'
                 fragment = deploy / 'units' / name
                 unit = f'{slug}-{slot}.service' if kind == 'timer' else ''
@@ -1751,10 +1756,11 @@ else:
         state.write_text(json.dumps(states))
         return receipt, state, head
 
-    def unreadable_root_fixture(self):
+    def unreadable_root_fixture(self, *, extra_account=False):
         uid = 0 if os.getuid() else 65533
         home = self.home / 'private-root-home'
-        self.fake('getent', LOGGING + f'echo "root:x:{uid}:{uid}:Root:{home}:/bin/sh"\n')
+        self.fake('getent', LOGGING + f'echo "root:x:{uid}:{uid}:Root:{home}:/bin/sh"\n'
+                  + (f'echo "backup:x:65532:65532:Backup:{home}:/bin/sh"\n' if extra_account else ''))
         imports = self.home / 'imports'
         imports.mkdir()
         (imports / 'sitecustomize.py').write_text(f'''
@@ -1821,15 +1827,66 @@ Path.iterdir = iterdir
         self.assertEqual(self.calls('uv'), [])
         self.assertFalse((ROOT / 'skills/orbi/scripts/__pycache__').exists())
 
+    def test_orbi_full_install_prints_four_short_rows_and_only_counts_in_summary(self):
+        self.orbi_fleet_fixture(extra_deployments=(('checkout-a', 'mobile-app', 3), ('checkout-b', 'web-app', 2)))
+        # Exercise all seven stages, substituting only the unrelated Hermes setup.
+        source = self.home / 'suite-source'
+        (source / 'scripts').mkdir(parents=True)
+        for relative in ('install.sh', 'scripts/install_menu.py'):
+            shutil.copy2(ROOT / relative, source / relative)
+        for relative in ('skills', 'adapters', 'tmux', '.claude-plugin', '.codex-plugin', '.agents'):
+            (source / relative).symlink_to(ROOT / relative)
+        (source / 'scripts/update_bundle.py').write_text("def plugin_dir(home): return home / 'plugins/kit'\n")
+        (source / 'scripts/setup_bundle.py').write_text('print("Hermes setup fixture")\n')
+        self.fake('hermes', LOGGING)
+        (self.home / '.hermes').mkdir()
+        env = {**self.env, **self.unreadable_root_fixture(extra_account=True)}
+        result = subprocess.run(['bash', str(source / 'install.sh')], env=env, cwd=self.project,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        progress, summary = result.stdout.split('\nSummary:', 1)
+        _, heading, stage = progress.partition('\n[7/7] Orbi host deployment refresh / CLI bootstrap\n')
+        self.assertTrue(heading, progress)
+        self.assertEqual([line.split() for line in stage.splitlines() if ' started (' in line], [
+            ['mobile-app', 'started', '(updated),', '3', 'slots'],
+            ['web-app', 'started', '(updated),', '2', 'slots'],
+            ['paused', 'started', '(updated),', '1', 'slot'],
+            ['working', 'started', '(up', 'to', 'date),', '1', 'slot'],
+        ])
+        self.assertNotIn('orbi.toml', stage)
+        self.assertNotIn('completed:', stage)
+        self.assertNotIn('verify_scheduling', stage)
+        self.assertNotIn('not checked:', stage)
+        self.assertNotIn('started (', summary)
+        self.assertNotIn('orbi.toml', summary)
+        self.assertNotIn('verify_scheduling', summary)
+        self.assertRegex(summary, r'(?m)^  orbi\s+installed\s+Orbi fleet completed: 4 started, 3 updated, 1 up to date; '
+                         r'not checked: backup, root \(home unreadable, no running manager, no linger\).*$')
+
+    def test_orbi_explicit_verbose_prints_steps_only_before_summary(self):
+        self.orbi_fleet_fixture()
+        result = self.install('--only', 'orbi', '--verbose')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        progress, summary = result.stdout.split('\nSummary:', 1)
+        self.assertIn('[1/1] Orbi host deployment refresh', progress)
+        self.assertRegex(progress, r'paused\s+started \(updated\), 1 slot')
+        self.assertIn(f'{self.home}/paused/orbi.toml', progress)
+        self.assertIn('completed: set_release_track, sync_engine_source', progress)
+        self.assertIn('verify_scheduling user:paused-worker.timer', progress)
+        self.assertNotIn('verify_scheduling', summary)
+        self.assertNotIn('orbi.toml', summary)
+
     def test_plain_install_holds_for_an_unreadable_live_account(self):
         receipt, state, _ = self.orbi_fleet_fixture()
         original = state.read_bytes()
         result = self.install(env={'KIT_INSTALL_REPORT': str(receipt), 'FAKE_ROOT_ACTIVE': '1',
                                    **self.unreadable_root_fixture()})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        progress, summary = result.stdout.split('\nSummary:', 1)
         self.assertIn('FAILED: Orbi fleet held: user:root: cannot verify installed definitions (PermissionError)',
-                      result.stdout)
-        self.assertIn('./install.sh --skip orbi', result.stdout)
+                      progress)
+        self.assertIn('./install.sh --skip orbi', progress)
+        self.assertRegex(summary, r'(?m)^  orbi\s+failed\s+Orbi fleet held$')
         self.assertNotIn('not checked: root', result.stdout)
         self.assertNotIn('private definition error', result.stdout + result.stderr + receipt.read_text())
         self.assertNotIn('private-root-home', result.stdout + result.stderr + receipt.read_text())
@@ -1867,7 +1924,11 @@ Path.iterdir = iterdir
         config = str(self.home / 'working/orbi.toml')
         result = self.install('--only', 'orbi', env={'FAIL_PREFLIGHT': config})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn(config + ' preflight_deployment: orbi check failed', result.stdout)
+        progress, summary = result.stdout.split('\nSummary:', 1)
+        self.assertIn(config + ' preflight_deployment: orbi check failed', progress)
+        self.assertIn('./install.sh --skip orbi', progress)
+        self.assertRegex(summary, r'orbi\s+failed\s+Orbi fleet held: 1 untouched, 1 failed')
+        self.assertNotIn('preflight_deployment', summary)
         self.assertEqual(state.read_bytes(), original)
         self.assertEqual(self.calls('orbi sync-engine-source'), [])
         self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
@@ -1908,9 +1969,9 @@ Path.iterdir = iterdir
         self.assertEqual(self.calls('orbi'), [])
         self.assertEqual(self.calls('uv'), [])
 
-    def test_orbi_reports_active_but_elapsed_timer_as_incomplete(self):
+    def test_orbi_scheduling_failure_prints_steps_before_summary_even_in_quiet_mode(self):
         receipt, _, _ = self.orbi_fleet_fixture()
-        result = self.install('--only', 'orbi', env={
+        result = self.install('--only', 'orbi', '--quiet', env={
             'KIT_INSTALL_REPORT': str(receipt), 'ELAPSED_TIMER': 'working-worker.timer',
         })
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -1920,7 +1981,17 @@ Path.iterdir = iterdir
         self.assertEqual((paused['status'], working['status']), ('started', 'failed'))
         self.assertEqual(working['failed_step'], 'verify_scheduling')
         self.assertTrue(any(s['step'] == 'verify_service_start' for s in working['steps']))
-        self.assertIn('timer not confirmed enabled and scheduling', result.stdout)
+        progress, summary = result.stdout.split('\nSummary:', 1)
+        self.assertIn('system:working-worker.timer verify_scheduling: '
+                      'system:working-worker.timer: timer not confirmed enabled and scheduling', progress)
+        self.assertIn(working['config'], progress)
+        self.assertIn('completed: disable_trigger system:working-worker.timer', progress)
+        self.assertIn('start_trigger_requested system:working-worker.timer', progress)
+        self.assertIn('No rollback attempted', progress)
+        self.assertIn('./install.sh --only orbi to re-evaluate the fleet', progress)
+        self.assertRegex(summary, r'orbi\s+failed\s+Orbi fleet incomplete: 1 started, 1 failed')
+        self.assertNotIn('verify_scheduling', summary)
+        self.assertNotIn('completed:', summary)
 
     def test_orbi_restores_a_paused_standalone_persistent_worker(self):
         _, state, _ = self.orbi_fleet_fixture()
@@ -2042,6 +2113,7 @@ Path.iterdir = iterdir
         self.assertEqual((row['item'], row['status']), ('orbi', 'failed'))
         fleet = row['orbi_fleet']
         self.assertEqual(fleet['status'], 'incomplete')
+        self.assertTrue(fleet['progress_only'])
         self.assertEqual(fleet['error']['config'], config)
         self.assertEqual(fleet['error']['step'], 'apply_release')
         paused, working = fleet['deployments']

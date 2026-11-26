@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the full Kit suite with verbose output by default.
+"""Install the full Kit suite with live output and exact commands by default.
 
     install.sh                every available component, live output and exact commands
     install.sh --menu         a checkbox menu on a terminal (arrows, Space, Enter)
@@ -37,6 +37,7 @@ Standard library only.
 """
 import argparse
 import codecs
+from collections import Counter
 from contextlib import contextmanager, nullcontext
 import fcntl
 import hashlib
@@ -86,8 +87,9 @@ class Output:
     COLORS = {'heading': '1;36', 'installed': '32', 'failed': '31',
               'skipped': '33', 'warning': '33', 'planned': '36', 'command': '2'}
 
-    def __init__(self, color='auto', verbosity=2):
+    def __init__(self, color='auto', verbosity=2, *, verbose=False):
         self.verbosity = verbosity
+        self.verbose = verbose
         self.color = color == 'always' or (color == 'auto' and sys.stdout.isatty()
                       and os.environ.get('TERM') != 'dumb' and not os.environ.get('NO_COLOR'))
 
@@ -1138,24 +1140,49 @@ def refresh_orbi_fleet(*, report_progress=None):
 
 
 def orbi_fleet_summary(receipt):
-    lines = ['No installed Orbi deployment verified; CLI only' if receipt['status'] == 'no_deployments'
-             else f"Orbi fleet {receipt['status']}"]
-    if 'error' in receipt:
-        error = receipt['error']
+    status = receipt['status']
+    if status == 'no_deployments':
+        summary = 'No installed Orbi deployment verified; CLI only'
+    else:
+        rows = receipt['deployments']
+        counts = Counter(row['status'] for row in rows)
+        if status == 'completed':
+            counts.update(row['engine_update'] for row in rows)
+        summary = f'Orbi fleet {status}'
+        if counts:
+            summary += ': ' + ', '.join(f"{count} {label.replace('_', ' ')}" for label, count in counts.items())
+    if names := receipt.get('not_checked'):
+        summary += f"; not checked: {', '.join(names)} (home unreadable, no running manager, no linger)"
+    return summary
+
+
+def orbi_fleet_details(receipt, *, verbose=False):
+    failed = receipt['status'] != 'completed'
+    lines = [f"Orbi fleet {receipt['status']}"]
+    if error := receipt.get('error'):
         where = ' '.join(error[key] for key in ('config', 'unit', 'step') if error.get(key))
         lines[0] += f": {where + ': ' if where else ''}{error['message']}"
         if error.get('fix'):
             lines.append(error['fix'])
     for row in receipt['deployments']:
-        steps = ', '.join(step['step'] + (' ' + step['unit'] if 'unit' in step else '')
-                          for step in row['steps'])
-        lines.append(f"{row['config']}: {row['status']} ({row.get('engine_update', 'not applied')})"
-                     + (f'; completed: {steps}' if steps else '')
-                     + (f"; {row['recovery']}" if receipt['status'] != 'completed' else ''))
+        update = row.get('engine_update', 'not_applied').replace('_', ' ')
+        if failed:
+            lines.append(f"{row['config']}: {row['status']} ({update})")
+        else:
+            name = ' '.join(row['repo'].rsplit('/', 1)[-1].splitlines())
+            slots = row['slots']
+            lines.append(f"{name}  {row['status']} ({update}), {slots} {'slot' if slots == 1 else 'slots'}")
+        if verbose or failed:
+            steps = ', '.join(step['step'] + (' ' + step['unit'] if 'unit' in step else '')
+                              for step in row['steps'])
+            if verbose and not failed:
+                lines[-1] += f"; {row['config']}"
+            if steps:
+                lines[-1] += f'; completed: {steps}'
+            if failed:
+                lines[-1] += f"; {row['recovery']}"
     if 'recovery' in receipt:
         lines.append(receipt['recovery'])
-    lines.extend(f'not checked: {name} (home unreadable, no running manager, no linger)'
-                 for name in receipt.get('not_checked', ()))
     return '\n  '.join(lines)
 
 
@@ -2026,9 +2053,14 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
     for item in all_items:
         if item.key not in chosen:
             if item.key == 'orbi' and delegated_orbi:
-                record('orbi', delegated_orbi['status'], 'Hermes delegated: ' +
-                       orbi_fleet_summary(delegated_orbi['orbi_fleet']), delegated_orbi['exit'],
-                       orbi_fleet=delegated_orbi['orbi_fleet'])
+                fleet = delegated_orbi['orbi_fleet']
+                # A terminal failure was already printed by the quiet delegate unless
+                # its output was suppressed here. Progress-only receipts never printed it.
+                if fleet.get('error') and (fleet.get('progress_only') or fleet['status'] == 'unverified'
+                                          or not (output.verbosity or sys.stdin.isatty())):
+                    output.line('  FAILED: ' + orbi_fleet_details(fleet), 'failed')
+                record('orbi', delegated_orbi['status'], 'Hermes delegated: ' + orbi_fleet_summary(fleet),
+                       delegated_orbi['exit'], orbi_fleet=fleet)
             else:
                 record(item.key, 'skipped', describe(item) if not item.available else 'not chosen')
             continue
@@ -2077,14 +2109,18 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                             refresh, message = message, message.message
                         if item.key == 'orbi':
                             fleet = message
-                            message = orbi_fleet_summary(fleet)
                             if fleet['status'] == 'no_deployments':
                                 if fleet.get('not_checked'):
-                                    detail.append(message)
+                                    detail.append(orbi_fleet_summary(fleet))
                                 message = install_orbi(output)
-                            elif fleet['status'] != 'completed':
-                                outcome, exit_code = 'failed', 1
-                                output.line('  FAILED: ' + message, 'failed')
+                            else:
+                                detail.append(orbi_fleet_summary(fleet))
+                                if fleet['status'] != 'completed':
+                                    outcome, exit_code = 'failed', 1
+                                    output.line('  FAILED: ' + orbi_fleet_details(fleet), 'failed')
+                                elif output.verbosity:
+                                    output.line('  ' + orbi_fleet_details(fleet, verbose=output.verbose))
+                                break
                         detail.append(message)
                         if output.verbosity and outcome != 'failed':
                             output.line('  ' + message)
@@ -2381,7 +2417,8 @@ def main(argv=None):
     parser.add_argument('--dry-run', action='store_true', help='print each command instead of running it')
     parser.add_argument('--menu', action='store_true', help='choose components using the checkbox menu')
     verbosity = parser.add_mutually_exclusive_group()
-    verbosity.add_argument('-v', '--verbose', action='store_true', help='show exact commands as well as live output (default)')
+    verbosity.add_argument('-v', '--verbose', action='store_true',
+                           help='show Orbi deployment steps in addition to the default live output and exact commands')
     verbosity.add_argument('-q', '--quiet', action='store_true', help='show summary and failures only (native terminal prompts remain visible)')
     parser.add_argument('--color', choices=('auto', 'always', 'never'), default='auto',
                         help='color output (default: auto; respects NO_COLOR)')
@@ -2398,7 +2435,7 @@ def main(argv=None):
         if unknown:
             parser.error(f'unknown item(s): {", ".join(unknown)}; choose from {", ".join(ITEM_KEYS)}')
 
-    output = Output(args.color, 0 if args.quiet else 2)
+    output = Output(args.color, 0 if args.quiet else 2, verbose=args.verbose)
     if (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
             or os.environ.get('KIT_INSTALL_NO_PULL') or not has_checkout(ROOT)):
         return run_suite(args, parser, output)

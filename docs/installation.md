@@ -71,7 +71,7 @@ when that component is selected; it does not qualify live delivery.
 
 ## Full suite from a checkout
 
-`./install.sh` installs the full suite for every available host with verbose output.
+`./install.sh` installs the full suite for every available host with live output and exact commands.
 Use `--menu` when you want to select components interactively:
 
 ```sh
@@ -157,8 +157,9 @@ cancellation also takes no lock and writes no receipt. This serializes suite
 installers for the same binary directory, not unrelated manual host commands or
 native updater ownership.
 
-Output streams during each install step, including native prompts. Verbose output
-is on by default (`--verbose`) and shows shell-quoted commands; `--quiet` shows summaries and failure diagnostics,
+Output streams during each install step, including native prompts, and shows
+shell-quoted commands by default. `--verbose` adds Orbi deployment steps;
+`--quiet` shows summaries and failure diagnostics,
 while leaving native output visible when input is a terminal. The failure
 transcript in quiet mode is limited to its last 16,384 characters. Colors are
 automatic on terminals (`NO_COLOR=1` or `TERM=dumb` disables them); use
@@ -338,8 +339,8 @@ that inventory. If a local account's user unit folders cannot be listed due to
 permissions, the installer leaves it unchecked only if there is no runtime
 entry for its UID, the linger directory can be listed and has no marker for the
 account, and no readable unit evidence names Orbi. The Orbi receipt records only
-the unchecked account names, and the summary shows
-`not checked: <account> (home unreadable, no running manager, no linger)`.
+the unchecked account names, and the final Orbi summary line lists them as
+`not checked: <accounts> (home unreadable, no running manager, no linger)`.
 This skip does not fail the refresh. Unverified
 coverage for other accounts, inaccessible managers, ambiguous unit/config/owner
 bindings or missing noninteractive write access hold the entire Orbi fleet
@@ -365,6 +366,12 @@ quiescence, it syncs each deployment once, locks the newest official stable rele
 as an exact commit, and runs `orbi check` before activation. It reads back enabled,
 active scheduling separately from requested service starts. No new deployment,
 unit topology, credential setup or bare Orbi tick is part of the refresh.
+
+The Orbi stage shows one row per successful deployment: the configured repository
+name, result, and configured slot count. Pass `--verbose` to see the completed
+steps as well. A hold or failure always shows the available completed steps and
+failure location. The final Orbi line reports counts and unchecked accounts,
+without repeating the deployment rows.
 
 On a partial failure, the installer exits nonzero but continues independent
 components. Inspect the named config and manager-qualified units in the Orbi
