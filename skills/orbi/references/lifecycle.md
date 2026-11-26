@@ -133,9 +133,10 @@ then revalidates under the deployment lock. It uses the same
 [quiesce sequence as stop](#stop-status-and-drain) unless `--wait` is present.
 With `--wait`, after disabling owned timers and cancelling verified queued starts,
 it lets running workers finish without stopping them. It polls once a minute and
-prints progress to stderr (JSON on stdout is unchanged). If work remains at the
-30-minute deadline, it returns `update_busy` with scheduling still paused and no
-engine update. Check status and rerun the bound `--wait` command after work finishes.
+prints progress to stderr (JSON on stdout is unchanged). If inactivity cannot be
+confirmed within 30 minutes, it returns `update_busy` with no engine update and
+reports the last verified paused state. Check status and rerun the bound `--wait`
+command after work finishes.
 Before source mutation it rechecks repository/config/source ownership, cleanliness
 and scheduler inactivity. Failed quiesce blocks sync and reports completed steps.
 

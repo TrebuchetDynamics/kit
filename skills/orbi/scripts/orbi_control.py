@@ -137,6 +137,7 @@ class Context:
         self.out = stdout if stdout is not None else sys.stdout
         self.err = stderr if stderr is not None else sys.stderr
         self.noninteractive = noninteractive
+        self.command_deadline = None
 
     def which(self, name):
         return shutil.which(name, path=self.env.get('PATH'))
@@ -151,6 +152,10 @@ class Context:
                          GIT_ASKPASS='/bin/false', SSH_ASKPASS_REQUIRE='never')
             stdin['stdin'] = subprocess.DEVNULL
         command = [str(part) for part in argv]
+        if self.command_deadline is not None:
+            timeout = min(timeout, self.command_deadline - time.monotonic())
+            if timeout <= 0:
+                raise ControlError('command_timeout', 'scheduler observation deadline reached')
         try:
             proc = subprocess.run(command, env=child, capture_output=True,
                                   text=True, timeout=timeout,
@@ -334,7 +339,7 @@ def load_deployments(ctx, repo, explicit_config=None):
     return deployments
 
 
-def select_target(ctx, repo, explicit_config=None, *, require=False):
+def select_target(ctx, repo, explicit_config=None, *, require=False, explicit_repo=False):
     deployments = load_deployments(ctx, repo, explicit_config)
     matching = [item for item in deployments if repo.full in item.source_repos]
     if len(matching) > 1:
@@ -348,6 +353,11 @@ def select_target(ctx, repo, explicit_config=None, *, require=False):
         explicit = Path(explicit_config).expanduser().resolve()
         for item in matching:
             if item.config_path == explicit:
+                if explicit_repo and item.repo_dir is not None and item.repo_dir != repo.path:
+                    raise ControlError('config_mismatch',
+                                       f'config {explicit} selects {item.repo_dir}, not {repo.path}',
+                                       fix='omit --repo-dir or pass the checkout declared in the config',
+                                       exit_code=2)
                 return item
         raise ControlError('config_mismatch',
                            f'config {explicit} does not own repository {repo.full}',
@@ -2439,7 +2449,7 @@ def lifecycle_failure(ctx, target, error, *, target_path, steps, current, mutate
                            fix='inspect the failed command privately and repair the cause')
     exc.mutated = exc.mutated or mutated
     snapshot = exc.evidence.get('scheduler', {'state': 'unavailable'})
-    if mutated and target:
+    if mutated and target and snapshot_reader is not None:
         try:
             snapshot = snapshot_reader(ctx, target)
         except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as observation_error:
@@ -3063,24 +3073,42 @@ def require_quiescent(ctx, target, *, known_indices=()):
 
 
 def wait_for_workers(ctx, target, snapshot):
-    deadline = time.monotonic() + UPDATE_WAIT_MINUTES * 60
+    last_poll = time.monotonic()
+    deadline = last_poll + UPDATE_WAIT_MINUTES * 60
     while pending := update_pending(snapshot):
         workers = sum(item['state'] not in INACTIVE_STATES for item in snapshot['services'].values())
         jobs = len(snapshot['pending_jobs'])
         finishing = f'{workers} worker(s)' + (f' and {jobs} scheduler job(s)' if jobs else '')
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise ControlError('update_busy',
-                               f'Update not applied: {finishing} still finishing after '
-                               f'{UPDATE_WAIT_MINUTES} minutes. Scheduling remains paused.',
-                               fix='wait for the remaining work to finish before rerunning /orbi update',
-                               evidence={'scheduler': snapshot, 'pending_services': pending})
         # Progress is best-effort and must not corrupt a JSON receipt on stdout.
         with contextlib.suppress(OSError):
             print(f'Orbi update: Scheduling paused; {finishing} still finishing.', file=ctx.err, flush=True)
-        snapshot_indices = snapshot['inventory']['additional_instances']
-        time.sleep(min(60, remaining))
-        snapshot = paused_observation(ctx, target, known_indices=snapshot_indices)
+        next_poll = min(last_poll + 60, deadline)
+        time.sleep(max(0, next_poll - time.monotonic()))
+        last_poll = time.monotonic()
+        if last_poll >= deadline:
+            break
+        ctx.command_deadline = deadline
+        try:
+            observed = paused_observation(ctx, target,
+                                          known_indices=snapshot['inventory']['additional_instances'])
+        except ControlError:
+            if time.monotonic() < deadline:
+                raise
+            break
+        finally:
+            ctx.command_deadline = None
+        if time.monotonic() >= deadline:
+            break
+        snapshot = observed
+    else:
+        return
+    raise ControlError('update_busy',
+                       f'Update not applied: {finishing} still finishing at last verification. '
+                       f'Could not confirm inactivity within {UPDATE_WAIT_MINUTES} minutes; '
+                       'scheduling was last verified paused.',
+                       fix='wait for remaining work to finish before rerunning the update',
+                       evidence={'scheduler': {**snapshot, 'observation': 'last_verified_before_timeout'},
+                                 'pending_services': pending})
 
 
 def quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current, *, wait=False):
@@ -3111,25 +3139,24 @@ def quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current, *, 
         current.update(step='observe_workers', mutation='none')
         snapshot = paused_observation(ctx, target, known_indices=known_indices)
         known_indices = snapshot['inventory']['additional_instances']
-    if wait:
-        current.clear()
-        current.update(step='wait_for_workers', mutation='none')
-        wait_for_workers(ctx, target, snapshot)
-        steps.append({'step': 'wait_for_workers', 'status': 'ok'})
-        return
     for unit, item in snapshot['services'].items():
         if not item['installed']:
             continue
         current.clear()
         current.update(step='verify_service_ownership', unit=unit, mutation='none')
         require_quiesce_unit(ctx, target, unit)
-        if item['state'] not in DRAIN_STATES:
+        if wait or item['state'] not in DRAIN_STATES:
             continue
         current.update(step='stop_service', mutation='possible')
         ctx.run(['systemctl', '--user', 'stop', unit], timeout=MUTATION_TIMEOUT)
         stopped.append(unit)
         steps.append({'step': 'stop_service', 'unit': unit, 'status': 'stopped'})
     current.clear()
+    if wait:
+        current.update(step='wait_for_workers', mutation='none')
+        wait_for_workers(ctx, target, snapshot)
+        steps.append({'step': 'wait_for_workers', 'status': 'ok'})
+        return
     current.update(step='verify_quiescent', mutation='none')
     require_quiescent(ctx, target, known_indices=known_indices)
     steps.append({'step': 'verify_quiescent', 'status': 'ok'})
@@ -3219,7 +3246,8 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                                        fix='set repo_dir to the canonical checkout or pass --repo-dir', exit_code=2)
                 repo_dir = config.repo_dir
             repo = repo_identity(ctx, repo_dir or ctx.cwd)
-            target = select_target(ctx, repo, args.config, require=True)
+            target = select_target(ctx, repo, args.config, require=True,
+                                   explicit_repo=args.repo_dir is not None)
         validate_target(target, repo)
         require_unit_ownership(ctx, target, symlink_error=symlink_error)
         require_setup_transport(repo, target)
@@ -3402,6 +3430,9 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
             raise
         if activation == 'pending' or current['step'] == 'recheck_paths':
             activation = 'none'
+        # On drain expiry, report the last verified pause without another unbudgeted scan.
+        wait_expired = (current['step'] == 'wait_for_workers' and isinstance(error, ControlError)
+                        and error.code == 'update_busy')
         exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=steps,
                                 current=current, mutated=mutated,
                                 evidence={'previous': previous, 'disabled_timers': disabled,
@@ -3409,7 +3440,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False):
                                           'resume_command': resume, 'activation': activation,
                                           'activated_timers': activated, 'engine_update': engine_result,
                                           'activation_reason': activation_reason, **start_fields},
-                                snapshot_reader=update_observation)
+                                snapshot_reader=None if wait_expired else update_observation)
         if engine_result in {'updated', 'up_to_date'}:
             exc.evidence['engine_revision'] = head
         repair = (start_command if engine_result in {'updated', 'up_to_date'} and not args.stop

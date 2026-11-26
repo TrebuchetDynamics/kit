@@ -6097,14 +6097,14 @@ class SchedulingUpdateTests(unittest.TestCase):
     def test_wait_update_handles_natural_drain_deadline_and_preview(self):
         service = f'{self.prefix}@1.service'
         timer = f'{self.prefix}@1.timer'
-        for scenario in ('finished', 'timeout', 'preview'):
+        for scenario in ('finished', 'timeout', 'slow-probe', 'preview'):
             with self.subTest(scenario=scenario):
                 self.h = self.fresh('wait-' + scenario)
                 self.active_rules(services={1: 'active'})
                 config = self.h.deploy / 'orbi.toml'
                 before = snapshot(self.h.home)
                 out, err = io.StringIO(), io.StringIO()
-                elapsed, sleeps = 0, []
+                elapsed, sleeps, late_probes = 0, [], []
 
                 def sleep(seconds):
                     nonlocal elapsed
@@ -6117,9 +6117,22 @@ class SchedulingUpdateTests(unittest.TestCase):
                             helper.fcntl.flock(handle, helper.fcntl.LOCK_EX | helper.fcntl.LOCK_NB)
                     sleeps.append(seconds)
                     # Model a slow wakeup so the last sleep must fit the remaining bound.
-                    elapsed += 1790 if scenario == 'timeout' and len(sleeps) == 1 else seconds
+                    delay = {'timeout': 1790, 'slow-probe': 1795}.get(scenario, seconds)
+                    elapsed += delay if len(sleeps) == 1 else seconds
 
                 run = helper.Context.run
+                subprocess_run = subprocess.run
+
+                def run_with_slow_probe(argv, **kwargs):
+                    nonlocal elapsed
+                    if (scenario == 'slow-probe' and sleeps and argv[0] == 'systemctl'
+                            and 'list-units' in argv):
+                        late_probes.append(kwargs['timeout'])
+                        self.assertEqual(elapsed, 1795, 'no extra scheduler scan after the deadline')
+                        self.assertEqual(kwargs['timeout'], 5)
+                        elapsed += kwargs['timeout']
+                        raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+                    return subprocess_run(argv, **kwargs)
 
                 def run_with_worker(ctx, argv, **kwargs):
                     if (scenario == 'finished' and len(sleeps) == 2 and argv[0] == 'systemctl'
@@ -6129,7 +6142,8 @@ class SchedulingUpdateTests(unittest.TestCase):
 
                 clock = mock.Mock(monotonic=lambda: elapsed, sleep=sleep)
                 with mock.patch.object(helper, 'time', clock, create=True), \
-                        mock.patch.object(helper.Context, 'run', run_with_worker):
+                        mock.patch.object(helper.Context, 'run', run_with_worker), \
+                        mock.patch.object(helper.subprocess, 'run', run_with_slow_probe):
                     code = helper.main(['update', '--config', str(config), '--wait', '--json',
                                         *(['--dry-run'] if scenario == 'preview' else [])],
                                        cwd=self.h.root, env=self.h.env, platform='linux',
@@ -6146,15 +6160,19 @@ class SchedulingUpdateTests(unittest.TestCase):
                     self.assertEqual(sleeps, [])
                     self.assertEqual(snapshot(self.h.home), before)
                     continue
-                self.assertGreaterEqual(err.getvalue().count('still finishing'), 2)
+                self.assertGreaterEqual(err.getvalue().count('still finishing'),
+                                        1 if scenario == 'slow-probe' else 2)
                 self.assertIn(timer, doc['disabled_timers'])
                 self.assertEqual(doc['stopped_services'], [])
-                if scenario == 'timeout':
+                if scenario in ('timeout', 'slow-probe'):
                     self.assertNotEqual(code, 0, doc)
-                    self.assertEqual(sleeps, [60, 10])
+                    self.assertEqual(sleeps, [60, 10] if scenario == 'timeout' else [60])
+                    self.assertEqual(late_probes, [5] if scenario == 'slow-probe' else [])
                     self.assertEqual(doc['error']['code'], 'update_busy')
                     self.assertIn('Update not applied: 1 worker(s)', doc['error']['message'])
                     self.assertIn('still finishing', doc['error']['message'])
+                    self.assertIn('within 30 minutes', doc['error']['message'])
+                    self.assertEqual(doc['scheduler']['observation'], 'last_verified_before_timeout')
                     self.assertIn('--wait', shlex.split(doc['repair_command']))
                     self.assertEqual(doc['engine_update'], 'not_applied')
                     self.assertEqual(doc['scheduler']['services'][service]['state'], 'active')
@@ -6168,6 +6186,32 @@ class SchedulingUpdateTests(unittest.TestCase):
                     self.assertEqual(doc['engine_update'], 'updated')
                     self.assertEqual(doc['scheduler_confirmation'], 'enabled_active')
                     self.assertEqual(sum('sync-engine-source' in a for a in calls), 1)
+
+    def test_wait_rejects_foreign_loaded_service_binding_before_sync(self):
+        service = f'{self.prefix}@1.service'
+        self.active_rules(extra=[self.h.loaded_unit_rule(
+            service, Environment=f'ORBI_CONFIG={self.a["config"]}')])
+        code, doc, err = self.h.run('update', options=['--wait'])
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'unit_conflict')
+        self.assertEqual(doc['engine_update'], 'not_applied')
+        self.assertFalse(any({'stop', 'sync-engine-source', 'enable'} & set(c['argv'])
+                             for c in self.h.calls()))
+
+    def test_update_with_two_selectors_rejects_different_checkout_of_same_repo(self):
+        other = self.h.root / 'other-checkout'
+        other.mkdir()
+        self.active_rules(extra=[{'tool': 'git', 'argv_contains': [str(other), 'worktree', 'list'],
+                                  'stdout': f'worktree {other}\n'}])
+        config = self.h.deploy / 'orbi.toml'
+        before = snapshot(self.h.home)
+        code, doc, err = self.h.run('update', config=config, options=['--repo-dir', str(other)])
+        self.assertNotEqual(code, 0, (doc, err))
+        self.assertEqual(doc['error']['code'], 'config_mismatch')
+        self.assertIn(str(self.h.repo), doc['error']['message'])
+        self.assertIn(str(other), doc['error']['message'])
+        self.assertEqual(snapshot(self.h.home), before)
+        self.assertFalse(any('disable' in c['argv'] for c in self.h.calls()))
 
     def test_missing_duplicate_and_conflicting_config_never_guess_or_pause(self):
         for kind in ('missing', 'duplicate', 'conflicting'):
