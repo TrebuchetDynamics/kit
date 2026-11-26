@@ -791,9 +791,9 @@ from template availability. Absent timer fragments retain the existing omission
 from `timers`; service records cover every scanned index.
 
 `scheduler.inventory` exposes `scope: local-target-prefix`, `scan_first: 1`,
-`scan_last: 5` (the default `MAX_INSTANCES`) and `outside_scan: unobserved`.
-The setup idle check and stop failure observation use `scan_last: max(5, max_concurrency)`.
-`configured_slots_covered` is false when configured capacity exceeds the scan bound;
+`scan_last` and `outside_scan: unobserved`. Linux repository status and start scan
+through `max(5, max_concurrency)`, as do the setup idle check and stop failure
+observation. `configured_slots_covered` is false when configured capacity exceeds the scan bound;
 positive concurrency above five remains valid. Counts describe only owned
 observed units within that bound, including out-of-config ones, not exhaustive
 whole-deployment or remote activity:
@@ -878,7 +878,9 @@ Start/stop errors also retain `target`, deployment config/unit identity,
 `error.evidence`). A failed step names its `unit` when applicable and records
 `mutation: possible` for an attempted write, `none` for an observation failure.
 Lock acquisition/release failures count as possible writes even if no scheduler
-command ran. Preflight and dry-run failures remain mutation-free.
+command ran. For stop, a refusal after successful lock acquisition but before any
+scheduler write is attempted reports `error.mutated: false`. Preflight and dry-run
+failures remain mutation-free.
 
 Start reports `activation: possible` once upstream activation is attempted,
 including later timer-enable, first-tick or scheduler-read failures. Lock-only

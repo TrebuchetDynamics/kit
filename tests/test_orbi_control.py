@@ -3242,6 +3242,7 @@ class LifecycleSequenceTests(unittest.TestCase):
         code, doc, err = h.run('stop')
         self.assertNotEqual(code, 0, (doc, err))
         self.assertEqual(doc['error']['code'], 'unit_conflict')
+        self.assertFalse(doc['error']['mutated'], doc)
         self.assertFalse(any(set(c['argv']) & {'disable', 'stop', 'kill', 'restart', 'cancel'}
                              for c in h.calls() if c['tool'] == 'systemctl'))
 
@@ -3336,6 +3337,7 @@ class LifecycleSequenceTests(unittest.TestCase):
         code, doc, err = h.run('stop')
         self.assertNotEqual(code, 0, (doc, err))
         self.assertEqual(doc['error']['code'], 'command_failed')
+        self.assertTrue(doc['error']['mutated'], doc)
         self.assertEqual(doc['steps'][-1]['unit'], timer)
         self.assertNotIn(timer, doc['disabled_timers'])
         self.assertTrue(doc['scheduler']['timers'][timer]['enabled'])
@@ -3369,6 +3371,67 @@ class LifecycleSequenceTests(unittest.TestCase):
                     self.assertIn('preserve recovery inputs', doc['error']['fix'])
                     self.assertEqual(snapshot(h.home), before)
                     SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_stop_revalidates_republished_config(self):
+        for change, error in (('same_bytes', None), ('pin', None),
+                              ('repo', 'config_mismatch'), ('prefix', 'target_changed')):
+            with self.subTest(change=change):
+                h = self.fresh()
+                config = h.deploy / 'orbi.toml'
+                unit_name = helper.derive_unit_name(REPO)
+                timer = f'{helper.unit_prefix(unit_name)}@1.timer'
+                scheduler = h.scheduler_rules()
+                h.rules(*scheduler)
+                disabled = str(h.root / 'timer-disabled')
+                locked = helper.locked
+
+                @contextlib.contextmanager
+                def concurrent(ctx, key):
+                    # Model update's last writes under the same deployment lock.
+                    self.assertEqual(key, config)
+                    with locked(ctx, key):
+                        contents = config.read_bytes()
+                        inode = config.stat().st_ino
+                        if change == 'pin':
+                            _, updated = helper.engine_track_replacement(config, 'sha:' + NEW_PIN)
+                            contents = updated.encode()
+                        elif change == 'repo':
+                            contents = contents.replace(f'"{REPO}"'.encode(), b'"other/foreign"')
+                        elif change == 'prefix':
+                            contents = contents.replace(f'"{unit_name}"'.encode(), b'"new-prefix"')
+                        replacement = config.with_suffix('.tmp')
+                        replacement.write_bytes(contents)
+                        replacement.replace(config)
+                        self.assertNotEqual(config.stat().st_ino, inode)
+                        h.rules(
+                            {'tool': 'systemctl', 'argv_contains': ['disable', '--now', timer],
+                             'write': {disabled: '1'}},
+                            {'tool': 'systemctl', 'argv_contains': ['is-enabled', timer],
+                             'if_exists': disabled, 'stdout': 'disabled\n', 'exit': 1},
+                            {'tool': 'systemctl', 'argv_contains': ['show', 'ActiveState', timer],
+                             'if_exists': disabled, 'stdout': 'inactive\n'},
+                            *h.scheduler_rules(timers={1: 'active'}, enabled={1: True}))
+                    with locked(ctx, key):
+                        yield
+
+                with mock.patch.object(helper, 'locked', concurrent):
+                    code, doc, err = h.run('stop', config=config)
+                if error:
+                    self.assertEqual(code, 2, (doc, err))
+                    self.assertEqual(doc['error']['code'], error)
+                    self.assertFalse(doc['error']['mutated'], doc)
+                    self.assertEqual(doc['disabled_timers'], [])
+                    self.assertFalse([c for c in h.calls() if c['tool'] == 'systemctl'
+                                      and c['argv'][1] in {'disable', 'cancel', 'stop'}])
+                    if change == 'repo':
+                        self.assertIn('pass the config whose source_repos names this repository',
+                                      doc['error']['fix'])
+                else:
+                    self.assertEqual(code, 0, (doc, err))
+                    self.assertEqual(doc['status'], 'stopped')
+                    self.assertIn(timer, doc['disabled_timers'])
+                    self.assertTrue(Path(disabled).is_file(), doc)
+                    self.assertEqual(doc['deployment']['pin'], h.config()['engine_source_track'])
 
     def test_stop_rechecks_owned_timers_after_lock(self):
         for observation_fails in (False, True):
@@ -3406,7 +3469,8 @@ class LifecycleSequenceTests(unittest.TestCase):
                 if observation_fails:
                     self.assertNotEqual(code, 0, (doc, err))
                     self.assertEqual(doc['error']['code'], 'scheduler_unavailable')
-                    self.assertTrue(doc['error']['mutated'])
+                    # This read-only refusal made no change to the deployment.
+                    self.assertFalse(doc['error']['mutated'], doc)
                     self.assertEqual(doc['steps'][-1]['step'], 'observe_scheduler')
                     self.assertEqual(doc['disabled_timers'], [])
                 else:
@@ -3662,17 +3726,36 @@ class LifecycleSequenceTests(unittest.TestCase):
         config.write_text(config.read_text().replace('max_concurrency = 1',
                                                    'max_concurrency = 6'))
         prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
-        h.rules(*h.scheduler_rules(timers={1: 'active', 4: 'active'}))
+        rules = h.scheduler_rules(services={6: 'active'}, timers={6: 'active'})
+        h.rules(*rules)
         before = snapshot(h.home)
+        for action, flags in (('status', []), ('start', ['--dry-run'])):
+            with self.subTest(action=action):
+                result = subprocess.run(
+                    [sys.executable, '-B', str(HELPER), action, '--repo-dir', str(h.repo),
+                     '--json', *flags], env=h.env, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+                doc = json.loads(result.stdout)
+                if action == 'status':
+                    self.assertEqual(doc['deployment']['state'], 'running')
+                else:
+                    self.assertEqual(doc['first_tick'], 'already-active')
+                    self.assertEqual(doc['steps'][2]['timers'],
+                                     [f'{prefix}@{i}.timer' for i in range(1, 6)])
+                inventory = doc['scheduler']['inventory']
+                self.assertEqual(inventory['configured_slots'], 6)
+                self.assertTrue(inventory['configured_slots_covered'])
+                self.assertEqual(inventory['outside_scan'], 'unobserved')
+                self.assertEqual(doc['scheduler']['services'][f'{prefix}@6.service']['state'],
+                                 'active')
+        h.rules({'tool': 'systemctl', 'argv_contains': ['show', f'{prefix}@6.timer', 'FragmentPath'],
+                 'exit': 1}, *rules)
         code, doc, err = h.run('start', dry_run=True)
-        self.assertEqual(code, 0, err)
-        self.assertEqual(doc['steps'][2]['timers'],
-                         [f'{prefix}@{i}.timer' for i in (2, 3, 5, 6)])
-        inventory = doc['scheduler']['inventory']
-        self.assertEqual(inventory['configured_slots'], 6)
-        self.assertFalse(inventory['configured_slots_covered'])
-        self.assertEqual(inventory['outside_scan'], 'unobserved')
-        self.assertEqual(len(doc['scheduler']['services']), 5)
+        self.assertEqual(code, 1, (doc, err))
+        self.assertEqual(doc['error']['code'], 'scheduler_unavailable')
+        self.assertEqual(doc['error']['message'],
+                         'cannot read the target scheduler: the systemd user session is not readable')
+        self.assertIn('verify the systemd user session, then rerun', doc['error']['fix'])
         for error in (helper.ControlError('scheduler_unavailable', 'read failed'),
                       PermissionError('private details'), UnicodeError('private details'),
                       subprocess.SubprocessError('private details')):
@@ -3680,10 +3763,11 @@ class LifecycleSequenceTests(unittest.TestCase):
                 with mock.patch.object(helper, 'scheduler_snapshot', side_effect=error):
                     code, doc, err = h.run('status')
                 self.assertEqual(code, 0, err)
+                self.assertEqual(doc['deployment']['state'], 'unavailable')
                 inventory = doc['scheduler']['inventory']
                 self.assertEqual(inventory['configured_slots'], 6)
-                self.assertEqual(inventory['scan_last'], 5)
-                self.assertFalse(inventory['configured_slots_covered'])
+                self.assertEqual(inventory['scan_last'], 6)
+                self.assertTrue(inventory['configured_slots_covered'])
                 for count in inventory['counts'].values():
                     self.assertEqual(count, {'state': 'unavailable', 'value': None})
                 self.assertNotIn('private details', json.dumps(doc))
@@ -6494,20 +6578,28 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assert_a_unchanged()
 
     def test_start_reports_started_when_refreshed_timer_ticks_before_readback(self):
+        config = self.h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace('max_concurrency = 1', 'max_concurrency = 6'))
         installed = str(self.h.root / 'installed')
-        service = f'{self.prefix}@1.service'
-        self.active_rules(initially_active=False, extra=[self.latest_release,
+        service = f'{self.prefix}@6.service'
+        timers = [f'{self.prefix}@{i}.timer' for i in range(1, 7)]
+        self.pause_rules(timers={6: 'inactive'}, extra=[self.latest_release,
+            *self.h.enable_timer_rules(*timers),
             {'tool': 'orbi', 'argv_contains': ['install-units'], 'write': {installed: '1'}},
             {'tool': 'systemctl', 'argv_contains': ['show', 'ActiveState', service],
              'if_exists': installed, 'stdout': 'active\n'},
         ])
-        code, doc, err = self.h.run('start')
-        self.assertEqual(code, 0, (doc, err))
+        result = subprocess.run([sys.executable, '-B', str(HELPER), 'start', '--json'],
+                                cwd=self.h.repo, env=self.h.env,
+                                capture_output=True, text=True, timeout=45)
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        doc = json.loads(result.stdout)
         self.assertEqual(doc['status'], 'started')
         self.assertTrue(doc['activated'])
+        self.assertEqual(doc['scheduler']['services'][service]['state'], 'active')
         self.assertEqual(doc['first_tick'], 'already-active')
         self.assertFalse([c for c in self.h.calls() if c['tool'] == 'systemctl'
-                          and c['argv'] == ['--user', 'start', service]])
+                          and c['argv'][:2] == ['--user', 'start']])
 
     def test_start_refuses_sync_from_a_parent_checkout_before_stopping_work(self):
         self.active_rules(services={1: 'active'}, extra=[self.latest_release,
