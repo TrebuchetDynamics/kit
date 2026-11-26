@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the full Kit suite with live output and exact commands by default.
+"""Install the full Kit suite with live progress and exact commands.
 
     install.sh                every available component, live output and exact commands
     install.sh --menu         a checkbox menu on a terminal (arrows, Space, Enter)
@@ -102,13 +102,14 @@ class Output:
         print(message, end='', flush=True)
 
 
-def run_command(argv, output, extra_env=None, timeout=None, receipt=None):
+def run_command(argv, output, extra_env=None, timeout=None, receipt=None, *, receipt_via_fd=False):
     """Stream both child channels, including prompts without a trailing newline.
 
     Keep a bounded diagnostic tail for quiet failures; stdin remains inherited.
     Quiet mode still shows native prompts/output when input is a terminal.
     """
     env = dict(os.environ, PYTHONUNBUFFERED='1', **(extra_env or {}))
+    env.pop('KIT_INSTALL_HERMES_RECEIPT_FD', None)
     if not extra_env or 'KIT_INSTALL_LOCK_FD' not in extra_env:
         env.pop('KIT_INSTALL_LOCK_FD', None)
     if not output.color:
@@ -117,8 +118,11 @@ def run_command(argv, output, extra_env=None, timeout=None, receipt=None):
     decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
     tail = ''
     # Native receipts can exceed the diagnostic tail (many profiles/commands).
-    # Spool only when requested; ordinary commands retain bounded diagnostics.
+    # Native commands can write full receipts to the spool without publishing them to the terminal.
     captured = tempfile.TemporaryFile(mode='w+', encoding='utf-8') if receipt is not None else None
+    receipt_fd = captured.fileno() if receipt_via_fd and captured is not None else None
+    if receipt_fd is not None:
+        env['KIT_INSTALL_HERMES_RECEIPT_FD'] = str(receipt_fd)
     terminal = None
     previous_ttou = None
     if timeout is not None:
@@ -145,7 +149,7 @@ def run_command(argv, output, extra_env=None, timeout=None, receipt=None):
         # A process group bounds descendants too, without detaching /dev/tty prompts.
         with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
                               preexec_fn=prepare_child if timeout is not None else None,
-                              pass_fds=tuple(fd for fd in (terminal,
+                              pass_fds=tuple(fd for fd in (terminal, receipt_fd,
                                   int(env['KIT_INSTALL_LOCK_FD']) if env.get('KIT_INSTALL_LOCK_FD') else None)
                                   if fd is not None)) as child:
             try:
@@ -159,13 +163,13 @@ def run_command(argv, output, extra_env=None, timeout=None, receipt=None):
                         if not chunk:
                             break
                         text = decoder.decode(chunk)
-                        if captured is not None:
+                        if captured is not None and receipt_fd is None:
                             captured.write(text)
                         tail = (tail + text)[-16384:]
                         if stream:
                             output.raw(text)
                 text = decoder.decode(b'', final=True)
-                if captured is not None:
+                if captured is not None and receipt_fd is None:
                     captured.write(text)
                 tail = (tail + text)[-16384:]
                 if stream:
@@ -229,9 +233,9 @@ def terminal_receipt(text):
     return receipt
 
 
-def failure_summary(text):
-    """Extract a final structured receipt, not its closing brace, from native logs."""
-    receipt = terminal_receipt(text)
+def failure_summary(text, receipt=None):
+    """Prefer a native receipt over the bounded log tail."""
+    receipt = receipt or terminal_receipt(text)
     if receipt is not None:
         parts = [receipt.get(key) for key in ('status', 'error')]
         # Scoped/recovery receipts keep per-profile diagnostics.
@@ -2061,9 +2065,9 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
             if item.key == 'orbi' and delegated_orbi:
                 fleet = delegated_orbi['orbi_fleet']
                 # The quiet delegate prints terminal failures unless we suppress the
-                # stream. An older delegate signals interruption only in the message.
+                # stream. An interrupted delegate leaves only an intermediate receipt.
                 error = fleet.get('error')
-                if error and (fleet.get('progress_only') or fleet['status'] == 'unverified'
+                if error and (fleet['status'] == 'unverified'
                               or error['message'] == 'fleet refresh did not return a terminal receipt'
                               or not (output.verbosity or sys.stdin.isatty())):
                     output.line('  FAILED: ' + orbi_fleet_details(fleet, verbose=output.verbose), 'failed')
@@ -2136,14 +2140,20 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                             output.line('  ' + message)
                         break
                     if item.key == 'hermes':
-                        env = {'KIT_INSTALL_DEFER_SERVICES': '1'}
+                        env = {'KIT_INSTALL_DEFER_SERVICES': '1',
+                               'KIT_INSTALL_HERMES_SUMMARY': '0' if output.verbose else '1'}
                         if skip_orbi or 'orbi' in chosen:
                             # Explicit opt-out or let the outer Orbi item own the one fleet refresh.
                             env['KIT_INSTALL_SKIP_ORBI'] = '1'
                         if lock_fd is not None:
                             env['KIT_INSTALL_LOCK_FD'] = str(lock_fd)
                         native = {}
-                        code, text = run_command(step.argv, output, extra_env=env, receipt=native, timeout=1800)
+                        script = Path(step.argv[1]).name if len(step.argv) > 1 else ''
+                        private_receipt = not output.verbose and (
+                            script == 'setup_bundle.py'
+                            or (script == 'update_bundle.py' and 'KIT_INSTALL_SKIP_ORBI' not in env))
+                        code, text = run_command(step.argv, output, extra_env=env, receipt=native, timeout=1800,
+                                                 receipt_via_fd=private_receipt)
                         native = native or terminal_receipt(text)
                     else:
                         code, text = run_command(step.argv, output)
@@ -2158,7 +2168,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                             output.line('  ' + message)
                             break
                         outcome, exit_code = 'failed', code
-                        cause = failure_summary(text)
+                        cause = failure_summary(text, native)
                         detail.append(f'{cause} (exit {code})')
                         output.line(f'  FAILED: {step.describe} (exit {code})', 'failed')
                         break
@@ -2428,7 +2438,7 @@ def main(argv=None):
     parser.add_argument('--menu', action='store_true', help='choose components using the checkbox menu')
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument('-v', '--verbose', action='store_true',
-                           help='show Orbi deployment steps in addition to the default live output and exact commands')
+                           help='include Hermes skill skips, native profile receipts and completed Orbi deployment steps')
     verbosity.add_argument('-q', '--quiet', action='store_true', help='show summary and failures only (native terminal prompts remain visible)')
     parser.add_argument('--color', choices=('auto', 'always', 'never'), default='auto',
                         help='color output (default: auto; respects NO_COLOR)')

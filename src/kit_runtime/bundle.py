@@ -4,6 +4,7 @@ from functools import partial
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -257,7 +258,18 @@ def handle_cli(args):
         finalize = _KIT_COMPAT.peer(globals(), 'setup_runtime').finalize
         report = inventory()
         result, code = finalize(ROOT, report, args)
-        print(json.dumps(result, indent=2))
+        if os.environ.get('KIT_INSTALL_HERMES_SUMMARY') == '1':
+            home = Path(result['home']) if 'home' in result else None
+            profile = ('verification' if home is None else
+                       'default' if home == Path(args.hermes_home) else home.name)
+            print(f"Profile {profile}: {result['status']}; settings {result.get('settings', 'not checked')}; "
+                  f"gateway {result.get('gateway', 'not checked')}", flush=True)
+            for error in result.get('errors', []):
+                print(f'Failed: {profile}: {error}', flush=True)
+            if note := result.get('note'):
+                print(f'Note: {profile}: {note}', flush=True)
+        else:
+            print(json.dumps(result, indent=2))
         return code
     argv = ['python3', str(ROOT / 'scripts/setup_bundle.py')]
     for flag in ('dry_run', 'yes_deps', 'bundle_only', 'no_reload'):

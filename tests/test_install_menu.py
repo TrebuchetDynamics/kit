@@ -1260,7 +1260,7 @@ if [[ "$*" == *list-units* ]]; then echo 'kit-unknown.service loaded active runn
         self.fake('hermes', LOGGING)
         (source / 'scripts/update_bundle.py').write_text(f'''
 from pathlib import Path
-import importlib.util, json, os
+import importlib.util, os
 
 def plugin_dir(home): return home / 'plugins/kit'
 if __name__ == '__main__':
@@ -1269,11 +1269,12 @@ if __name__ == '__main__':
     spec.loader.exec_module(updater)
     if os.environ.get('NATIVE_HOST_FAIL'): os.environ['PI_BOLT_FIXTURE_STAGE'] = 'install'
     if os.environ.get('NATIVE_PAYLOAD'): Path(os.environ['NATIVE_PAYLOAD']).write_text('native-current')
+    receipt_fd = os.environ.pop('KIT_INSTALL_HERMES_RECEIPT_FD', None)
     if os.environ.get('NATIVE_UP_TO_DATE'):
-        print(json.dumps({{'status': 'up_to_date', 'gateway_restart': 'not_needed'}}))
+        updater.print_update_receipt({{'status': 'up_to_date', 'gateway_restart': 'not_needed'}}, receipt_fd)
     else:
-        print(json.dumps({{'status': 'updated', 'gateway_restart': os.environ['NATIVE_DISPOSITION'],
-                           'hosts': updater.refresh_hosts(Path(__file__).resolve().parents[1])}}))
+        updater.print_update_receipt({{'status': 'updated', 'gateway_restart': os.environ['NATIVE_DISPOSITION'],
+                                      'hosts': updater.refresh_hosts(Path(__file__).resolve().parents[1])}}, receipt_fd)
 ''')
         return source / 'install.sh'
 
@@ -1885,11 +1886,12 @@ Path.iterdir = iterdir
         installer = self.nested_installer_fixture()
         for flags in ((), ('--verbose',)):
             with self.subTest(flags=flags):
-                self.orbi_fleet_fixture()
+                receipt, _, _ = self.orbi_fleet_fixture()
                 config = self.home / 'paused/orbi.toml'
                 config.write_text(config.read_text().replace('example/paused', 'fork/working'))
                 result = subprocess.run(['bash', str(installer), '--only', 'hermes', *flags],
-                                        env={**self.env, 'NATIVE_DISPOSITION': 'not_needed'},
+                                        env={**self.env, 'NATIVE_DISPOSITION': 'not_needed',
+                                             'KIT_INSTALL_REPORT': str(receipt)},
                                         capture_output=True, text=True, timeout=120, cwd=self.project)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 progress, summary = result.stdout.rsplit('\nSummary:', 1)
@@ -1900,8 +1902,14 @@ Path.iterdir = iterdir
                     self.assertIn('completed: set_release_track, sync_engine_source', row)
                 else:
                     self.assertEqual(row, '  fork/working  started (updated), 1 slot')
+                    self.assertNotIn('verify_scheduling', progress)
+                    self.assertNotIn('"steps"', progress)
                 self.assertRegex(summary, r'orbi\s+installed\s+Hermes delegated: Orbi fleet completed: 2 started')
                 self.assertNotIn('started (', summary)
+                recorded = next(row for row in map(json.loads, receipt.read_text().splitlines())
+                                if row['item'] == 'orbi')
+                self.assertIn('verify_scheduling', [step['step'] for deployment in recorded['orbi_fleet']['deployments']
+                                                    for step in deployment['steps']])
 
     def test_delegated_orbi_replays_diagnostics_when_quiet_or_interrupted(self):
         installer = self.nested_installer_fixture()
@@ -1913,10 +1921,6 @@ Path.iterdir = iterdir
         ):
             with self.subTest(flags=flags, fault=fault):
                 self.orbi_fleet_fixture()
-                if 'INTERRUPT_INSTALLER' in fault:
-                    # The updater runs the installed clone, which may predate progress_only.
-                    helper = installer.parent / 'skills/orbi/scripts/orbi_control.py'
-                    helper.write_text(helper.read_text().replace(", 'progress_only': True", ''))
                 result = subprocess.run(['bash', str(installer), '--only', 'hermes', *flags],
                                         env={**self.env, 'NATIVE_DISPOSITION': 'not_needed', **fault},
                                         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120,
@@ -2169,7 +2173,6 @@ Path.iterdir = iterdir
         self.assertEqual((row['item'], row['status']), ('orbi', 'failed'))
         fleet = row['orbi_fleet']
         self.assertEqual(fleet['status'], 'incomplete')
-        self.assertTrue(fleet['progress_only'])
         self.assertEqual(fleet['error']['config'], config)
         self.assertEqual(fleet['error']['step'], 'apply_release')
         paused, working = fleet['deployments']
@@ -2825,7 +2828,7 @@ exit 0
                 self.assertLess(len(summary), 2000)
                 if cause == 'Unproven checkout': self.assertIn('--only hermes', summary)
 
-    def test_no_arguments_installs_full_suite_with_verbose_output(self):
+    def test_no_arguments_installs_full_suite_with_live_output_and_commands(self):
         result = self.install()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.calls('pi-bolt install'), [f'pi-bolt install {NEW}'])

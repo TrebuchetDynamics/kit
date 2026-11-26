@@ -66,7 +66,7 @@ def supplement_shared(source, target, *, dry_run=False):
     return added
 
 
-def install(source, profiles, *, dry_run=False, report=print, skills=None):
+def install(source, profiles, *, dry_run=False, report=print, skills=None, verbose=True):
     if not source.is_dir() or source.is_symlink():
         raise ValueError(f'Missing or symlinked skills folder: {source}')
     if skills is None:
@@ -95,13 +95,12 @@ def install(source, profiles, *, dry_run=False, report=print, skills=None):
             raise ValueError(f'Invalid skill folder or missing SKILL.md: {skill}')
         installable.append(skill)
 
-    installed = skipped = planned = failed = 0
-    for name, home in profiles:
+    def install_profile(name, home):
+        installed = skipped = planned = failed = 0
         destination = home / 'skills'
         if home.is_symlink() or destination.is_symlink() or (destination.exists() and not destination.is_dir()):
             report(f'Failed: {name}: unsafe or non-directory destination {destination}')
-            failed += 1
-            continue
+            return 0, 0, 0, 1
         for skill in installable:
             target = destination / skill.name
             reference = (skill / 'REFERENCE.md').is_file() and not (skill / 'SKILL.md').is_file()
@@ -152,14 +151,16 @@ def install(source, profiles, *, dry_run=False, report=print, skills=None):
                         else:
                             installed += 1
                         continue
-                report(f'Skip: {skill.name} ({name}) already exists: {target}')
+                if verbose:
+                    report(f'Skip: {skill.name} ({name}) already exists: {target}')
                 skipped += 1
                 continue
             # shortcut: native one-level categories; extend if deeper categories are supported.
             categorized = next((p.parent for p in destination.glob(f'*/{skill.name}/SKILL.md')
                                 if p.is_file() and not p.relative_to(destination).parts[0].startswith('.')), None)
             if categorized is not None:
-                report(f'Skip: {skill.name} ({name}) already exists: {categorized}')
+                if verbose:
+                    report(f'Skip: {skill.name} ({name}) already exists: {categorized}')
                 skipped += 1
                 continue
             if dry_run:
@@ -182,7 +183,8 @@ def install(source, profiles, *, dry_run=False, report=print, skills=None):
                     except OSError:
                         if not all((target / filename).is_file() for filename in required):
                             raise
-                        report(f'Skip: {skill.name} ({name}) installed concurrently: {target}')
+                        if verbose:
+                            report(f'Skip: {skill.name} ({name}) installed concurrently: {target}')
                         skipped += 1
                         continue
                 report(f'Installed: {skill.name} ({name})')
@@ -190,8 +192,18 @@ def install(source, profiles, *, dry_run=False, report=print, skills=None):
             except OSError as error:
                 report(f'Failed: {skill.name} ({name}): {error}')
                 failed += 1
-    report(f'Skills: {installed} installed, {planned} planned, {skipped} skipped, {failed} failed')
-    return 1 if failed else 0
+        return installed, planned, skipped, failed
+
+    counts_format = '{} installed, {} planned, {} skipped, {} failed'
+    totals = [0, 0, 0, 0]
+    for name, home in profiles:
+        counts = install_profile(name, home)
+        totals = [total + count for total, count in zip(totals, counts)]
+        if not verbose:
+            report(f'Skills ({name}): ' + counts_format.format(*counts))
+    if verbose:
+        report('Skills: ' + counts_format.format(*totals))
+    return int(bool(totals[-1]))
 
 
 def main(argv=None):
@@ -206,13 +218,14 @@ def main(argv=None):
     parser.add_argument('--profile-home', type=Path, metavar='HOME',
                         help='install only into this profile (no fleet discovery)')
     args = parser.parse_args(argv)
+    verbose = os.environ.get('KIT_INSTALL_HERMES_SUMMARY') != '1'
     if args.hermes_home and args.profile_home:
         parser.error('--hermes-home and --profile-home are mutually exclusive')
     if args.profile_home:
         root = args.profile_home.expanduser()
         if not root.is_dir():
             parser.error(f'Hermes home does not exist: {root}')
-        return install(_KIT_LAYOUT.root / 'skills', [('current', root)], dry_run=args.dry_run)
+        return install(_KIT_LAYOUT.root / 'skills', [('current', root)], dry_run=args.dry_run, verbose=verbose)
     root = args.hermes_home
     if root is None:
         root = Path(os.environ.get('HERMES_HOME') or Path.home() / '.hermes').expanduser()
@@ -233,7 +246,7 @@ def main(argv=None):
                     and any((home / marker).is_file() or (home / marker).is_symlink() for marker in markers)):
                 profiles.append((home.name, home))
 
-    return install(_KIT_LAYOUT.root / 'skills', profiles, dry_run=args.dry_run)
+    return install(_KIT_LAYOUT.root / 'skills', profiles, dry_run=args.dry_run, verbose=verbose)
 
 
 if __name__ == '__main__':

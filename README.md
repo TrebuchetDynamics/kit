@@ -290,7 +290,7 @@ action, never a silent preparation-only success. Keep credentials out of Git and
 <details>
 <summary><strong>Install every available host and CLI component at once</strong></summary>
 
-From a checkout, `install.sh` installs every available component with verbose output:
+From a checkout, `install.sh` installs every available component with live progress:
 the Pi package, the Pi-Bolt native Pi executable, the Orbi CLI, the `tx` tmux
 launcher, and the Hermes, Claude Code and Codex plugins with their complete skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
 item runs that host's own install command. Pi-Bolt is installed first and its
@@ -326,10 +326,12 @@ stash remains available for manual recovery. Unpacked non-Git releases still wor
 `--no-pull` or `KIT_INSTALL_NO_PULL=1` explicitly installs the checkout as-is without
 stashing or pulling. `--help`, `--list` and `--dry-run` never stash or pull.
 
-`--full` (`--all`) is the default, with live output and exact commands. Use
-`--verbose` (`-v`) to see completed Orbi deployment steps. Missing hosts other than
-Pi are skipped, while an explicitly requested missing host, such as `--only codex`, fails. Preview mode
-installs nothing. Both entrypoints check for updates on every run under existing source/pin policies.
+`--full` (`--all`) is the default. Hermes fleet setup shows skill counts, changes,
+profile status and timings; add `--verbose` (`-v`) for individual skips, full
+setup receipts and completed Orbi deployment steps. Missing hosts other than Pi
+are skipped, while an explicitly requested missing host, such as `--only codex`,
+fails. Preview mode installs nothing. Both entrypoints check for updates on every
+run under existing source/pin policies.
 Only complete changes to installed payloads or effective settings can restart a proven active consumer, once.
 Outside the explicit Orbi fleet refresh below, unchanged payloads request no service restarts and paused or stopped services stay untouched. Unrelated services are not restarted.
 Hermes owns its native gateway restart or deferral decision. Unknown input or ownership evidence holds with a manual next action.

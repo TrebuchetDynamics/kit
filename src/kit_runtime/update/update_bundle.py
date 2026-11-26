@@ -2119,6 +2119,21 @@ def scoped_resume_action(root, receipt):
             f'{shlex.join(command)}\nThen retry hermes kit update.')
 
 
+def print_update_receipt(result, receipt_fd):
+    """Let the suite render Orbi rows while retaining the full machine receipt."""
+    if receipt_fd is not None:
+        try:
+            with os.fdopen(int(receipt_fd), 'w', encoding='utf-8') as stream:
+                json.dump(result, stream)
+        except (OSError, ValueError):
+            print('Warning: could not send the update receipt privately; showing it below.')
+        else:
+            if 'hosts' in result:
+                result = {**result, 'hosts': [{key: value for key, value in row.items() if key != 'orbi_fleet'}
+                                              for row in result['hosts']]}
+    print(json.dumps(result, indent=2))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--hermes-home', required=True, type=Path)
@@ -2135,6 +2150,7 @@ def main(argv=None):
     parser.add_argument('--restart-when-quiet', type=int, metavar='UPDATE_ID', help=argparse.SUPPRESS)
     parser.add_argument('--gateway-pid', type=int, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    receipt_fd = os.environ.pop('KIT_INSTALL_HERMES_RECEIPT_FD', None)
     if args.cancel_scoped is not None:
         if any((args.profile, args.source, args.revision, args.native_python,
                 args.pin_profile, args.unpin_profile, args.restart_when_quiet is not None, args.gateway_pid)):
@@ -2273,7 +2289,7 @@ def main(argv=None):
                 result.update(status=recovery['status'], recovery=recovery, gateway_restart='not_requested',
                               action='Preserve the recovery backup; resolve per-profile errors and rerun ./install.sh --only hermes')
                 save()
-                print(json.dumps(result, indent=2))
+                print_update_receipt(result, receipt_fd)
                 return int(result['status'] == 'incomplete')
             plan = prepare(source, profiles)
             recover = any(row.get('recovery') for row in plan['sources'].values())
@@ -2312,7 +2328,7 @@ def main(argv=None):
                                   action='Preserve the recovery backup; resolve per-profile errors and rerun ./install.sh --only hermes'
                                          if recovery['status'] == 'incomplete' else 'Recovery verified offline; no runtime activation or restart requested')
                     save()
-                    print(json.dumps(result, indent=2))
+                    print_update_receipt(result, receipt_fd)
                     return int(result['status'] == 'incomplete')
             result['profiles'] = plan['profiles']
             result['sources'] = {str(p): {k: s[k] for k in ('before', 'after')} for p, s in plan['sources'].items()}
@@ -2405,7 +2421,7 @@ def main(argv=None):
             result.update(status='incomplete', error=str(error),
                           action='Resolve the named checkout/file error and rerun hermes kit update. Partial changes, if any, are retained with backups.')
         save()
-        print(json.dumps(result, indent=2))
+        print_update_receipt(result, receipt_fd)
         return int(result['status'] == 'incomplete')
 
 

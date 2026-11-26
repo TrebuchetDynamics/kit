@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 _preflight = _KIT_COMPAT.peer(globals(), 'setup_preflight')
 preflight, print_plan = _preflight.preflight, _preflight.print_plan
 
@@ -32,6 +33,28 @@ def live_profiles(root):
     return result
 
 
+def report_elapsed(label, started):
+    print(f'{label}: done in {time.monotonic() - started:.1f}s', flush=True)
+
+
+def read_config(profile, home):
+    # For reporting only; never expose arbitrary profile values or fail setup
+    # because the optional comparison could not read them.
+    config = home / 'config.yaml'
+    try:
+        if not config.is_symlink():
+            if config.is_file():
+                return config.read_bytes()
+            if not config.exists():
+                return b''
+    except FileNotFoundError:
+        return b''
+    except OSError:
+        pass
+    print(f'Warning: cannot compare config.yaml for {profile}', flush=True)
+    return None
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--hermes-home', type=Path)
@@ -53,12 +76,15 @@ def main(argv=None):
         parser.error(str(exc))
     for name in ('install-skills.sh', 'install-plugins.sh'):
         if not (ROOT / name).is_file(): parser.error(f'Missing installer: {name}')
+    started = time.monotonic()
     try:
         report = preflight(ROOT, root, profiles, bundle_only=args.bundle_only)
+        print_plan(report)
     except (ValueError, OSError, KeyError) as exc:
         print(f'Preflight failed ({type(exc).__name__}); no installation stages started.')
         return 1
-    print_plan(report)
+    finally:
+        report_elapsed('preflight', started)
     if report['errors']:
         return 1
     if args.dry_run:
@@ -70,17 +96,28 @@ def main(argv=None):
     if args.bundle_only: plugins.append('--bundle-only')
     if args.yes_deps: plugins.append('--yes-deps')
     env = dict(os.environ, HERMES_HOME=str(root))
+    receipt_fd = env.pop('KIT_INSTALL_HERMES_RECEIPT_FD', None)
+    summary = env.get('KIT_INSTALL_HERMES_SUMMARY') == '1'
     failures = []
-    def run(label, command):
+
+    def run(label, command, *, child_env=env):
         print(f'Setup: {label}', flush=True)
+        started = time.monotonic()
         try:
-            result = subprocess.run(command, cwd=ROOT, env=env, check=False)
-            if result.returncode: failures.append(label)
+            result = subprocess.run(command, cwd=ROOT, env=child_env, check=False)
+            if result.returncode:
+                print(f'Failed: {label} (exit {result.returncode})', flush=True)
+                failures.append(label)
         except OSError as exc:
             print(f'Failed: {label}: {exc}', flush=True)
             failures.append(label)
+        finally:
+            report_elapsed(label, started)
+
     run('bundled skills', ['bash', str(ROOT / 'install-skills.sh'), *common])
+    before = {profile: read_config(profile, home) for profile, home in profiles} if summary else {}
     run('plugins and configuration', plugins)
+    finalize_env = dict(env, KIT_VERIFY_SETUP_POLICY='1')
     for profile, home in profiles:
         if args.dry_run:
             print(f'Plan: verify bundled skills/plugins and refresh gateway ({profile})')
@@ -90,16 +127,30 @@ def main(argv=None):
         if args.no_reload: command.append('--no-reload')
         # Even partially failed installs must refresh successful registrations and
         # expose missing capabilities. A later pass never masks an earlier failure.
-        run(f'verify/wire {profile}', command)
-    state = 'incomplete' if failures else ('preview' if args.dry_run else 'complete')
+        run(f'verify/wire {profile}', command, child_env=finalize_env)
+        if summary:
+            after = read_config(profile, home)
+            change = ('unverified' if before[profile] is None or after is None else
+                      'changed' if before[profile] != after else 'unchanged')
+            print(f'Profile {profile} config.yaml: {change}', flush=True)
+    state = 'incomplete' if failures else 'complete'
     print(f'Bundle setup {state}: {len(profiles)} profiles; {len(failures)} failed stages.')
-    print(json.dumps({'status': state, 'gateway_restart': 'not_requested',
-                      'gateway_restart_action': ('Native setup owns profile wiring; deferred by --no-reload'
-                                                 if args.no_reload else 'Native setup owns profile wiring; no process restart requested'),
-                      'failed_stages': failures,
-                      **({'error': 'Failed stages: ' + ', '.join(failures),
-                          'action': 'Repair the failed stages and rerun ./install.sh --only hermes with the same setup options'}
-                         if failures else {})}))
+    receipt = {'status': state, 'gateway_restart': 'not_requested',
+               'gateway_restart_action': ('Native setup owns profile wiring; deferred by --no-reload'
+                                          if args.no_reload else 'Native setup owns profile wiring; no process restart requested'),
+               'failed_stages': failures}
+    if failures:
+        receipt.update(error='Failed stages: ' + ', '.join(failures),
+                       action='Repair the failed stages and rerun ./install.sh --only hermes with the same setup options')
+    if receipt_fd is not None:
+        try:
+            with os.fdopen(int(receipt_fd), 'w', encoding='utf-8') as stream:
+                json.dump(receipt, stream)
+        except (OSError, ValueError):
+            print('Warning: could not send the setup receipt privately; showing it below.')
+        else:
+            return int(bool(failures))
+    print(json.dumps(receipt))
     return int(bool(failures))
 
 

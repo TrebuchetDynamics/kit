@@ -71,7 +71,7 @@ when that component is selected; it does not qualify live delivery.
 
 ## Full suite from a checkout
 
-`./install.sh` installs the full suite for every available host with live output and exact commands.
+`./install.sh` installs the full suite for every available host with live progress.
 Use `--menu` when you want to select components interactively:
 
 ```sh
@@ -158,9 +158,13 @@ installers for the same binary directory, not unrelated manual host commands or
 native updater ownership.
 
 Output streams during each install step, including native prompts, and shows
-shell-quoted commands by default. `--verbose` adds Orbi deployment steps;
-`--quiet` shows summaries and failure diagnostics,
-while leaving native output visible when input is a terminal. The failure
+shell-quoted commands by default. Hermes fleet setup summarizes skills per profile
+in both preflight and installation, reports profile status and whether `config.yaml`
+changed, and times preflight, skill installation, configuration and each gateway
+check. Use `--verbose` to see individual Hermes skill skips, full setup receipts
+and completed Orbi deployment steps.
+`--quiet` shows summaries and failure diagnostics, while leaving native output
+visible when input is a terminal. The failure
 transcript in quiet mode is limited to its last 16,384 characters. Colors are
 automatic on terminals (`NO_COLOR=1` or `TERM=dumb` disables them); use
 `--color always`, `--color never`, or `--color auto` to override. Each summary

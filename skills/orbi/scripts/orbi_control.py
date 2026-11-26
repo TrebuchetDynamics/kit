@@ -5325,8 +5325,7 @@ def installer_fleet(ctx, *, report_progress=None):
 
     def report_stage():
         if report_progress is not None:
-            report_progress({**receipt, 'progress_only': True,
-                             'error': {**current, 'message': 'fleet refresh did not return a terminal receipt'},
+            report_progress({**receipt, 'error': {**current, 'message': 'fleet refresh did not return a terminal receipt'},
                              'recovery': 'The last request may have taken effect. Inspect the named units and configs; no rollback was attempted.'})
 
     try:
