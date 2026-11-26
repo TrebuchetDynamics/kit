@@ -46,6 +46,18 @@ class UnblockSkillTests(unittest.TestCase):
                          'Confirm readiness before\n  removing resolved state labels'):
             self.assertIn(contract, text)
 
+    def test_owner_tasks_are_inventory_only_including_during_followups(self):
+        text = (ROOT / 'skills/unblock/SKILL.md').read_text()
+        inventory = ' '.join(text.split('**Bind and inventory.**', 1)[1].split('**Diagnose.**', 1)[0].split())
+        self.assertRegex(inventory, r'timeout [1-9]\d* gh api --paginate')
+        self.assertIn("repository's `owner_tasks` for the receipt", inventory)
+        self.assertIn('Set aside `owner-task` issues before reading bodies', inventory)
+        self.assertIn('Apply this exclusion in PR and dependency follow-ups', inventory)
+        receipt = text.split('**Receipt:**', 1)[1]
+        self.assertIn('`Owner tasks: N` separately', receipt)
+        self.assertIn('oldest issue link and creation date', receipt)
+        self.assertIn('coverage unavailable rather than a zero count', receipt)
+
     def test_service_boundary_preserves_pauses_jobs_and_evidence(self):
         text = (ROOT / 'skills/unblock/references/services.md').read_text()
         for contract in ('deliberate-stop', 'pending service jobs',

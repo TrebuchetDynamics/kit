@@ -109,8 +109,9 @@ report. Inspect read-only, then answer in this order:
      the assessed source and target.
 2. The gaps that stand between now and ready, saved as complete GitHub Issues
    through [Plan Handoff](../../shared/PLAN-HANDOFF.md), or linked to existing issues.
-   Preserve unresolved intent with `ai-planning`; publish complete work with
-   `ai-ready` last and order it through native dependencies.
+   Distinguish executable repairs, unresolved intent and
+   [owner-only qualification](../../shared/PLAN-HANDOFF.md#owner-tasks). Use
+   native dependencies for real prerequisites.
 3. What was not checked, in one line.
 
 Examples (verdicts, not observed results):

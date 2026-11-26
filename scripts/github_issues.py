@@ -6,6 +6,8 @@ Input is transient JSON: {"issues": [{"key": "stable-key", "title": "...",
 "verification": "...", "sources": "...", "blocked_by": ["other-key", 123],
 "epic": "epic-key", "kind": "task", "ready": true}]}.
 Integer dependencies are existing issue numbers in the target repository.
+Use kind "owner-task" for human-only work, with a checklist in acceptance
+and the issue it unblocks in scope. Owner tasks are never dispatched.
 Run without --apply to validate locally without network or writes. One publisher
 per batch; the GitHub create API does not provide atomic deduplication.
 """
@@ -22,8 +24,10 @@ from typing import Any
 FIELDS = ('outcome', 'scope', 'exclusions', 'acceptance', 'verification', 'sources')
 OWNED = {'ai-in-progress', 'ai-pr-opened', 'ai-fix-needed', 'ai-awaiting-merge',
          'ai-merged', 'ai-blocked', 'ai-needs-detail', 'ai-paused'}
+OWNER_TASK = 'owner-task'
 LABELS = {'ai-planning': 'Planning incomplete or explicitly undispatched',
-          'ai-ready': 'Ready for Orbi delivery', 'ai-epic': 'Coordination only'}
+          'ai-ready': 'Ready for Orbi delivery', 'ai-epic': 'Coordination only',
+          OWNER_TASK: 'Requires owner action or evidence'}
 
 
 class PublicationError(Exception):
@@ -92,14 +96,15 @@ def validate(batch: Any) -> list[dict]:
                 raise PublicationError(f'{key}: missing {field}')
             if '<!-- kit-issue:' in value:
                 raise PublicationError(f'{key}: reserved publication marker in {field}')
-        if issue.get('kind', 'task') not in ('task', 'epic'):
-            raise PublicationError(f'{key}: kind must be task or epic')
+        if issue.get('kind', 'task') not in ('task', 'epic', OWNER_TASK):
+            raise PublicationError(f'{key}: kind must be task, epic or owner-task')
         if type(issue.get('ready', True)) is not bool:
             raise PublicationError(f'{key}: ready must be a boolean')
         if 'pending_reason' in issue and (not isinstance(issue['pending_reason'], str)
                                           or '<!-- kit-issue:' in issue['pending_reason']):
             raise PublicationError(f'{key}: pending_reason must be text without publication markers')
-        if issue.get('ready') is False and not issue.get('pending_reason', '').strip():
+        if (issue.get('kind') != OWNER_TASK and issue.get('ready') is False
+                and not issue.get('pending_reason', '').strip()):
             raise PublicationError(f'{key}: undispatched work needs pending_reason')
         deps = issue.get('blocked_by', [])
         if not isinstance(deps, list) or any(
@@ -155,11 +160,22 @@ def labels(issue: dict) -> set[str]:
     return {label['name'] for label in issue.get('labels', [])}
 
 
-def safe_existing(issue: dict) -> None:
-    if 'pull_request' in issue or issue.get('state') != 'open' or labels(issue) & OWNED:
+def dispatches(spec: dict) -> bool:
+    return spec.get('kind', 'task') == 'task' and spec.get('ready', True)
+
+
+def safe_existing(issue: dict, kind=None) -> None:
+    row_labels = labels(issue)
+    if kind == OWNER_TASK and (OWNER_TASK not in row_labels
+                               or any(name.startswith('ai-') for name in row_labels)):
+        raise PublicationError(f"#{issue['number']}: expected owner-task without ai-* labels; reconcile manually")
+    if 'pull_request' in issue or issue.get('state') != 'open' or row_labels & OWNED:
         raise PublicationError(f"#{issue['number']}: closed, owned or recovery work; reconcile manually")
-    if not labels(issue) & {'ai-planning', 'ai-ready'}:
-        raise PublicationError(f"#{issue['number']}: readiness withdrawn; reconcile manually")
+    if kind != OWNER_TASK:
+        if OWNER_TASK in row_labels:
+            raise PublicationError(f"#{issue['number']}: changed owner-task classification; reconcile manually")
+        if not row_labels & {'ai-planning', 'ai-ready'}:
+            raise PublicationError(f"#{issue['number']}: readiness withdrawn; reconcile manually")
 
 
 class PublicationProgress:
@@ -256,10 +272,11 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
             row = matches[0]
             progress.observe(spec, row)
             row_labels = labels(row)
+            kind = spec.get('kind')
             published = 'pull_request' not in row and (
-                row['state'] == 'closed' or not OWNED.isdisjoint(row_labels))
+                row['state'] == 'closed' or (kind != OWNER_TASK and not OWNED.isdisjoint(row_labels)))
             if not published:
-                safe_existing(row)
+                safe_existing(row, kind)
             if row['title'] != spec['title'] or row['body'] != body(spec):
                 raise PublicationError(f"#{row['number']}: saved contract changed; reconcile manually")
             saved[spec['key']] = row
@@ -282,13 +299,14 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
                     raise PublicationError(f'#{dep}: depend on executable children, not an open epic')
                 external[dep] = row
     known_labels = {row['name'] for row in api.pages('labels')}
+    has_owner_tasks = any(spec.get('kind') == OWNER_TASK for spec in specs)
     for name, description in LABELS.items():
-        if name not in known_labels:
+        if name not in known_labels and (name != OWNER_TASK or has_owner_tasks):
             api.api('labels', 'POST', {'name': name, 'color': 'bfdadc', 'description': description})
     for spec in specs:
         if spec['key'] not in saved:
             progress.attempt(spec, 'create', write=True)
-            initial = ['ai-planning']
+            initial = [OWNER_TASK] if spec.get('kind') == OWNER_TASK else ['ai-planning']
             if spec.get('kind') == 'epic':
                 initial.append('ai-epic')
             saved[spec['key']] = api.api('issues', 'POST', {
@@ -306,7 +324,7 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
         progress.attempt(spec, 'dependencies')
         row = api.api(f"issues/{saved[spec['key']]['number']}")
         progress.observe(spec, row)
-        safe_existing(row)
+        safe_existing(row, spec.get('kind'))
         wanted = expected_dependencies(spec)
         path = f"issues/{row['number']}/dependencies/blocked_by"
         actual = {dep['id'] for dep in api.pages(path)}
@@ -325,7 +343,7 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
         progress.attempt(spec, 'epic')
         child = api.api(f"issues/{saved[spec['key']]['number']}")
         progress.observe(spec, child)
-        safe_existing(child)
+        safe_existing(child, spec.get('kind'))
         current_parent = parent_of(child['number'])
         parent = saved.get(spec.get('epic'))
         if current_parent and (not parent or current_parent['id'] != parent['id']):
@@ -346,7 +364,7 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
         except (PublicationError, OSError, ValueError, subprocess.SubprocessError) as exc:
             raise PublicationError(f'#{number}: issue readback failed: {exc}') from exc
         progress.observe(spec, row)
-        safe_existing(row)
+        safe_existing(row, spec.get('kind'))
         if row['body'] != body(spec) or row['title'] != spec['title']:
             raise PublicationError(f'#{number}: contract changed during publication')
         if (spec.get('kind') == 'epic') != ('ai-epic' in labels(row)):
@@ -381,7 +399,7 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
             # Refresh without repairing drift; reads and the label POST are not atomic.
             progress.attempt(spec, 'verify_dispatch')
             row = verify(spec)
-            if spec.get('kind') != 'epic' and spec.get('ready', True):
+            if dispatches(spec):
                 if 'ai-ready' not in labels(row):
                     progress.attempt(spec, 'ready_post', write=True)
                     api.api(f'issues/{number}/labels', 'POST', {'labels': ['ai-ready']})
@@ -391,6 +409,8 @@ def publish_batch(api: GitHub, specs: list[dict], progress: PublicationProgress)
             progress.attempt(spec, 'readback')
             current = api.api(f'issues/{number}')
             progress.observe(spec, current)
+            if spec.get('kind') == OWNER_TASK:
+                safe_existing(current, OWNER_TASK)
         progress.attempt(spec, 'complete')
         results.append({'key': spec['key'], 'url': current['html_url'],
                         'state': current['state'], 'labels': sorted(labels(current))})
@@ -412,7 +432,7 @@ def main(argv=None) -> int:
             'preview': True, 'remote_checked': False, 'repo': args.repo,
             'issues': [{'key': s['key'], 'title': s['title'], 'body': body(s),
                         'blocked_by': s.get('blocked_by', []),
-                        'dispatch': s.get('kind') != 'epic' and s.get('ready', True)} for s in specs]}
+                        'dispatch': dispatches(s)} for s in specs]}
         print(json.dumps(result, indent=2))
         return 0
     except (PublicationError, OSError, ValueError, subprocess.SubprocessError) as exc:

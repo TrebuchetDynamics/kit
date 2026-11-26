@@ -445,6 +445,8 @@ class PlanningDecisionClosureTests(unittest.TestCase):
                         'Ready: all required desktop and Android checks verified passing'):
             self.assertIn(example, audit)
         self.assertNotIn('ready, or not ready and why', audit)
+        self.assertIn('../../shared/PLAN-HANDOFF.md#owner-tasks', audit)
+        self.assertNotIn('publish complete work with', audit)
 
     def test_challenge_synthesis_hands_off_without_reopening_settled_answers(self):
         synthesis = section('skills/grill-me/SKILL.md', 'Synthesis (when the frontier is empty)')

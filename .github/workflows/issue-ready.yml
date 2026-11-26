@@ -23,11 +23,11 @@ jobs:
             const issue_number = context.issue.number;
             const {data: issue} = await github.rest.issues.get({owner, repo, issue_number});
             const labels = new Set(issue.labels.map(label => label.name));
-            const excluded = ['ai-planning', 'ai-epic', 'ai-paused', 'ai-in-progress',
+            const excluded = ['owner-task', 'ai-planning', 'ai-epic', 'ai-paused', 'ai-in-progress',
               'ai-pr-opened', 'ai-fix-needed', 'ai-awaiting-merge', 'ai-merged',
               'ai-blocked', 'ai-needs-detail'];
             if (issue.state !== 'open' || issue.pull_request || excluded.some(label => labels.has(label))) {
-              core.info('Preserving planning, ownership, recovery or explicit pause.');
+              core.info('Preserving owner task, planning, ownership, recovery or explicit pause.');
               return;
             }
             if (labels.has('ai-ready')) return;
