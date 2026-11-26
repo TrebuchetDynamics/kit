@@ -137,12 +137,13 @@ runtime_policy() {
     local config=$hermes_root
     [[ $1 == default ]] || config=$hermes_root/profiles/$1
     python3 -B - "$script_dir/scripts/runtime_defaults.py" "$config/config.yaml" "$dry_run" <<'PYOPTOUT'
-import importlib.util, json, sys
+import importlib.util, json, os, sys
 spec = importlib.util.spec_from_file_location('setup_runtime_defaults', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 try:
-    selected = module.setup_profile_policy(sys.argv[2], changes_only=sys.argv[3] == 'false')
+    changes_only = sys.argv[3] == 'false' or os.environ.get('KIT_INSTALL_HERMES_SUMMARY') == '1'
+    selected = module.setup_profile_policy(sys.argv[2], changes_only=changes_only)
 except (OSError, ValueError):
     sys.exit(11)
 if selected['policy'] == 'disabled':
@@ -185,6 +186,7 @@ apply_bundle_defaults() {
 temp_dir=''
 trap '[[ -z $temp_dir ]] || rm -rf -- "$temp_dir"' EXIT
 if $setup; then
+    settings_started=$SECONDS
     [[ -f $script_dir/plugin.yaml ]] || die 'Bundle plugin.yaml is missing'
     # Resolve EVERY profile before the first link, config write or external install.
     bundle_targets=()
@@ -232,6 +234,9 @@ PYIDENTITY
             failed=$((failed + 1))
         fi
     done
+    if ! $dry_run && [[ -n ${KIT_INSTALL_HERMES_SUMMARY:-} ]]; then
+        printf 'profile settings: done in %ss\n' "$((SECONDS - settings_started))"
+    fi
 fi
 for ((i=0; i<${#plugins[@]}; i++)); do
     $bundle_only && break
