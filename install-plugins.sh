@@ -136,13 +136,13 @@ planned=0
 runtime_policy() {
     local config=$hermes_root
     [[ $1 == default ]] || config=$hermes_root/profiles/$1
-    python3 -B - "$script_dir/scripts/runtime_defaults.py" "$config/config.yaml" <<'PYOPTOUT'
+    python3 -B - "$script_dir/scripts/runtime_defaults.py" "$config/config.yaml" "$dry_run" <<'PYOPTOUT'
 import importlib.util, json, sys
 spec = importlib.util.spec_from_file_location('setup_runtime_defaults', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 try:
-    selected = module.setup_profile_policy(sys.argv[2])
+    selected = module.setup_profile_policy(sys.argv[2], changes_only=sys.argv[3] == 'false')
 except (OSError, ValueError):
     sys.exit(11)
 if selected['policy'] == 'disabled':
@@ -154,6 +154,7 @@ PYOPTOUT
 }
 apply_bundle_defaults() {
     local profile=$1 key value bundle_defaults errors=0 status=0
+    local -a set_flags
     bundle_defaults=$(runtime_policy "$profile") || status=$?
     if ((status == 10)); then
         $dry_run && printf 'Plan: ' || printf 'Skip: '
@@ -171,7 +172,10 @@ apply_bundle_defaults() {
             [[ $key != approvals.mode ]] || printf 'Plan: command approvals=%s (%s)\n' "$value" "$profile"
         else
             printf 'Apply: config %s=%s (%s)\n' "$key" "$value" "$profile"
-            if ! HERMES_HOME=$hermes_root hermes -p "$profile" config set "$key" "$value"; then
+            set_flags=()
+            # Hermes reads this key, but some versions don't recognize it in config set.
+            [[ $key != skills.platform_disabled ]] || set_flags+=(--force)
+            if ! HERMES_HOME=$hermes_root hermes -p "$profile" config set "${set_flags[@]}" "$key" "$value"; then
                 errors=$((errors + 1))
             fi
         fi

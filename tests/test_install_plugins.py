@@ -40,6 +40,9 @@ class InstallPluginsTests(unittest.TestCase):
         fake = self.bin / 'hermes'
         fake.write_text('''#!/bin/bash
 printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
+if [[ "$3 $4 $5" == 'config set skills.platform_disabled' ]]; then
+    echo "'skills.platform_disabled' is not a recognized config key"
+fi
 [[ "${FAIL_PROFILE:-}" != "$2" ]]
 ''')
         fake.chmod(0o755)
@@ -115,6 +118,12 @@ printf '%s|%s\\n' "$HERMES_HOME" "$*" >> "$CALL_LOG"
         validator.write_text('#!/bin/sh\ncase "$2" in */src/kit_runtime/install/preflight_config.py) ;; *) exit 99 ;; esac\n[ "$3" = --core ] || exit 99\n')
         validator.chmod(0o755)
         self.env['HOME'] = str(self.root)
+        fake = self.bin / 'hermes'
+        fake.write_text(fake.read_text() + '''
+if [[ "$3 $4" == 'kit finalize' ]]; then
+    [[ "${KIT_VERIFY_SETUP_POLICY:-}" == 1 ]]
+fi
+''')
         command = ['bash', str(self.script), '--bundle-only', '--no-reload']
         def run(*args):
             return subprocess.run([*command, *args], cwd=self.root, env=self.env,
@@ -321,7 +330,8 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(str(self.hermes_root) + '|-p coder config set approvals.mode off', self.calls())
         self.assertIn(str(self.hermes_root) + '|-p default config set approvals.mode manual', self.calls())
-        self.assertIn(str(self.hermes_root) + '|-p research config set agent.max_turns 37', self.calls())
+        self.assertNotIn(str(self.hermes_root) + '|-p research config set agent.max_turns 37', self.calls())
+        self.assertNotIn(str(self.hermes_root) + '|-p research config set approvals.mode smart', self.calls())
 
     def test_bundle_only_installs_and_enables_every_live_profile_idempotently(self):
         preview = self.run_installer('--bundle-only', '--dry-run')
@@ -350,6 +360,19 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
         self.assertEqual(marker.read_text(), 'preserve')
         self.assertFalse(any('|-p coder plugins enable' in c for c in self.calls()))
 
+    def test_setup_skips_existing_platform_setting_and_sets_missing_one_without_warning(self):
+        (self.hermes_root / 'profiles/coder/config.yaml').write_text(
+            'skills:\n  platform_disabled: {}\n')
+        result = self.run_installer('--bundle-only')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        platform_writes = [call for call in self.calls() if 'config set' in call
+                           and 'skills.platform_disabled' in call]
+        self.assertEqual(platform_writes, [str(self.hermes_root) +
+                         f'|-p {profile} config set --force skills.platform_disabled {{}}'
+                         for profile in ('default', 'research')])
+        self.assertNotIn('Apply: config skills.platform_disabled={} (coder)', result.stdout)
+        self.assertNotIn('is not a recognized config key', result.stdout + result.stderr)
+
     def test_permissions_are_applied_before_activation_for_every_profile(self):
         result = self.run_installer('--bundle-only')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -360,7 +383,7 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
             for setting in ('plugins.entries.kit.allow_gateway_injection true',
                             'approvals.mode manual', 'approvals.destructive_slash_confirm true',
                             'approvals.mcp_reload_confirm true', 'agent.max_turns 90',
-                            'skills.platform_disabled {}'):
+                            '--force skills.platform_disabled {}'):
                 self.assertLess(calls.index(prefix + 'config set ' + setting), enabled)
 
     def test_setup_honors_runtime_defaults_opt_out(self):
@@ -387,7 +410,7 @@ touch "$dest/skills/build/SKILL.md" "$dest/skills/review/SKILL.md"
             self.assertIn(prefix + 'coder plugins enable kit', calls)
             for profile in ('default', 'research'):
                 for setting in ('plugins.entries.kit.allow_gateway_injection true',
-                                'approvals.mode manual', 'skills.platform_disabled {}'):
+                                'approvals.mode manual', '--force skills.platform_disabled {}'):
                     self.assertIn(prefix + f'{profile} config set ' + setting, calls)
 
     def test_skill_dry_run_does_not_clone_or_install(self):
