@@ -4066,31 +4066,31 @@ def fleet_offline_user_evidence(ctx, manager, *, live):
     for relative in ('.config/systemd/user.control', '.config/systemd/user', '.local/share/systemd/user'):
         folder = manager.home / relative
         try:
-            paths = list(folder.iterdir())
-        except FileNotFoundError:
-            continue
-        except PermissionError:
-            unreadable = True
-            continue  # still look for readable Orbi evidence in the other folders
-        except (OSError, ValueError) as error:
-            fleet_refuse(f'{manager.name}: cannot verify installed definitions ({type(error).__name__})')
-        if live:
-            continue  # read unit contents only through the existing manager inventory
-        try:
+            paths = folder.iterdir()
+            if live:
+                next(paths, None)  # check directory access; read units only through the existing manager inventory
+                continue
             for index, path in enumerate(paths):
                 if index >= HOST_LIST_LIMIT:
                     fleet_refuse(f'{manager.name}: installed definitions exceed inventory limit')
                 if path.suffix not in {'.timer', '.service'}:
                     continue
-                if path.is_symlink() and path.resolve() == Path('/dev/null'):
-                    continue
-                item = host_definition(ctx, path, manager='user', user_home=manager.home)
+                try:
+                    if path.is_symlink() and path.resolve() == Path('/dev/null'):
+                        continue
+                    item = host_definition(ctx, path, manager='user', user_home=manager.home)
+                except FileNotFoundError:
+                    continue  # missing unit or dangling symlink, not an empty folder
+                except PermissionError:
+                    fleet_refuse(f'{manager.name}: cannot verify installed definitions (PermissionError)')
                 if item['orbi'] or item['referenced']:
                     if unreadable:
                         fleet_refuse(f'{manager.name}: cannot verify installed definitions (PermissionError)')
                     return True
         except FileNotFoundError:
             continue
+        except PermissionError:
+            unreadable = True  # still look for readable Orbi evidence in the other folders
         except (OSError, ValueError) as error:
             fleet_refuse(f'{manager.name}: cannot verify installed definitions ({type(error).__name__})')
     return None if unreadable else False

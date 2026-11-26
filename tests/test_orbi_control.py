@@ -3814,8 +3814,16 @@ class InstallerFleetTests(unittest.TestCase):
         with self.other_account() as (ctx, home):
             directory = home / '.config/systemd/user'
             directory.mkdir(parents=True)
-            (directory / 'delivery.service').write_text('[Service]\nExecStart=/bin/orbi\n')
-            receipt = helper.installer_fleet(ctx)
+            orbi = directory / 'delivery.service'
+            orbi.write_text('[Service]\nExecStart=/bin/orbi\n')
+            dangling = directory / 'missing.service'
+            dangling.symlink_to(directory / 'absent')
+            iterdir = Path.iterdir
+            with mock.patch.object(Path, 'iterdir', lambda path: (
+                    iter((dangling, orbi)) if path == directory else iterdir(path))), \
+                    mock.patch.object(helper, 'fleet_inventory', return_value=([], {}, {})) as inventory:
+                receipt = helper.installer_fleet(ctx)
+            inventory.assert_not_called()
         self.assertEqual(receipt['status'], 'held')
         self.assertEqual(receipt['error']['message'],
                          'user:other: cannot verify installed definitions (PermissionError)')
