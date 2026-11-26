@@ -317,8 +317,9 @@ re-executed once before installing. At the end of a non-preview run (including
 `already upstream` when its saved changes are already in the checkout's `HEAD`,
 and prints a command to inspect it and a manual drop command. Recheck the stash
 ID before dropping it: `stash@{N}` can change. For installer stashes not confirmed
-upstream, it prints inspect and recovery commands instead. It never drops or
-applies any stash.
+upstream, it prints inspect and recovery commands instead. Classification uses
+Git 2.40 or later; if a comparison fails, the report shows the reason and omits
+the drop command. Kit never drops or applies any stash.
 
 If a dirty checkout's Git common directory records another interactive writer
 that is not confirmed dead, the installer names the session and stops without

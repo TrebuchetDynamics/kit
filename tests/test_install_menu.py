@@ -3932,6 +3932,27 @@ def restart_services(output, observations=None, settled=None):
         self.assertEqual(before, [self.git('diff'), self.git('diff', '--cached'), self.git('status', '--porcelain')])
         self.assertEqual(self.stashes(), [untracked, staged])
 
+    def test_stash_report_does_not_run_configured_merge_drivers_or_write_git_objects(self):
+        self.installer_fixture()
+        (self.clone / '.gitattributes').write_text('g merge=keep-ours\n')
+        self.git('add', '.gitattributes')
+        self.git('commit', '-qm', 'select a custom merge driver')
+        self.git('config', 'merge.keep-ours.driver', 'echo ran > merge-driver-ran')
+        (self.clone / 'g').write_text('only in the stash\n')
+        self.git('stash', 'push', '-m', 'Kit installer: local changes before pull (1)')
+        saved = self.stashes()[0]
+        (self.clone / 'g').write_text('different upstream change\n')
+        self.git('commit', '-qam', 'edit the same line independently')
+        objects = self.git('count-objects', '-v')
+
+        result = self.entry('--no-pull', '--only', 'tx', '--quiet')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertIn(f'{saved} — not upstream', result.stdout)
+        self.assertNotIn('stash drop', result.stdout)
+        self.assertEqual(self.git('count-objects', '-v'), objects)
+        self.assertEqual(self.stashes(), [saved])
+
     def test_stash_report_git_failure_does_not_fail_install(self):
         self.installer_fixture()
         bin_dir = Path(self.entry_env['KIT_BIN_DIR'])
@@ -4177,9 +4198,10 @@ def restart_services(output, observations=None, settled=None):
         self.assertIn(saved, result.stdout)
         self.assertIn('FAILED: checkout preparation: git pull', result.stdout)
         self.assertIn('Nothing installed or restarted', result.stdout)
-        _, heading, report = result.stdout.partition('Kept Kit installer stashes:')
+        before_report, heading, report = result.stdout.partition('Kept Kit installer stashes:')
         self.assertTrue(heading, result.stdout)
-        self.assertIn('Resolve the Git error and retry', result.stdout)
+        self.assertIn('stash apply --index', before_report)
+        self.assertIn('Resolve the Git error and retry', before_report)
         self.assertIn(f'{saved} — not upstream', report)
         self.assertIn('stash apply --index', report)
 

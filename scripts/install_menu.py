@@ -2269,8 +2269,9 @@ def report_installer_stashes(root, output):
     """Compare kept stashes with HEAD without applying them to the checkout."""
     command = ['git', '-C', str(root)]
 
-    def read(*args, allow_conflict=False):
-        result = subprocess.run([*command, *args], capture_output=True, timeout=10)
+    def read(*args, directory=root, env=None, allow_conflict=False):
+        result = subprocess.run(['git', '-C', str(directory), *args], env=env,
+                                stdin=subprocess.DEVNULL, capture_output=True, timeout=10)
         if allow_conflict and result.returncode == 1:  # merge-tree found conflicts
             return None
         if result.returncode:
@@ -2299,7 +2300,7 @@ def report_installer_stashes(root, output):
         output.line(f'Warning: cannot report Kit installer stashes: {exc}. Inspect with {inspect}', 'warning')
         return
 
-    def already_upstream(oid):
+    def already_upstream(oid, scratch, env):
         # A stash stores the tracked worktree, its base and index parents, and
         # optionally a third parent with untracked files only.
         parents = read('rev-list', '--parents', '-1', oid).decode().split()[1:]
@@ -2308,24 +2309,40 @@ def report_installer_stashes(root, output):
         base, index, *untracked = parents
         for saved in (oid, index):
             merged = read('merge-tree', '--write-tree', '--no-messages', f'--merge-base={base}',
-                          head, saved, allow_conflict=True)
+                          head, saved, directory=scratch, env=env, allow_conflict=True)
             if merged is None or merged.strip() != head_tree:
                 return False
         # For saved untracked files, compare path, mode and object ID in HEAD.
         return not untracked or set(read('ls-tree', '-r', '-z', untracked[0]).split(b'\0')) <= set(
             read('ls-tree', '-r', '-z', head).split(b'\0'))
 
+    try:
+        object_format = read('rev-parse', '--show-object-format').decode().strip()
+        objects = os.fsdecode(read('rev-parse', '--path-format=absolute', '--git-path', 'objects').removesuffix(b'\n'))
+        # Quote the one alternate path so Git doesn't split it on colons.
+        alternate = '"' + objects.replace('\\', '\\\\').replace('"', '\\"') + '"'
+        # merge-tree writes objects and can run configured merge drivers. Use only
+        # Git's built-in merge logic, writing results outside the Kit checkout.
+        env = {'PATH': os.environ.get('PATH', os.defpath), 'GIT_CONFIG_NOSYSTEM': '1',
+               'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_ATTR_NOSYSTEM': '1',
+               'GIT_ALTERNATE_OBJECT_DIRECTORIES': alternate}
+        with tempfile.TemporaryDirectory(prefix='kit-stash-report-') as scratch:
+            read('init', '--quiet', '--bare', '--template=', f'--object-format={object_format}',
+                 directory=scratch, env=env)
+            statuses = []
+            for _, oid in entries:
+                try:
+                    statuses.append('already upstream' if already_upstream(oid, scratch, env) else 'not upstream')
+                except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                    statuses.append(f'upstream status unknown ({exc})')
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        statuses = [f'upstream status unknown ({exc})'] * len(entries)
+
     output.line('\nKept Kit installer stashes:', 'heading')
-    for ref, oid in entries:
-        upstream = False
-        try:
-            upstream = already_upstream(oid)
-            status = 'already upstream' if upstream else 'not upstream'
-        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
-            status = f'upstream status unknown ({exc})'
+    for (ref, oid), status in zip(entries, statuses):
         output.line(f'  {ref} {oid} — {status}')
         output.line('    ' + shlex.join([*command, 'stash', 'show', '--include-untracked', '--patch', oid]))
-        if upstream:
+        if status == 'already upstream':
             output.line(f'    After checking the ID with {inspect}:')
             output.line('    ' + shlex.join([*command, 'stash', 'drop', ref]))
         else:
