@@ -66,6 +66,10 @@ SUPPORTED_PIN = 'ce97e015ca433a9312e5bdf69353be58ab394fd9'
 PIN_TRACK = 'sha:' + SUPPORTED_PIN
 OFFICIAL_ORIGIN = 'https://github.com/orbi-build/orbi'
 OFFICIAL_REPO = 'orbi-build/orbi'
+# `git remote get-url` applies url.<base>.insteadOf, so a common
+# `git@github.com:` rewrite reports the official HTTPS clone over SSH.
+OFFICIAL_ORIGINS = frozenset({OFFICIAL_ORIGIN, OFFICIAL_ORIGIN + '.git',
+                              f'git@github.com:{OFFICIAL_REPO}', f'git@github.com:{OFFICIAL_REPO}.git'})
 MAX_INSTANCES = 5
 NODE_FLOOR = (22, 19)
 PROBE_TIMEOUT = 20
@@ -2993,6 +2997,38 @@ def update_pending(snapshot):
              if item['state'] not in INACTIVE_STATES] + snapshot.get('pending_jobs', []))
 
 
+# Distribution-wide drop-ins that only change how a stop/start timeout fails
+# (Fedora's systemd ships TimeoutStopFailureMode=abort for every service).
+VENDOR_DROPIN_DIRS = (Path('/usr/lib/systemd/system/service.d'), Path('/usr/lib/systemd/user/service.d'))
+VENDOR_DROPIN_KEYS = {'TimeoutStopFailureMode', 'TimeoutStartFailureMode'}
+
+
+def benign_vendor_dropin(path):
+    """True only for a root-owned vendor type-wide drop-in limited to timeout failure modes."""
+    path = Path(path)
+    if path.parent not in VENDOR_DROPIN_DIRS or path.suffix != '.conf':
+        return False
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            return False
+        lines = bounded_text(path).splitlines()
+    except (OSError, ValueError):
+        return False
+    section = None
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith(('#', ';')):
+            continue
+        if line.startswith('['):
+            section = line
+            continue
+        key, sep, _ = line.partition('=')
+        if raw.rstrip().endswith('\\') or section != '[Service]' or not sep or key.strip() not in VENDOR_DROPIN_KEYS:
+            return False
+    return True
+
+
 def require_quiesce_unit(ctx, target, unit):
     """Verify the loaded target and refuse stop transactions with unowned effects."""
     side_effects = ('DropInPaths', 'ConsistsOf', 'BoundBy', 'RequiredBy', 'RequisiteOf',
@@ -3020,6 +3056,12 @@ def require_quiesce_unit(ctx, target, unit):
                             fix='inspect the loaded unit binding, overrides and stop dependencies before retrying',
                             exit_code=2)
     fragment = values['FragmentPath']
+    try:
+        dropins = shlex.split(values['DropInPaths'])
+    except ValueError:
+        raise conflict from None
+    if all(benign_vendor_dropin(path) for path in dropins):
+        values['DropInPaths'] = ''
     if (values['Id'] != unit or values['LoadState'] != 'loaded'
             or any(values[p] for p in side_effects)
             or fragment_kind(fragment, unit) not in {'instance', 'template'}):
@@ -3605,6 +3647,9 @@ def render_error(ctx, action, exc, json_mode):
 
 # Host inventory is deliberately separate from repository selection and mutations.
 HOST_DETAIL_LIMIT = 256
+# Every installed/loaded unit gets one bounded probe to decide whether it is
+# Orbi's; ordinary hosts have hundreds of unrelated units in the system manager.
+FLEET_CLASSIFY_LIMIT = 2048
 HOST_LIST_LIMIT = 8192
 HOST_PROC = Path('/proc')
 HOST_CGROUP = Path('/sys/fs/cgroup')
@@ -4307,6 +4352,18 @@ def fleet_exec(values, prop='ExecStart'):
     return tuple(re.findall(r'\{ path=([^;]+?) ; argv\[\]=(.*?) ;', values.get(prop, '')))
 
 
+# Manager-reported values that carry every form of Orbi evidence fleet_service
+# accepts: the orbi executable or module, the exporter, ORBI_CONFIG and the
+# fragment/drop-in/checkout paths. Values are the manager's parsed result.
+FLEET_CANDIDATE_PROPS = ('ExecStart', 'ExecStartPre', 'Environment', 'EnvironmentFiles', 'PassEnvironment',
+                         'UnsetEnvironment', 'WorkingDirectory', 'FragmentPath', 'DropInPaths')
+
+
+def fleet_candidate(values):
+    """Only units the manager reports with Orbi evidence get strict fragment checks."""
+    return any('orbi' in values.get(prop, '').lower() for prop in FLEET_CANDIDATE_PROPS)
+
+
 def fleet_service(ctx, manager, name, values, fragments):
     label = f'{manager.name}:{name}'
     refs = {config for _, item in fragments for config in item['configs']}
@@ -4329,7 +4386,7 @@ def fleet_service(ctx, manager, name, values, fragments):
     if exporter and not refs:
         refs.add(str(cwd / 'orbi.toml'))
     if (len(refs) != 1 or any(item['referenced'] and not item['configs'] for _, item in fragments)
-            or any(path.suffix == '.conf' for path, _ in fragments)):
+            or any(path.suffix == '.conf' and not benign_vendor_dropin(path) for path, _ in fragments)):
         fleet_refuse(f'{label}: config binding or drop-in overrides are ambiguous')
     config = Path(next(iter(refs)))
     # A config parsed from the fragment is not evidence that the manager's
@@ -4417,11 +4474,15 @@ def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', r
     if any(values.get(prop) for prop in ('PartOf', 'ConsistsOf', 'BoundBy', 'RequiredBy', 'PropagatesStopTo',
                                          'OnFailure', 'OnSuccess', 'Upholds', 'UpheldBy')):
         fleet_refuse(f'{label}: unit lifecycle could affect other units')
-    dependencies = set(' '.join(values.get(prop, '') for prop in ('Requires', 'Requisite', 'Wants', 'BindsTo')).split())
+    # systemctl quotes escaped names, e.g. "app-orbi\x2dname.slice".
+    try:
+        dependencies = set(shlex.split(' '.join(values.get(prop, '') for prop in ('Requires', 'Requisite', 'Wants', 'BindsTo'))))
+        conflicts = set(shlex.split(values.get('Conflicts', '') + ' ' + values.get('ConflictedBy', '')))
+    except ValueError:
+        fleet_refuse(f'{label}: unit dependencies are unreadable')
     default_targets = {'basic.target', 'sysinit.target', 'network-online.target', 'timers.target'}
     if (any(dep not in default_targets and not dep.endswith('.slice') for dep in dependencies)
-            or set((values.get('Conflicts', '') + ' ' + values.get('ConflictedBy', '')).split())
-            - {'shutdown.target'}):
+            or conflicts - {'shutdown.target'}):
         fleet_refuse(f'{label}: start could affect unrelated units through dependencies')
     if name.endswith('.service') and (values.get('KillMode') not in {'control-group', 'mixed'}
                                       or values.get('SendSIGKILL') != 'yes'):
@@ -4455,8 +4516,8 @@ def fleet_inventory(ctx, managers, *, known_units=()):
         jobs[manager] = pending
         names = (installed | loaded | {name for name, _ in pending.values() if name.endswith(('.service', '.timer'))}
                  | {unit.name for unit in known_units if unit.manager == manager})
-        if len(names) > HOST_DETAIL_LIMIT:
-            fleet_refuse(f'{manager.name}: installed/loaded unit detail exceeds {HOST_DETAIL_LIMIT}')
+        if len(names) > FLEET_CLASSIFY_LIMIT:
+            fleet_refuse(f'{manager.name}: installed/loaded units exceed {FLEET_CLASSIFY_LIMIT}')
         templates = {name for name in names if '@.' in name}
         names -= templates
         # A disabled configured timer instance may be absent from both lists.
@@ -4517,16 +4578,18 @@ def fleet_inventory(ctx, managers, *, known_units=()):
                     if name.startswith(prefix):
                         slot = name[len(prefix):-len('.service')]
                         names.add(template.replace('@.', f'@{slot}.'))
-                if len(names) > HOST_DETAIL_LIMIT:
-                    fleet_refuse(f'{manager.name}: configured unit detail exceeds {HOST_DETAIL_LIMIT}')
-        if len(names) > HOST_DETAIL_LIMIT:
-            fleet_refuse(f'{manager.name}: configured unit detail exceeds {HOST_DETAIL_LIMIT}')
+                if len(names) > FLEET_CLASSIFY_LIMIT:
+                    fleet_refuse(f'{manager.name}: configured units exceed {FLEET_CLASSIFY_LIMIT}')
+        if len(names) > FLEET_CLASSIFY_LIMIT:
+            fleet_refuse(f'{manager.name}: configured units exceed {FLEET_CLASSIFY_LIMIT}')
         services, timers, triggered_by = {}, {}, {}
         for name in sorted(names):
             values = fleet_unit(ctx, manager, name)
             if name.endswith('.timer'):
                 timers[name] = values
                 continue
+            if not fleet_candidate(values):
+                continue  # Unrelated unit: never parse or refuse on its fragments.
             fragments = fleet_fragments(ctx, manager, name, values)
             service = fleet_service(ctx, manager, name, values, fragments)
             if service is None:
@@ -4536,6 +4599,8 @@ def fleet_inventory(ctx, managers, *, known_units=()):
             unit = fleet_bound_unit(manager, values['Id'], target.config_path, values, fragments, runner=runner)
             services[unit.name] = unit  # canonical Id, not an alias
             triggered_by[unit.name] = values.get('TriggeredBy', '').split()
+            if len(services) > HOST_DETAIL_LIMIT:
+                fleet_refuse(f'{manager.name}: Orbi unit detail exceeds {HOST_DETAIL_LIMIT}')
         bound_timers = {}
         for name, values in timers.items():
             service = values.get('Unit') or values.get('Triggers')
@@ -4544,12 +4609,34 @@ def fleet_inventory(ctx, managers, *, known_units=()):
             fragments = fleet_fragments(ctx, manager, name, values)
             unit = fleet_bound_unit(manager, values['Id'], services[service].config, values, fragments, triggers=service)
             bound_timers[unit.name] = unit
+            if len(services) + len(bound_timers) > HOST_DETAIL_LIMIT:
+                fleet_refuse(f'{manager.name}: Orbi unit detail exceeds {HOST_DETAIL_LIMIT}')
         for service in services.values():
             if any(name not in bound_timers or bound_timers[name].triggers != service.name
                    for name in triggered_by[service.name]):
                 fleet_refuse(f'{service.label}: service has an unverified scheduler trigger')
         units.extend([*services.values(), *bound_timers.values()])
     return tuple(units), targets, jobs
+
+
+def fleet_recheck_key(units, targets, jobs):
+    """What must not change between the frozen plan and the first stop.
+
+    The stop phase re-reads live jobs and worker states, and cancels or stops
+    only Orbi units. Unrelated units' jobs and a oneshot worker started by its
+    own timer are therefore not plan changes. Activity of timers and persistent
+    services decides what is restored, and system-manager Orbi jobs decide the
+    cancel permission checked before the plan, so those stay compared.
+    """
+    names = {(unit.manager, unit.name) for unit in units}
+    return (
+        tuple(dataclasses.replace(unit, active='') if unit.service_type == 'oneshot' and not unit.triggers else unit
+              for unit in units),
+        targets,
+        {manager: {job: entry for job, entry in pending.items()
+                   if manager.name == 'system' and (manager, entry[0]) in names}
+         for manager, pending in jobs.items()},
+    )
 
 
 def fleet_check_permissions(ctx, units, jobs):
@@ -4655,7 +4742,7 @@ def fleet_preflight_target(ctx, target):
         repo = repo_identity(ctx, target.repo_dir)
         validate_target(target, repo)
     remote = ctx.run(['git', '-C', target.deploy_home, 'remote', 'get-url', 'origin']).stdout.strip()
-    if remote not in {OFFICIAL_ORIGIN, OFFICIAL_ORIGIN + '.git', f'git@github.com:{OFFICIAL_REPO}.git'}:
+    if remote not in OFFICIAL_ORIGINS:
         fleet_refuse(f'{target.deploy_home}: engine origin is not official')
     if not os.access(target.config_path.parent, os.W_OK) or not os.access(target.deploy_home, os.W_OK):
         fleet_refuse(f'{target.config_path}: deployment files are not writable')
@@ -4786,7 +4873,8 @@ def installer_fleet(ctx, *, report_progress=None):
                 current = {'step': 'preflight_deployment', 'config': str(config)}
                 before[config] = fleet_preflight_target(ctx, target)
             current = {}
-            if fleet_managers(ctx) != manager_coverage or fleet_inventory(ctx, managers) != (units, targets, jobs):
+            if (fleet_managers(ctx) != manager_coverage
+                    or fleet_recheck_key(*fleet_inventory(ctx, managers)) != fleet_recheck_key(units, targets, jobs)):
                 fleet_refuse('fleet inventory or jobs changed after preflight')
             for config, target in targets.items():
                 if (setup_file_identities(target) != before[config][0]
