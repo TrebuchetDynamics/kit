@@ -71,16 +71,17 @@ def main(argv=None):
     if args.yes_deps: plugins.append('--yes-deps')
     env = dict(os.environ, HERMES_HOME=str(root))
     failures = []
-    def run(label, command):
+    def run(label, command, *, child_env=env):
         print(f'Setup: {label}', flush=True)
         try:
-            result = subprocess.run(command, cwd=ROOT, env=env, check=False)
+            result = subprocess.run(command, cwd=ROOT, env=child_env, check=False)
             if result.returncode: failures.append(label)
         except OSError as exc:
             print(f'Failed: {label}: {exc}', flush=True)
             failures.append(label)
     run('bundled skills', ['bash', str(ROOT / 'install-skills.sh'), *common])
     run('plugins and configuration', plugins)
+    finalize_env = dict(env, KIT_VERIFY_SETUP_POLICY='1')
     for profile, home in profiles:
         if args.dry_run:
             print(f'Plan: verify bundled skills/plugins and refresh gateway ({profile})')
@@ -90,7 +91,7 @@ def main(argv=None):
         if args.no_reload: command.append('--no-reload')
         # Even partially failed installs must refresh successful registrations and
         # expose missing capabilities. A later pass never masks an earlier failure.
-        run(f'verify/wire {profile}', command)
+        run(f'verify/wire {profile}', command, child_env=finalize_env)
     state = 'incomplete' if failures else ('preview' if args.dry_run else 'complete')
     print(f'Bundle setup {state}: {len(profiles)} profiles; {len(failures)} failed stages.')
     print(json.dumps({'status': state, 'gateway_restart': 'not_requested',
