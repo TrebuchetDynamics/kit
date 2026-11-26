@@ -3173,6 +3173,7 @@ class LifecycleSequenceTests(unittest.TestCase):
         code, doc, err = h.run('stop')
         self.assertNotEqual(code, 0, (doc, err))
         self.assertEqual(doc['error']['code'], 'unit_conflict')
+        self.assertFalse(doc['error']['mutated'], doc)
         self.assertFalse(any(set(c['argv']) & {'disable', 'stop', 'kill', 'restart', 'cancel'}
                              for c in h.calls() if c['tool'] == 'systemctl'))
 
@@ -3267,6 +3268,7 @@ class LifecycleSequenceTests(unittest.TestCase):
         code, doc, err = h.run('stop')
         self.assertNotEqual(code, 0, (doc, err))
         self.assertEqual(doc['error']['code'], 'command_failed')
+        self.assertTrue(doc['error']['mutated'], doc)
         self.assertEqual(doc['steps'][-1]['unit'], timer)
         self.assertNotIn(timer, doc['disabled_timers'])
         self.assertTrue(doc['scheduler']['timers'][timer]['enabled'])
@@ -3300,6 +3302,67 @@ class LifecycleSequenceTests(unittest.TestCase):
                     self.assertIn('preserve recovery inputs', doc['error']['fix'])
                     self.assertEqual(snapshot(h.home), before)
                     SetupBoundaryTests.assert_no_activation(self, h.calls())
+
+    def test_stop_revalidates_republished_config(self):
+        for change, error in (('same_bytes', None), ('pin', None),
+                              ('repo', 'config_mismatch'), ('prefix', 'target_changed')):
+            with self.subTest(change=change):
+                h = self.fresh()
+                config = h.deploy / 'orbi.toml'
+                unit_name = helper.derive_unit_name(REPO)
+                timer = f'{helper.unit_prefix(unit_name)}@1.timer'
+                scheduler = h.scheduler_rules()
+                h.rules(*scheduler)
+                disabled = str(h.root / 'timer-disabled')
+                locked = helper.locked
+
+                @contextlib.contextmanager
+                def concurrent(ctx, key):
+                    # Model update's last writes under the same deployment lock.
+                    self.assertEqual(key, config)
+                    with locked(ctx, key):
+                        contents = config.read_bytes()
+                        inode = config.stat().st_ino
+                        if change == 'pin':
+                            _, updated = helper.engine_track_replacement(config, 'sha:' + NEW_PIN)
+                            contents = updated.encode()
+                        elif change == 'repo':
+                            contents = contents.replace(f'"{REPO}"'.encode(), b'"other/foreign"')
+                        elif change == 'prefix':
+                            contents = contents.replace(f'"{unit_name}"'.encode(), b'"new-prefix"')
+                        replacement = config.with_suffix('.tmp')
+                        replacement.write_bytes(contents)
+                        replacement.replace(config)
+                        self.assertNotEqual(config.stat().st_ino, inode)
+                        h.rules(
+                            {'tool': 'systemctl', 'argv_contains': ['disable', '--now', timer],
+                             'write': {disabled: '1'}},
+                            {'tool': 'systemctl', 'argv_contains': ['is-enabled', timer],
+                             'if_exists': disabled, 'stdout': 'disabled\n', 'exit': 1},
+                            {'tool': 'systemctl', 'argv_contains': ['show', 'ActiveState', timer],
+                             'if_exists': disabled, 'stdout': 'inactive\n'},
+                            *h.scheduler_rules(timers={1: 'active'}, enabled={1: True}))
+                    with locked(ctx, key):
+                        yield
+
+                with mock.patch.object(helper, 'locked', concurrent):
+                    code, doc, err = h.run('stop', config=config)
+                if error:
+                    self.assertEqual(code, 2, (doc, err))
+                    self.assertEqual(doc['error']['code'], error)
+                    self.assertFalse(doc['error']['mutated'], doc)
+                    self.assertEqual(doc['disabled_timers'], [])
+                    self.assertFalse([c for c in h.calls() if c['tool'] == 'systemctl'
+                                      and c['argv'][1] in {'disable', 'cancel', 'stop'}])
+                    if change == 'repo':
+                        self.assertIn('pass the config whose source_repos names this repository',
+                                      doc['error']['fix'])
+                else:
+                    self.assertEqual(code, 0, (doc, err))
+                    self.assertEqual(doc['status'], 'stopped')
+                    self.assertIn(timer, doc['disabled_timers'])
+                    self.assertTrue(Path(disabled).is_file(), doc)
+                    self.assertEqual(doc['deployment']['pin'], h.config()['engine_source_track'])
 
     def test_stop_rechecks_owned_timers_after_lock(self):
         for observation_fails in (False, True):
@@ -3337,7 +3400,8 @@ class LifecycleSequenceTests(unittest.TestCase):
                 if observation_fails:
                     self.assertNotEqual(code, 0, (doc, err))
                     self.assertEqual(doc['error']['code'], 'scheduler_unavailable')
-                    self.assertTrue(doc['error']['mutated'])
+                    # This read-only refusal made no change to the deployment.
+                    self.assertFalse(doc['error']['mutated'], doc)
                     self.assertEqual(doc['steps'][-1]['step'], 'observe_scheduler')
                     self.assertEqual(doc['disabled_timers'], [])
                 else:

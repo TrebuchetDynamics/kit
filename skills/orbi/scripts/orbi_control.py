@@ -2931,15 +2931,14 @@ def disable_owned_timers(ctx, target, snapshot, disabled, steps, current):
 def command_stop(ctx, args):
     target = None
     steps, disabled, stopped = [], [], []
-    mutated = False
     current = {'step': 'preflight', 'mutation': 'none'}
     try:
-        repo = repo_identity(ctx, args.repo_dir or ctx.cwd)
+        repo_dir = args.repo_dir or ctx.cwd
+        repo = repo_identity(ctx, repo_dir)
         target = select_target(ctx, repo, args.config, require=True)
         validate_target(target, repo)
         require_unit_ownership(ctx, target, symlink_error='unit_conflict')
         snapshot = update_observation(ctx, target)
-        identities = setup_file_identities(target)
         if args.dry_run:
             names = owned_timers(snapshot)
             return {'action': 'stop', 'platform': ctx.platform, 'status': 'planned',
@@ -2949,16 +2948,20 @@ def command_stop(ctx, args):
                                     'harness': harness_evidence(ctx, target)},
                     'disabled_timers': names, 'pending_services': update_pending(snapshot),
                     'steps': quiesce_plan_steps()}
-        current, mutated = {'step': 'lock', 'mutation': 'possible'}, True
+        current = {'step': 'lock', 'mutation': 'possible'}
         with locked(ctx, target.config_path):
             steps.append({'step': 'lock', 'status': 'ok', 'mutation': 'completed'})
-            if (repo_identity(ctx, repo.path) != repo
-                    or select_target(ctx, repo, args.config, require=True) != target
-                    or setup_file_identities(target) != identities):
+            current = {'step': 'revalidate_target', 'mutation': 'none'}
+            fresh_repo = repo_identity(ctx, repo_dir)
+            fresh_target = select_target(ctx, fresh_repo, args.config, require=True)
+            # Update may republish the config; stop binds to ownership, not its contents.
+            if ((fresh_repo.path, fresh_repo.full) != (repo.path, repo.full)
+                    or (fresh_target.config_path, fresh_target.prefix) != (target.config_path, target.prefix)):
                 raise ControlError('target_changed', 'stop target changed after preflight',
                                    fix='inspect concurrent changes; preserve recovery inputs', exit_code=2)
-            validate_target(target, repo)
-            require_unit_ownership(ctx, target, symlink_error='unit_conflict')
+            validate_target(fresh_target, fresh_repo)
+            require_unit_ownership(ctx, fresh_target, symlink_error='unit_conflict')
+            target = fresh_target
             current = {'step': 'observe_scheduler', 'mutation': 'none'}
             snapshot = update_observation(ctx, target)
             ctx.lifecycle_home = target.deploy_home
@@ -2972,6 +2975,9 @@ def command_stop(ctx, args):
                 'disabled_timers': disabled, 'stopped_services': stopped,
                 'pending_services': [], 'steps': steps}
     except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
+        # A successful lock alone does not count as a stop mutation.
+        mutated = (current['mutation'] == 'possible' or bool(disabled or stopped)
+                   or any(step['step'] == 'cancel_start' for step in steps))
         exc = lifecycle_failure(ctx, target, error, target_path=args.config, steps=steps,
                                 current=current, mutated=mutated,
                                 evidence={'disabled_timers': disabled, 'stopped_services': stopped},
