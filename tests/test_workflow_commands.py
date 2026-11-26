@@ -82,7 +82,7 @@ class WorkflowCommands(unittest.TestCase):
         self.assertEqual(arguments, raw)
         self.assertNotIn('checkout', injected)
         self.assertNotIn('../shared/RESEARCH-PLAN.md', prompt)
-        for raw in ('status all', 'status all --json'):
+        for raw in ('status all', 'status all --json', 'status all --verbose'):
             before = len(self.ctx.messages)
             with patch('subprocess.run') as run:
                 self.ctx.commands['orbi'](raw)
