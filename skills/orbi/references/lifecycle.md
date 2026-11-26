@@ -27,7 +27,7 @@ setup's default mapping.
 
 ```sh
 python3 -B <loaded-skill>/scripts/orbi_control.py [status|version|setup|start|update|stop|prune|help] [all] \
-  [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
+  [--repo-dir PATH] [--config PATH] [--dry-run] [--json] [--verbose] [--work] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
   [--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait] [--apply]
 ```
@@ -587,12 +587,23 @@ authorizes a protection change.
 
 ## Host inventory
 
-`/orbi status all [--verbose|--json]` is one read-only helper call from any directory.
+`/orbi status all [--work] [--verbose|--json]` is one read-only helper call from any directory.
 The default prints one row per resolved config: repository, observed busy/configured
 slots, saved provider/model/thinking, state, current issues and the earliest observed
-next trigger. `--verbose` lists units and full coverage diagnostics; `--json` keeps the
+next trigger. One bounded GitHub CLI read reports the invoking account's remaining/limit
+and UTC reset times for GraphQL and core REST. Without `--work` there are no per-repo
+issue lists. `--verbose` lists units and full coverage diagnostics; `--json` keeps the
 structured per-unit inventory. Unknown bindings and unavailable timestamps are not
 inferred from retained runs. Bare/current-repo status is unchanged.
+
+Add `--work` to count open issues labeled `ai-ready` or `ai-fix-needed` with one
+bounded `gh issue list` invocation per distinct repo. This is a label count, not
+proof an issue can be claimed. A count of `1000+` (`1000` in JSON) is a lower bound.
+A single-repo deployment with active scheduling or workers and zero matching issues
+gets a stop-or-reduce-slots suggestion. Nothing is stopped or reconfigured.
+If GitHub data is unavailable, inventory still prints and the affected values are
+`unknown` (`null` in JSON), never zero. Check `gh auth status`, repository access
+and connectivity before relying on the counts.
 
 Preserve the literal `all`; never inject `--repo-dir` or `--config`. Explicit
 repo/config and all mutation/bootstrap selectors (including dry-run) conflict
