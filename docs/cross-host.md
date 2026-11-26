@@ -62,7 +62,7 @@ This opt-in installation covers the two planning commands.
 
 ## Orbi lifecycle controls
 
-Use `/kit:orbi [status|version|setup|start|update|stop|help]` in Claude Code, `$kit:orbi` in Codex,
+Use `/kit:orbi [status|version|setup|start|update|stop|prune|help]` in Claude Code, `$kit:orbi` in Codex,
 or `/orbi` in Pi or Hermes. All hosts load the same
 [Orbi workflow](../skills/orbi/SKILL.md); default status is read-only. `version [--repo-dir PATH] [--config PATH] [--json]`
 passes unchanged into one read-only helper invocation and identifies the selected
