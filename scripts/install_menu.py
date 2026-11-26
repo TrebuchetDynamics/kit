@@ -2260,6 +2260,78 @@ def has_checkout(root):
     return marker.exists() or marker.is_symlink()
 
 
+INSTALLER_STASH_PREFIX = 'Kit installer: local changes before pull'
+GIT_CHECKOUT_OVERRIDES = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE',
+                          'GIT_OBJECT_DIRECTORY', 'GIT_NAMESPACE', 'GIT_SHALLOW_FILE')
+
+
+def report_installer_stashes(root, output):
+    """Compare kept stashes with HEAD without applying them to the checkout."""
+    command = ['git', '-C', str(root)]
+
+    def read(*args, allow_conflict=False):
+        result = subprocess.run([*command, *args], capture_output=True, timeout=10)
+        if allow_conflict and result.returncode == 1:  # merge-tree found conflicts
+            return None
+        if result.returncode:
+            detail = result.stderr.decode(errors='replace').strip().partition('\n')[0] or f'exit {result.returncode}'
+            raise RuntimeError(f'git {args[0]}: {detail}')
+        return result.stdout
+
+    inspect = shlex.join([*command, 'stash', 'list', '--format=%gd %H'])
+    try:
+        overrides = [name for name in GIT_CHECKOUT_OVERRIDES if name in os.environ]
+        if overrides:
+            raise RuntimeError('Git environment redirects checkout state; unset ' + ', '.join(overrides))
+        if Path(os.fsdecode(read('rev-parse', '--show-toplevel').removesuffix(b'\n'))).resolve() != root:
+            raise RuntimeError('installer path is not the Git checkout root')
+        fields = read('stash', 'list', '-z', '--format=%gd%x00%H%x00%gs').decode(errors='replace').split('\0')
+        entries = []
+        for ref, oid, subject in zip(fields[::3], fields[1::3], fields[2::3]):
+            message = subject.partition(': ')[2] if subject.startswith('On ') else subject
+            if message.startswith(INSTALLER_STASH_PREFIX):
+                entries.append((ref, oid))
+        if not entries:
+            return
+        head = read('rev-parse', '--verify', 'HEAD').decode().strip()
+        head_tree = read('rev-parse', '--verify', f'{head}^{{tree}}').strip()
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        output.line(f'Warning: cannot report Kit installer stashes: {exc}. Inspect with {inspect}', 'warning')
+        return
+
+    def already_upstream(oid):
+        # A stash stores the tracked worktree, its base and index parents, and
+        # optionally a third parent with untracked files only.
+        parents = read('rev-list', '--parents', '-1', oid).decode().split()[1:]
+        if len(parents) not in (2, 3):
+            raise RuntimeError('unexpected stash parents')
+        base, index, *untracked = parents
+        for saved in (oid, index):
+            merged = read('merge-tree', '--write-tree', '--no-messages', f'--merge-base={base}',
+                          head, saved, allow_conflict=True)
+            if merged is None or merged.strip() != head_tree:
+                return False
+        # For saved untracked files, compare path, mode and object ID in HEAD.
+        return not untracked or set(read('ls-tree', '-r', '-z', untracked[0]).split(b'\0')) <= set(
+            read('ls-tree', '-r', '-z', head).split(b'\0'))
+
+    output.line('\nKept Kit installer stashes:', 'heading')
+    for ref, oid in entries:
+        upstream = False
+        try:
+            upstream = already_upstream(oid)
+            status = 'already upstream' if upstream else 'not upstream'
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            status = f'upstream status unknown ({exc})'
+        output.line(f'  {ref} {oid} — {status}')
+        output.line('    ' + shlex.join([*command, 'stash', 'show', '--include-untracked', '--patch', oid]))
+        if upstream:
+            output.line(f'    After checking the ID with {inspect}:')
+            output.line('    ' + shlex.join([*command, 'stash', 'drop', ref]))
+        else:
+            output.line('    ' + shlex.join([*command, 'stash', 'apply', '--index', oid]))
+
+
 def pull_checkout(root, write=print, run=subprocess.run, before_change=None):
     """Keep local edits in a stash, then require an upstream fast-forward.
 
@@ -2272,9 +2344,7 @@ def pull_checkout(root, write=print, run=subprocess.run, before_change=None):
     # -C alone does not override these (for example when called from a Git hook).
     # Refuse before even reading status rather than stash into a foreign repository
     # or reset this checkout using somebody else's index/object database.
-    overrides = [name for name in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR',
-                                  'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
-                                  'GIT_NAMESPACE', 'GIT_SHALLOW_FILE') if name in os.environ]
+    overrides = [name for name in GIT_CHECKOUT_OVERRIDES if name in os.environ]
     if overrides:
         raise RuntimeError('Git environment redirects checkout state; unset ' +
                            ', '.join(overrides) + ' before retrying')
@@ -2321,7 +2391,7 @@ def pull_checkout(root, write=print, run=subprocess.run, before_change=None):
         previous = read('stash', 'list', '--format=%H').splitlines()
         # Git can reuse the object (and not add a reflog entry) for identical
         # edits in the same second. A sub-second message makes this a new stash.
-        message = f'Kit installer: local changes before pull ({time.time_ns()})'
+        message = f'{INSTALLER_STASH_PREFIX} ({time.time_ns()})'
         args = ('stash', 'push', '--include-untracked', '--message', message)
         saved = git(*args)
         current = read('stash', 'list', '--format=%H').splitlines()
@@ -2401,11 +2471,15 @@ def main(argv=None):
     output = Output(args.color, 0 if args.quiet else 2)
     if (args.no_pull or args.list or args.dry_run or os.environ.get('KIT_INSTALL_PULLED')
             or os.environ.get('KIT_INSTALL_NO_PULL') or not has_checkout(ROOT)):
-        return run_suite(args, parser, output)
-    with installer_lock(output, before_pull=True) as lock:
-        if lock is None:
-            return 1
-        return run_suite(args, parser, output, lock=lock, argv=argv)
+        result = run_suite(args, parser, output)
+    else:
+        with installer_lock(output, before_pull=True) as lock:
+            if lock is None:
+                return 1
+            result = run_suite(args, parser, output, lock=lock, argv=argv)
+    if not (args.list or args.dry_run) and has_checkout(ROOT):
+        report_installer_stashes(ROOT, output)
+    return result
 
 
 def run_suite(args, parser, output, lock=None, argv=None):
