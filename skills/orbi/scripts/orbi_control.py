@@ -1515,7 +1515,7 @@ def orbi(ctx, deployment, *argv, timeout=CHECK_TIMEOUT, allow_failure=False):
     require_harness(ctx, deployment)
     bootstrap = home_dir(ctx) / '.local/bin/orbi'
     return ctx.run([str(bootstrap), *argv], env=scoped_env(ctx, deployment),
-                   timeout=timeout, allow_failure=allow_failure)
+                   timeout=timeout, allow_failure=allow_failure, cwd=ctx.cwd)
 
 
 def run_orbi_check(ctx, deployment):
@@ -1972,7 +1972,7 @@ def record_lifecycle(ctx, home, args, result):
                         raise
                     time.sleep(0.05)
             # Record option names, not user-supplied paths, identifiers or values.
-            argv = [args.action, *(flag for flag in ACTIONS[args.action]['applies']
+            argv = [args.action, *(['all'] if args.scope == 'all' else []), *(flag for flag in ACTIONS[args.action]['applies']
                                    if getattr(args, flag[2:].replace('-', '_'), None))]
             entry = {'timestamp': datetime.now(timezone.utc).isoformat(), 'action': args.action,
                      'argv': argv, 'user': pwd.getpwuid(os.getuid()).pw_name, 'result': result}
@@ -2655,13 +2655,36 @@ def lifecycle_failure(ctx, target, error, *, target_path, steps, current, mutate
     return exc
 
 
-def run_upstream_step(ctx, target, command, *args, timeout=CHECK_TIMEOUT):
+def run_upstream_step(ctx, target, command, *args, timeout=CHECK_TIMEOUT, current=None):
     proc = orbi(ctx, target, command, '--config', str(target.config_path),
                 *args, timeout=timeout, allow_failure=True)
     if proc.returncode != 0:
+        step = command
+        if command == 'setup' and current is not None:
+            # The engine can install/activate timers before subsequent setup checks.
+            # Classify its fixed reason prefixes; never echo child stderr or checkout paths.
+            setup_steps = {
+                'required command missing:': 'check_commands',
+                'gh auth status failed': 'check_auth',
+                'repo not accessible:': 'check_repo',
+                'insufficient permission for': 'check_repo',
+                'cannot parse gh repo view output': 'check_repo',
+                'label alignment failed': 'align_labels',
+                'cannot parse gh label list output': 'align_labels',
+                'editable tool install failed': 'install_cli',
+                'systemd units install failed': 'install_units',
+                'systemd status query failed': 'observe_installed_timers',
+                'checkout check failed': 'check_checkout',
+                'checkout is not clean:': 'check_checkout',
+            }
+            reason = next((line.removeprefix('setup_failed reason=') for line in proc.stderr.splitlines()
+                           if line.startswith('setup_failed reason=')), '')
+            step = next((name for prefix, name in setup_steps.items() if reason.startswith(prefix)), command)
+            current['step'] = step
+        detail = f' at {step}' if step != command else ''
         raise ControlError(command.replace('-', '_') + '_failed',
-                           f'upstream `orbi {command}` failed',
-                           fix=f'inspect the failed {command} privately')
+                           f'upstream `orbi {command}` failed{detail}',
+                           fix=f'inspect the failed {command}{detail} privately')
 
 
 def first_tick_after_timer_failure(ctx, args, repo, target, identities):
@@ -2733,7 +2756,7 @@ def activate_existing_locked(ctx, args, repo, target, identities, steps, current
     ctx.lifecycle_home = target.deploy_home
     current.clear()
     current.update(step='setup', mutation='possible')
-    run_upstream_step(ctx, target, 'setup', '--repo', repo.full)
+    run_upstream_step(ctx, target, 'setup', '--repo', repo.full, '--json', current=current)
     steps.append({'step': 'upstream_setup', 'status': 'ok'})
     current.clear()
     current.update({'step': 'install-units', 'mutation': 'possible'})
@@ -3013,6 +3036,7 @@ def command_stop(ctx, args):
 
 UPDATE_TRACK = 'release'
 UPDATE_WAIT_MINUTES = 30
+FLEET_UPDATE_WAIT_MINUTES = 120
 
 
 def quiesce_plan_steps(*, wait=False):
@@ -3303,28 +3327,34 @@ def require_quiescent(ctx, target, *, known_indices=()):
                            evidence={'scheduler': snapshot, 'pending_services': pending})
 
 
-def wait_for_workers(ctx, target, snapshot, *, action='update'):
-    deadline = time.monotonic() + UPDATE_WAIT_MINUTES * 60
+def wait_for_workers(ctx, target, snapshot, *, action='update', deadline=None):
+    fleet = deadline is not None
+    if deadline is None:
+        deadline = time.monotonic() + UPDATE_WAIT_MINUTES * 60
     while pending := update_pending(snapshot):
         workers = sum(item['state'] not in INACTIVE_STATES for item in snapshot['services'].values())
         jobs = len(snapshot['pending_jobs'])
         finishing = f'{workers} worker(s)' + (f' and {jobs} scheduler job(s)' if jobs else '')
         remaining = deadline - time.monotonic()
         if remaining <= 0:
+            limit = 'the fleet drain deadline' if fleet else f'{UPDATE_WAIT_MINUTES} minutes'
             raise ControlError('update_busy',
                                f'{action.capitalize()} not applied: {finishing} still finishing after '
-                               f'{UPDATE_WAIT_MINUTES} minutes. Scheduling remains paused.',
-                               fix=f'wait for the remaining work to finish before rerunning /orbi {action}',
+                               f'{limit}. Scheduling remains paused.',
+                               fix=('wait for the remaining work to finish' if fleet else
+                                    f'wait for the remaining work to finish before rerunning /orbi {action}'),
                                evidence={'scheduler': snapshot, 'pending_services': pending})
         # Progress is best-effort and must not corrupt a JSON receipt on stdout.
         with contextlib.suppress(OSError):
-            print(f'Orbi {action}: Scheduling paused; {finishing} still finishing.', file=ctx.err, flush=True)
+            label = f'{action} ({target.config_path})' if fleet else action
+            print(f'Orbi {label}: Scheduling paused; {finishing} still finishing.', file=ctx.err, flush=True)
         snapshot_indices = snapshot['inventory']['additional_instances']
         time.sleep(min(60, remaining))
         snapshot = paused_observation(ctx, target, known_indices=snapshot_indices)
 
 
-def quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current, *, wait=False, action='update'):
+def quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current, *,
+                   wait=False, action='update', deadline=None):
     """The caller holds the config lock and supplied fresh ownership evidence."""
     disable_owned_timers(ctx, target, snapshot, disabled, steps, current)
     current.clear()
@@ -3355,7 +3385,7 @@ def quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current, *, 
     if wait:
         current.clear()
         current.update(step='wait_for_workers', mutation='none')
-        wait_for_workers(ctx, target, snapshot, action=action)
+        wait_for_workers(ctx, target, snapshot, action=action, deadline=deadline)
         steps.append({'step': 'wait_for_workers', 'status': 'ok'})
         return
     for unit, item in snapshot['services'].items():
@@ -3433,7 +3463,21 @@ def configured_timers_active(target, snapshot):
                and item.get('active') == 'active' for i in range(1, target.max_concurrency + 1))
 
 
+def fleet_scheduling(target, snapshot):
+    if snapshot.get('state') != 'ok':
+        return 'unknown'
+    enabled_or_active = [item for item in snapshot['timers'].values()
+                         if item['enabled'] or item['active'] not in INACTIVE_STATES]
+    if not enabled_or_active:
+        return 'stopped'
+    if all(item['configured'] for item in enabled_or_active) and configured_timers_active(target, snapshot):
+        return 'running'
+    return 'mixed'
+
+
 def command_update(ctx, args):
+    if args.scope == 'all':
+        return command_update_all(ctx, args)
     return maintain_existing(ctx, args)
 
 
@@ -3545,8 +3589,10 @@ def setting_replacement(target, text, changes):
     return text
 
 
-def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes=None):
+def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes=None,
+                      fleet_row=None, release=None, deadline=None):
     """Quiesce as needed, update, and activate only after validation."""
+    fleet = fleet_row is not None
     setting = changes is not None
     action = 'set' if setting else ('start' if start else 'update')
     change = None
@@ -3589,7 +3635,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
         else:
             candidate = target
             provider = require_provider(target)
-        if start:
+        if start or fleet:
             current = {'step': 'verify_engine_checkout', 'mutation': 'none'}
             require_engine_checkout(ctx, target, source_repo=repo.path)
             current = {'step': 'preflight', 'mutation': 'none'}
@@ -3623,13 +3669,29 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
                   + (' --allow-metered' if args.allow_metered else '') if setting else
                   '/orbi ' + action + bound_selectors + (' --stop' if args.stop else '')
                   + (' --wait' if args.wait else ''))
+        if fleet:
+            resume = None  # Do not suggest activation until the locked snapshot proves prior intent.
         report = new_deployment_report(ctx, target, provider)
         report['source'] = source_evidence(ctx, target)['state']
         if start:
             current = {'step': 'resolve_release', 'mutation': 'none'}
             tag, expected = official_latest_release(ctx)
             current = {'step': 'observe_scheduler', 'mutation': 'none'}
+
+        def preserve_scheduling(snapshot):
+            state = fleet_scheduling(target, snapshot)
+            fleet_row['scheduling_before'] = state
+            if state not in {'running', 'stopped'}:
+                raise ControlError('scheduling_unverified', 'cannot preserve mixed or unknown timer scheduling',
+                                   fix='inspect enabled/active timers with /orbi status before updating',
+                                   evidence={'scheduler': snapshot})
+            args.stop = state == 'stopped'
+            if not args.stop:
+                require_start_config_binding(target)
+
         snapshot = update_observation(ctx, target)
+        if fleet:
+            preserve_scheduling(snapshot)
         if args.dry_run:
             return {'action': 'update', 'platform': ctx.platform, 'status': 'planned',
                     'dry_run': True, 'repo': repo.full, 'deployment': report,
@@ -3656,6 +3718,9 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
                         'activated': False, 'scheduler': snapshot, 'engine_update': 'up_to_date',
                         'first_tick': 'already-active' if live else 'not-requested', **start_fields}
 
+        if start or fleet:
+            if fleet:
+                tag, expected = release
             # The release channel also considers local tags. Sync the exact
             # official tag we resolved, then verify its peeled commit.
             source_track = 'tag:' + tag
@@ -3671,7 +3736,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
         steps.append({'step': 'reuse_existing_deployment' if start else 'preflight_target',
                       'status': 'ok'})
         current, mutated = {'step': 'lock', 'mutation': 'possible'}, True
-        with locked(ctx, target.config_path):
+        with locked(ctx, target.config_path, **({'nonblocking': True} if fleet else {})):
             steps.append({'step': 'lock', 'status': 'ok', 'mutation': 'completed'})
             current = {'step': 'recheck_target', 'mutation': 'none'}
             if (repo_identity(ctx, repo.path) != repo
@@ -3684,8 +3749,9 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
             require_unit_ownership(ctx, target, symlink_error=symlink_error)
             if start:
                 require_start_config_binding(target)
+            if start or fleet:
                 require_engine_checkout(ctx, target, source_repo=repo.path)
-            require_source(ctx, target)
+            locked_source = require_source(ctx, target)
             require_clean_checkout(ctx, target)
             require_setup_transport(repo, target)
             require_harness(ctx, target)
@@ -3695,7 +3761,13 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
             evidence = prerequisites(ctx, candidate, action=action, provider=provider,
                                      allow_bootstrap_install=False)
             snapshot = update_observation(ctx, target)
-            known_indices = snapshot['inventory']['additional_instances'] if setting else ()
+            if fleet:
+                preserve_scheduling(snapshot)
+                old = engine_summary(ctx, target, locked_source, include_bootstrap=False)
+                fleet_row.update(old_version=old['version'], old_revision=old['revision'])
+                previous = {'track': target.pin, 'head': checkout_head(ctx, target)}
+                resume = '/orbi update' + bound_selectors + (' --stop' if args.stop else '') + ' --wait'
+            known_indices = snapshot['inventory']['additional_instances'] if setting or fleet else ()
             ctx.lifecycle_home = target.deploy_home
             activation = 'held' if args.stop else 'pending'
             activation_reason = 'explicit --stop' if args.stop else 'maintenance scheduling request'
@@ -3703,7 +3775,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
                     or any(item['enabled'] or item['active'] not in INACTIVE_STATES
                            for item in snapshot['timers'].values())):
                 quiesce_locked(ctx, target, snapshot, disabled, stopped, steps, current,
-                               wait=args.wait, action=action)
+                               wait=args.wait, action=action, deadline=deadline)
             current = {'step': 'recheck_target', 'mutation': 'none'}
             if (repo_identity(ctx, repo.path) != repo
                     or select_target(ctx, repo, args.config, require=True) != target
@@ -3784,11 +3856,12 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
                     raise ControlError('activation_unverified', 'engine validated but configured timers are not enabled/active',
                                        fix='inspect partial timer state before deliberate start recovery',
                                        evidence={'scheduler': after})
-                if setting and any(not item['configured'] and
+                if (setting or fleet) and any(not item['configured'] and
                                    (item['enabled'] or item['active'] not in INACTIVE_STATES)
                                    for item in after['timers'].values()):
                     raise ControlError('activation_unverified', 'surplus timers are still enabled or active',
-                                       fix='inspect the scheduler and backup before deliberate recovery',
+                                       fix=('inspect the scheduler before deliberate recovery' if fleet else
+                                            'inspect the scheduler and backup before deliberate recovery'),
                                        evidence={'scheduler': after})
                 activation = 'started'
             current = {'step': 'release_lock', 'mutation': 'possible'}
@@ -3837,7 +3910,7 @@ def maintain_existing(ctx, args, repo=None, target=None, *, start=False, changes
                                 snapshot_reader=update_observation)
         if engine_result in {'updated', 'up_to_date'}:
             exc.evidence['engine_revision'] = head
-        repair = (start_command if engine_result in {'updated', 'up_to_date'} and not args.stop
+        repair = (start_command if engine_result in {'updated', 'up_to_date'} and not args.stop and not fleet
                   else resume)
         if repair:
             exc.fix += '; after repairing the cause, run ' + repair
@@ -3886,6 +3959,19 @@ def render(ctx, document, json_mode, *, verbose=False):
             ctx.out.write(f"{verb} {', '.join(row['units'])} ({row['reason']}: {row['config']})\n")
         if document['dry_run'] and document['candidates']:
             ctx.out.write('Preview only. Use /orbi prune --apply to remove these templates.\n')
+        return
+    if document.get('action') == 'update' and document.get('scope') == 'host':
+        ctx.out.write(f"Orbi update all: {document['status']}; coverage={document['coverage']['state']}\n")
+        for row in document['deployments']:
+            old = row['old_version'] or row['old_revision'] or 'unknown'
+            new = row['new_version'] or row['new_revision'] or 'unknown'
+            ctx.out.write(f"{row['config']}: {row['status']}; version {old} -> {new}; scheduling "
+                          f"{row['scheduling_before']} -> {row['scheduling_after']}; "
+                          f"version drift={row['version_drift']}\n")
+            if error := row.get('error'):
+                ctx.out.write(f"  Error {error['code']}: {error['message']}\n  Next: {error['fix']}\n")
+        if document['coverage']['state'] != 'ok':
+            ctx.out.write('Inspect /orbi status all --verbose for discovery gaps.\n')
         return
     if document.get('action') in ('set', 'update'):
         target = document.get('deployment', {}).get('config', document.get('target', 'unknown'))
@@ -5909,9 +5995,88 @@ def host_work_count(ctx, repo):
     return None
 
 
+def host_coverage():
+    return {'state': 'ok', 'managers': {}, 'problems': [],
+            'scope': 'observed local managers only; other users, namespaces, containers and remote hosts unobserved'}
+
+
+def command_update_all(ctx, args):
+    coverage = host_coverage()
+    units, paths, _ = host_linux(ctx, coverage)
+    deployments = host_configs(ctx, paths, coverage)
+    release = official_latest_release(ctx) if deployments and not args.dry_run else None
+    wait_minutes = args.wait_minutes if args.wait_minutes is not None else FLEET_UPDATE_WAIT_MINUTES
+    deadline = time.monotonic() + wait_minutes * 60
+    bindings = {}
+    for unit in units:
+        if config := unit['binding']['config']:
+            bindings.setdefault(config, []).append(unit)
+    results = []
+    for config, item in deployments.items():
+        target = item.get('target')
+        before = item['engine']
+        row = {'config': config, 'repo': item['repo'],
+               'old_version': before['version'], 'old_revision': before.get('revision'),
+               'scheduling_before': 'unknown'}
+        version, revision = before['version'], before.get('revision')
+        verified_revision = revision if before['state'] == 'verified' else None
+        snapshot = {}
+        child = Context(env=ctx.env, platform=ctx.platform, cwd=target.repo_dir if target else ctx.cwd,
+                        stdout=ctx.out, stderr=ctx.err, noninteractive=True)
+        try:
+            if target is None or target.repo_dir is None:
+                raise ControlError('config_invalid', 'cannot bind this config to a repo_dir',
+                                   fix='verify the native config and its canonical repo_dir before updating')
+            if any(unit['manager'] != 'user' or not re.fullmatch(
+                    re.escape(target.prefix) + r'@(?:[1-9][0-9]*)?\.service', unit['unit'])
+                   or any(timer != unit['unit'].removesuffix('.service') + '.timer'
+                          for timer in unit['timers'])
+                   for unit in bindings.get(config, ())):
+                raise ControlError('unit_conflict', 'deployment has units outside its supported user timer/service scope',
+                                   fix='inspect /orbi status all --verbose; update only after verifying ownership')
+            child_args = argparse.Namespace(**{**vars(args), 'config': config, 'repo_dir': str(target.repo_dir),
+                                               'wait': True})
+            receipt = maintain_existing(child, child_args, fleet_row=row, release=release, deadline=deadline)
+            snapshot = receipt['scheduler']
+            row['status'] = receipt['status']
+        except (ControlError, OSError, UnicodeError, subprocess.SubprocessError) as error:
+            exc = error if isinstance(error, ControlError) else lifecycle_failure(
+                child, target, error, target_path=config, steps=[],
+                current={'step': 'preflight', 'mutation': 'none'}, mutated=False, evidence={})
+            evidence = exc.evidence
+            snapshot = evidence.get('scheduler', {})
+            failed = evidence.get('steps', [{}])[-1].get('step')
+            row.update(status='pending' if exc.code == 'update_busy' and failed == 'wait_for_workers' else 'failed',
+                       failed_step=failed,
+                       error={'code': exc.code, 'message': exc.message, 'fix': exc.fix, 'mutated': exc.mutated})
+            for key in ('steps', 'repair_command', 'pending_services', 'disabled_timers', 'engine_update', 'activation'):
+                if key in evidence:
+                    row[key] = evidence[key]
+        if child.lifecycle_home is not None:
+            try:
+                after = local_deployment_summary(child, deployment_from(target.config_path), metadata_only=True)['engine']
+                version = after['version']
+                revision = after['revision']
+                verified_revision = revision if after['state'] == 'verified' else None
+            except (ControlError, OSError, UnicodeError, subprocess.SubprocessError):
+                version = revision = verified_revision = None
+        row.update(new_version=version, new_revision=revision,
+                   scheduling_after=fleet_scheduling(target, snapshot),
+                   version_drift=('unknown' if not release or not verified_revision else
+                                  'none' if verified_revision == release[1] else 'remaining'))
+        record_lifecycle(child, child.lifecycle_home, args, row.get('error', {}).get('code', row['status']))
+        results.append(row)
+    incomplete = any(row['status'] in {'failed', 'pending'} for row in results) or any(
+        not problem.get('non_orbi') for problem in coverage['problems'])
+    return {'action': 'update', 'scope': 'host', 'platform': ctx.platform,
+            'status': 'incomplete' if incomplete else 'planned' if args.dry_run else 'complete',
+            'dry_run': args.dry_run, 'coverage': coverage,
+            'release': {'tag': release[0], 'revision': release[1]} if release else None,
+            'wait_minutes': wait_minutes, 'deployments': results}
+
+
 def command_status_all(ctx, *, work):
-    coverage = {'state': 'ok', 'managers': {}, 'problems': [],
-                'scope': 'observed local managers only; other users, namespaces, containers and remote hosts unobserved'}
+    coverage = host_coverage()
     worker_bindings = {}
     if ctx.platform == 'linux':
         rows, paths, worker_bindings = host_linux(ctx, coverage)
@@ -6000,7 +6165,7 @@ def action_usage():
     return (prefix + '[' + '|'.join(name for name in ACTIONS if name != 'set') + '] [all] '
             '[--repo-dir PATH] [--config PATH] [--dry-run] [--json] [--verbose] [--work] '
             '[--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL] [--allow-metered]] '
-            '[--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait] [--apply]\n'
+            '[--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait] [--wait-minutes MINUTES] [--apply]\n'
             + '\n'.join('  ' + prefix + command.removeprefix('/orbi ') + ' [--json]' for command in SET_USAGE))
 
 
@@ -6015,6 +6180,7 @@ def command_help(ctx, args):
         '--work': 'status all only: count open ai-ready or ai-fix-needed issues per repo and suggest where to cut idle capacity',
         '--stop': 'update only: compatibility opt-out: quiesce, update and leave stopped',
         '--wait': f'update only: wait up to {UPDATE_WAIT_MINUTES} minutes for workers to finish; leave paused on timeout',
+        '--wait-minutes': f'update all only: shared drain deadline in minutes (default: {FLEET_UPDATE_WAIT_MINUTES})',
         '--apply': 'prune only: remove verified stale user unit templates and reload the user manager',
         '--resume-setup': 'setup only: fill a legacy missing local provider; requires explicit '
                           '--config and complete matching --pi-* inputs; never overwrite',
@@ -6265,10 +6431,12 @@ ACTIONS = {
         'effect': 'Disable owned timers, cancel queued starts, stop owned workers (or wait with --wait), update and start scheduling; --stop leaves stopped.',
         'mutates': 'scheduler',
         'platforms': ['linux'],
-        'applies': ['--repo-dir', '--config', '--dry-run', '--json', '--stop', '--wait'],
+        'applies': ['--repo-dir', '--config', '--dry-run', '--json', '--stop', '--wait', '--wait-minutes'],
         'when': 'Run for a prepared deployment: quiesce owned units under lock, then pin the newest official '
                 'release as sha:<commit> after fresh idle evidence. Plain update authorizes starting configured scheduling '
                 'after engine validation, even after an earlier stop. Explicit --stop leaves stopped. '
+                'Literal update all discovers local configs, waits without stopping workers, and restores '
+                'verified running/stopped scheduling on successful updates. No repo/config selectors. '
                 'No direct kill, restart or background continuation.',
     },
     'set': {
@@ -6355,7 +6523,7 @@ def parse_args(argv):
                     'help works everywhere; minimum Python 3.11.')
     parser.add_argument('action', nargs='?', default='status',
                         metavar='[' + '|'.join(ACTIONS) + ']')
-    parser.add_argument('operands', nargs='*', help='status all or set deployment and values')
+    parser.add_argument('operands', nargs='*', help='status all, update all, or set deployment and values')
     parser.add_argument('--repo-dir', default=None,
                         help='canonical repository checkout (default: current directory)')
     parser.add_argument('--config', default=None,
@@ -6371,6 +6539,8 @@ def parse_args(argv):
     parser.add_argument('--wait', action='store_true',
                         help=f'update only: wait up to {UPDATE_WAIT_MINUTES} minutes for workers to finish; '
                              'leave paused on timeout')
+    parser.add_argument('--wait-minutes', type=int, metavar='MINUTES',
+                        help=f'update all only: shared drain deadline in minutes (default: {FLEET_UPDATE_WAIT_MINUTES})')
     parser.add_argument('--resume-setup', action='store_true',
                         help='setup only: resume legacy missing provider with explicit --config '
                              'and complete matching --pi-* inputs')
@@ -6418,18 +6588,25 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             raise ControlError(
                 'unknown_action', f"unknown action '{args.action}'", exit_code=2,
                 fix='run /orbi help for the supported actions and their effects')
-        if args.scope is not None and (args.action != 'status' or any(
-                (args.repo_dir is not None, args.config is not None, args.dry_run, args.stop, args.wait, args.apply,
-                 args.resume_setup, args.harness is not None, args.pi_providers is not None,
-                 args.pi_provider is not None, args.pi_model is not None, args.pi_thinking is not None,
-                 args.allow_metered))):
+        fleet_update = args.action == 'update' and args.scope == 'all'
+        host_status = args.action == 'status' and args.scope == 'all'
+        if args.scope is not None and (not (fleet_update or host_status) or any(
+                (args.repo_dir is not None, args.config is not None, args.dry_run and not fleet_update,
+                 args.stop, args.wait, args.apply, args.resume_setup, args.harness is not None,
+                 args.pi_providers is not None, args.pi_provider is not None, args.pi_model is not None,
+                 args.pi_thinking is not None, args.allow_metered))):
             raise ControlError('invalid_host_selection',
-                               'literal all requires status with no repo/config or mutation selectors',
-                               fix='use /orbi status all without selectors', exit_code=2)
-        if args.verbose and args.scope != 'all':
+                               ('update all does not accept target or conflicting selectors' if fleet_update else
+                                'literal all requires status with no repo/config or mutation selectors'),
+                               fix=('use /orbi update all without conflicting selectors' if fleet_update else
+                                    'use /orbi status all without selectors'), exit_code=2)
+        if args.wait_minutes is not None and (not fleet_update or not 1 <= args.wait_minutes <= sys.maxsize):
+            raise ControlError('invalid_wait_selection', '--wait-minutes requires update all and a positive integer',
+                               fix='use /orbi update all [--wait-minutes MINUTES]', exit_code=2)
+        if args.verbose and not host_status:
             raise ControlError('invalid_host_selection', '--verbose requires status all',
                                fix='use /orbi status all --verbose, or omit --verbose', exit_code=2)
-        if args.work and args.scope != 'all':
+        if args.work and not host_status:
             raise ControlError('invalid_host_selection', '--work requires status all',
                                fix='use /orbi status all --work, or omit --work', exit_code=2)
         if args.apply and args.action != 'prune':
@@ -6494,7 +6671,7 @@ def main(argv=None, *, env=None, platform=None, cwd=None, stdout=None, stderr=No
             render_help(ctx, document, args.json)
         else:
             render(ctx, document, args.json, verbose=args.verbose)
-        return 0
+        return 1 if fleet_update and document['status'] == 'incomplete' else 0
     except ControlError as exc:
         record_lifecycle(ctx, ctx.lifecycle_home, args, exc.code)
         if args.action in ('setup', 'start') and 'steps' not in exc.evidence:

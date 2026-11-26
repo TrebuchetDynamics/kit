@@ -225,6 +225,10 @@ interrupting them. If work remains after 30 minutes, scheduling stays paused and
 no update is applied. Update syncs only after verifying inactivity and enables
 configured timers only after validation and start’s technical checks. Use `--stop`
 to leave scheduling stopped and skip activating unit refresh.
+To update all discoverable local deployments without stopping live workers,
+use `/orbi update all`. The shared drain budget defaults to two hours; completed
+updates restore each deployment's prior running or stopped scheduling. Check the
+[per-deployment receipt and pending recovery](skills/orbi/references/lifecycle.md#fleet-update).
 
 The upstream CLI remains available for diagnostics:
 
@@ -440,7 +444,7 @@ states its own boundaries and what "done" means.
 
 - `/ask-kit` — ask which of the above fits.
 - `/update-kit` — refresh dedicated upstream source and rerun the suite installer.
-- `/orbi` — inspect or explicitly manage one repository's Orbi deployment.
+- `/orbi` — inspect or explicitly manage local Orbi deployments.
 - GitHub Issues and Orbi diagnostics — see [delivery setup](docs/github-native.md).
 
 ## Paseo interface

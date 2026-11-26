@@ -38,6 +38,7 @@ concrete unmet need, not a fixed sequence of model turns.
    | Public skill arguments | Helper arguments |
    | --- | --- |
    | `status all [--work] [--verbose\|--json]` | `status all [--work] [--verbose\|--json]` |
+   | `update all [--wait-minutes MINUTES] [--dry-run] [--json]` | Pass through unchanged |
    | `set DEPLOYMENT slots N` | Pass through unchanged |
    | `set DEPLOYMENT model PROVIDER/MODEL [THINKING] [--allow-metered]` | Pass through unchanged |
    | `setup` | `start` |
@@ -68,6 +69,14 @@ concrete unmet need, not a fixed sequence of model turns.
    with `--json`. Reject conflicting selectors before probes. Relay partial coverage,
    unavailable GitHub data and observed totals, never an absolute host count.
    For host inventory interpretation, see [host inventory](references/lifecycle.md#host-inventory).
+   **Fleet update:** forward literal `update all` from any directory without
+   `--repo-dir`, `--config`, `--stop` or `--wait`. The helper discovers the same
+   local configs as `status all` and uses each config's own checkout. It lets
+   workers finish without stopping them and restores verified running or stopped
+   scheduling after each successful update. The shared drain budget is 120 minutes
+   unless `--wait-minutes MINUTES` is supplied. Relay each deployment's version,
+   scheduling and drift, including pending rows and their bound repair commands.
+   See [fleet update recovery](references/lifecycle.md#fleet-update).
    **Prune:** forward `prune [--apply] [--json]` without repo/config selectors.
    Preview is the default; remove stale unloaded Linux user templates only when
    `--apply` is explicit. Do not infer apply authority from a preview.
@@ -275,7 +284,7 @@ For host/fixture measurement limits, use the reference's
 - Not `/unblock`: recovery follows [service boundaries](../unblock/references/services.md).
 - Not `/git-commit-push`: no commit, push or PR for the managed repository.
 - Not `/plan-with-me` or `/plan-for-me`: planning grants no live service authority.
-- Not `/update-kit`: update moves one deployment's engine, not Kit or this helper.
+- Not `/update-kit`: update moves deployment engines, not Kit or this helper.
 - Local visibility only: no cross-machine lock or global capacity guarantee.
 
 The standing [Definition of Done](../shared/DEFINITION-OF-DONE.md) applies beyond
