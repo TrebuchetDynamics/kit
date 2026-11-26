@@ -39,7 +39,8 @@ def refresh_hosts(source):
             return [{'item': item, 'status': status, 'exit': code} for item in HOST_ITEMS]
         with tempfile.TemporaryDirectory(prefix='kit-host-update-') as directory:
             report = Path(directory) / 'items.jsonl'
-            env = dict(os.environ, KIT_INSTALL_REPORT=str(report), KIT_INSTALL_ORBI_PROGRESS='1', NO_COLOR='1')
+            env = dict(os.environ, KIT_INSTALL_NO_PULL='1', KIT_INSTALL_REPORT=str(report),
+                       KIT_INSTALL_ORBI_PROGRESS='1', NO_COLOR='1')
             skip_orbi = env.get('KIT_INSTALL_SKIP_ORBI') == '1'
             skipped = 'hermes,pi,orbi' if skip_orbi else 'hermes,pi'
             budget = HOST_REFRESH_TIMEOUT_S if skip_orbi else HOST_ORBI_REFRESH_TIMEOUT_S
