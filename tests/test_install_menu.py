@@ -3976,6 +3976,136 @@ def restart_services(output, observations=None, settled=None):
     def events(self):
         return [json.loads(line) for line in self.trace.read_text().splitlines()]
 
+    def test_stash_report_is_silent_without_installer_stashes(self):
+        self.installer_fixture()
+        clean = self.entry('--only', 'tx', '--quiet')
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+        self.assertNotIn('stash', clean.stdout)
+        (self.clone / 'f').write_text('manual edit')
+        self.git('stash', 'push', '-m', 'manual note: Kit installer: local changes before pull (123)')
+        manual = self.entry('--only', 'tx', '--quiet')
+        self.assertEqual(manual.returncode, 0, manual.stdout + manual.stderr)
+        self.assertNotIn('stash', manual.stdout)
+        self.assertEqual(len(self.stashes()), 1)
+
+    def test_stash_report_checks_post_pull_head_and_preserves_mixed_stash_list(self):
+        self.installer_fixture()
+        prefix = 'Kit installer: local changes before pull'
+        contents = 'first\nsecond\nthird\nfourth\nfifth\n'
+        (self.other / 'g').write_text(contents)
+        self.run_git('git', '-C', str(self.other), 'commit', '-qam', 'shared starting point')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+        self.git('pull', '--ff-only')
+
+        (self.clone / 'f').write_text('unmerged change')
+        self.git('stash', 'push', '-m', f'{prefix} (1)')
+        saved = self.stashes()[0]
+        (self.clone / 'f').write_text('manual edit')
+        self.git('stash', 'push', '-m', 'manual stash')
+        manual = self.stashes()[0]
+        untracked = 'saved settings\nfile.json'
+        (self.clone / untracked).write_text('{}\n')
+        (self.clone / 'g').write_text(contents.replace('first', 'local first'))
+        self.git('add', 'g')
+        self.git('stash', 'push', '-u', '-m', f'{prefix} (2)')
+        upstream = self.stashes()[0]
+        (self.other / untracked).write_text('{}\n')
+        (self.other / 'f').write_text('conflicting upstream change')
+        (self.other / 'g').write_text(contents.replace('first', 'local first').replace('fifth', 'new fifth'))
+        self.run_git('git', '-C', str(self.other), 'add', '-A')
+        self.run_git('git', '-C', str(self.other), 'commit', '-qm', 'integrate with other edits')
+        self.run_git('git', '-C', str(self.other), 'push', '-q')
+
+        result = self.entry('update', '--only', 'tx', '--quiet')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary, heading, report = result.stdout.partition('Kept Kit installer stashes:')
+        self.assertTrue(heading, result.stdout)
+        self.assertIn('Summary:', summary)
+        self.assertIn(f'stash@{{0}} {upstream} — already upstream', report)
+        self.assertIn(f'stash@{{2}} {saved} — not upstream', report)
+        self.assertNotIn(manual, report)
+        drop = shlex.join(['git', '-C', str(self.clone), 'stash', 'drop', 'stash@{0}'])
+        self.assertIn(drop, report)
+        verify = shlex.join(['git', '-C', str(self.clone), 'stash', 'list', '--format=%gd %H'])
+        self.assertIn(verify, report)
+        self.assertIn(f'stash@{{0}} {upstream}', self.run_git(*shlex.split(verify)).stdout)
+        self.assertEqual(report.count('stash drop'), 1)
+        self.assertIn(shlex.join(['git', '-C', str(self.clone), 'stash', 'apply', '--index', saved]), report)
+        show = shlex.join(['git', '-C', str(self.clone), 'stash', 'show', '--include-untracked', '--patch', upstream])
+        self.assertIn(show, report)
+        self.assertIn('+{}', self.run_git(*shlex.split(show)).stdout)
+        self.assertEqual(self.head(self.clone), self.head(self.other))
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertEqual(self.stashes(), [upstream, manual, saved])
+
+    def test_stash_report_does_not_ignore_untracked_or_staged_only_changes(self):
+        self.installer_fixture()
+        (self.clone / 'g').write_text('only in the stash index\n')
+        self.git('add', 'g')
+        (self.clone / 'g').write_text('base\n')
+        self.git('stash', 'push', '-m', 'Kit installer: local changes before pull (1)')
+        staged = self.stashes()[0]
+        (self.clone / 'untracked').write_text('only in the stash untracked tree')
+        self.git('stash', 'push', '-u', '-m', 'Kit installer: local changes before pull (2)')
+        untracked = self.stashes()[0]
+        self.dirty()  # --no-pull must compare HEAD, not this dirty index and worktree
+        (self.clone / 'untracked').write_text('only in the stash untracked tree')
+        preview = self.entry('--dry-run', '--only', 'tx')
+        self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
+        self.assertNotIn('Kept Kit installer stashes:', preview.stdout)
+        before = [self.git('diff'), self.git('diff', '--cached'), self.git('status', '--porcelain')]
+
+        result = self.entry('--no-pull', '--only', 'tx', '--quiet')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for oid in (staged, untracked):
+            self.assertIn(f'{oid} — not upstream', result.stdout)
+        self.assertNotIn('stash drop', result.stdout)
+        self.assertEqual(before, [self.git('diff'), self.git('diff', '--cached'), self.git('status', '--porcelain')])
+        self.assertEqual(self.stashes(), [untracked, staged])
+
+    def test_stash_report_does_not_run_configured_merge_drivers_or_write_git_objects(self):
+        self.installer_fixture()
+        (self.clone / '.gitattributes').write_text('g merge=keep-ours\n')
+        self.git('add', '.gitattributes')
+        self.git('commit', '-qm', 'select a custom merge driver')
+        self.git('config', 'merge.keep-ours.driver', 'echo ran > merge-driver-ran')
+        (self.clone / 'g').write_text('only in the stash\n')
+        self.git('stash', 'push', '-m', 'Kit installer: local changes before pull (1)')
+        saved = self.stashes()[0]
+        (self.clone / 'g').write_text('different upstream change\n')
+        self.git('commit', '-qam', 'edit the same line independently')
+        objects = self.git('count-objects', '-v')
+
+        result = self.entry('--no-pull', '--only', 'tx', '--quiet')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertIn(f'{saved} — not upstream', result.stdout)
+        self.assertNotIn('stash drop', result.stdout)
+        self.assertEqual(self.git('count-objects', '-v'), objects)
+        self.assertEqual(self.stashes(), [saved])
+
+    def test_stash_report_git_failure_does_not_fail_install(self):
+        self.installer_fixture()
+        bin_dir = Path(self.entry_env['KIT_BIN_DIR'])
+        bin_dir.mkdir()
+        fake_git = bin_dir / 'git'
+        fake_git.write_text('#!/bin/sh\nif [ "$3" = merge-tree ]; then\n'
+                            '  echo "fixture: cannot read merge inputs" >&2; exit 128\nfi\n'
+                            f'exec {shlex.quote(shutil.which("git"))} "$@"\n')
+        fake_git.chmod(0o755)
+        (self.clone / 'g').write_text('local edit\n')
+        self.git('stash', 'push', '-m', 'Kit installer: local changes before pull (1)')
+        saved = self.stashes()[0]
+
+        result = self.entry('--no-pull', '--only', 'tx', '--quiet',
+                            env={'PATH': str(bin_dir) + os.pathsep + os.environ['PATH']})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f'{saved} — upstream status unknown', result.stdout)
+        self.assertIn('fixture: cannot read merge inputs', result.stdout)
+        self.assertIn('stash show --include-untracked --patch', result.stdout)
+        self.assertNotIn('stash drop', result.stdout)
+        self.assertEqual(self.stashes(), [saved])
+
     def test_held_installer_lock_refuses_before_stashing_or_pulling(self):
         self.installer_fixture()
         self.dirty()
@@ -4199,8 +4329,12 @@ def restart_services(output, observations=None, settled=None):
         self.assertIn(saved, result.stdout)
         self.assertIn('FAILED: checkout preparation: git pull', result.stdout)
         self.assertIn('Nothing installed or restarted', result.stdout)
-        self.assertIn('Resolve the Git error and retry', result.stdout)
-        self.assertIn('stash apply --index', result.stdout)
+        before_report, heading, report = result.stdout.partition('Kept Kit installer stashes:')
+        self.assertTrue(heading, result.stdout)
+        self.assertIn('stash apply --index', before_report)
+        self.assertIn('Resolve the Git error and retry', before_report)
+        self.assertIn(f'{saved} — not upstream', report)
+        self.assertIn('stash apply --index', report)
 
 
 if __name__ == '__main__':
