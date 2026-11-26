@@ -210,7 +210,9 @@ finished without anyone:
 - **Questions only for the owner's part.** These are credentials, devices,
   spending, a change to third-party software, and product, security or scope
   decisions. Anything else is the planner's call, recorded as such. Don't leave
-  it for the worker to ask about.
+  it for the worker to ask about. Publish an already-defined action only a human
+  can complete as an [owner task](PLAN-HANDOFF.md#owner-tasks), not `ai-planning`.
+  Keep genuinely unresolved intent in planning with its resume condition.
 
 ## Size each task
 

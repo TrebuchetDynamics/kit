@@ -30,8 +30,8 @@ prerequisite first and keep moving on independent issues.
 
 **Reconcile labels after fixing the cause.** Immediately re-read the issue, latest
 attempt, linked PR/head, dependencies and current labels. If another worker claimed
-it or the evidence changed, leave its state alone. Evaluate every open issue tagged
-`ai-planning` or `ai-blocked`, including issues with both labels:
+it or the evidence changed, leave its state alone. Except for `owner-task`, evaluate
+open issues tagged `ai-planning` or `ai-blocked`, including issues with both labels:
 
 - `ai-planning` → `ai-ready`: resolve routine choices from accepted decisions and
   repository policy. Verify the issue's scope, acceptance, checks and native
@@ -83,8 +83,20 @@ on the revised requirement. A comment or label alone is not evidence of resumpti
 
 ## Recover, verify, continue
 
-1. **Bind and inventory.** Read GitHub Issues, native dependencies, linked PRs,
-   CI/review results and actual ownership. Use read-only `orbi status` and
+1. **Bind and inventory.** For each bound `repo=OWNER/REPO`, list issue metadata
+   from all pages before reading individual issues:
+
+   ```sh
+   gh api --paginate --jq '.[] | select(.pull_request == null) | {number, html_url, created_at, labels: [.labels[].name]}' \
+     "repos/$repo/issues?state=open&per_page=100"
+   ```
+
+   Set aside `owner-task` issues before reading bodies, comments or attempts, even
+   when they also carry an `ai-*` label. Count them and find the oldest by
+   `created_at`. They are not stalled work and get no recovery or label changes.
+   A worker issue waiting on one still has a real native dependency.
+   Read the remaining issues, native dependencies, linked PRs, CI/review results
+   and actual ownership. Use read-only `orbi status` and
    `orbi doctor` with the target's configuration if installed. A failed read is
    unavailable evidence, not an empty queue. Include every unresolved decision,
    not only the dashboard's displayed questions. For open PRs, follow
@@ -218,10 +230,12 @@ limits still govern: a read-only scan reports proposed dispositions without writ
 
 **Done when:** every scoped cause has an observed disposition.
 Report **Recovered** only when work consumed the repair and continued;
-**Idle** only for a confirmed queue with no outstanding work; otherwise
+**Idle** only for a confirmed Orbi queue with no outstanding worker work; otherwise
 **Blocked**, naming the missing input, active owner or unfinished operation.
 If no task resumed, say "No work resumed."
 
 **Receipt:** outcomes per repository, actual transitions, repairs, checks and
-commits, plus exact remaining gates. Distinguish local commit, integration,
-publication, installed activation and live acceptance.
+commits, plus exact remaining gates. Report `Owner tasks: N` separately, adding the
+oldest issue link and creation date if any. If issue inventory failed, report
+coverage unavailable rather than a zero count. Distinguish local commit,
+integration, publication, installed activation and live acceptance.
