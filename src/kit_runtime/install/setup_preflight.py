@@ -156,9 +156,9 @@ def preflight(repo, root, profiles, *, bundle_only=False):
     provisioner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(provisioner)
     messages = []
+    summary = os.environ.get('KIT_INSTALL_HERMES_SUMMARY') == '1'
     try:
-        if provisioner.install(repo / 'skills', profiles, dry_run=True, report=messages.append,
-                               verbose=os.environ.get('KIT_INSTALL_HERMES_SUMMARY') != '1'):
+        if provisioner.install(repo / 'skills', profiles, dry_run=True, report=messages.append, verbose=not summary):
             errors.extend(m for m in messages if m.startswith('Failed:'))
     except (ValueError, OSError) as exc:
         errors.append(str(exc))
@@ -198,7 +198,8 @@ def preflight(repo, root, profiles, *, bundle_only=False):
         else:
             if selected['policy'] == 'disabled':
                 plan.append('  Enable kit; runtime-defaults opt-out: bundle policy settings skipped')
-            else:
+            elif not summary:
+                # The source-installer preview below lists pending setting values in summary mode.
                 plan.append(f"  Enable kit; runtime policy={selected['policy']}; apply settings: " +
                             json.dumps(selected['settings'], sort_keys=True))
                 plan.append('  Existing approval/turn values preserved unless runtime_policy is explicit')

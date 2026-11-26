@@ -100,11 +100,11 @@ def main(argv=None):
     summary = env.get('KIT_INSTALL_HERMES_SUMMARY') == '1'
     failures = []
 
-    def run(label, command):
+    def run(label, command, *, child_env=env):
         print(f'Setup: {label}', flush=True)
         started = time.monotonic()
         try:
-            result = subprocess.run(command, cwd=ROOT, env=env, check=False)
+            result = subprocess.run(command, cwd=ROOT, env=child_env, check=False)
             if result.returncode:
                 print(f'Failed: {label} (exit {result.returncode})', flush=True)
                 failures.append(label)
@@ -117,6 +117,7 @@ def main(argv=None):
     run('bundled skills', ['bash', str(ROOT / 'install-skills.sh'), *common])
     before = {profile: read_config(profile, home) for profile, home in profiles} if summary else {}
     run('plugins and configuration', plugins)
+    finalize_env = dict(env, KIT_VERIFY_SETUP_POLICY='1')
     for profile, home in profiles:
         if args.dry_run:
             print(f'Plan: verify bundled skills/plugins and refresh gateway ({profile})')
@@ -126,12 +127,12 @@ def main(argv=None):
         if args.no_reload: command.append('--no-reload')
         # Even partially failed installs must refresh successful registrations and
         # expose missing capabilities. A later pass never masks an earlier failure.
-        run(f'verify/wire {profile}', command)
+        run(f'verify/wire {profile}', command, child_env=finalize_env)
         if summary:
             after = read_config(profile, home)
             change = ('unverified' if before[profile] is None or after is None else
                       'changed' if before[profile] != after else 'unchanged')
-            print(f'Profile {profile} settings: {change}', flush=True)
+            print(f'Profile {profile} config.yaml: {change}', flush=True)
     state = 'incomplete' if failures else 'complete'
     print(f'Bundle setup {state}: {len(profiles)} profiles; {len(failures)} failed stages.')
     receipt = {'status': state, 'gateway_restart': 'not_requested',

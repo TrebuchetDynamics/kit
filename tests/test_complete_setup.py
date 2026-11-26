@@ -137,16 +137,25 @@ sys.exit(5 if os.environ.get('VERIFY_FAIL')==sys.argv[2] else 0)
         hermes.write_text(f'#!{sys.executable}\n' + '''\
 import argparse, os, sys
 from pathlib import Path
+import yaml
 profile, action, option = sys.argv[2:5]
 root = Path(os.environ['HERMES_HOME'])
 home = root if profile == 'default' else root / 'profiles' / profile
 if (action, option) == ('plugins', 'enable'):
-    if profile == 'sample':
-        (home / 'config.yaml').write_text('approvals:\\n  mode: manual\\n')
     raise SystemExit(0)
 if (action, option) == ('config', 'set'):
+    config = home / 'config.yaml'
+    settings = (yaml.safe_load(config.read_text()) or {}) if config.exists() else {}
+    key, value = sys.argv[-2:]
+    parent = settings
+    *parts, leaf = key.split('.')
+    for part in parts:
+        parent = parent.setdefault(part, {})
+    parent[leaf] = yaml.safe_load(value)
+    config.write_text(yaml.safe_dump(settings))
     raise SystemExit(0)
 assert (action, option) == ('kit', 'finalize'), sys.argv
+assert os.environ.get('KIT_VERIFY_SETUP_POLICY') == '1'
 sys.path.insert(0, str(Path(__file__).parent / 'scripts'))
 import bundle
 bundle.inventory = lambda: {}
@@ -154,7 +163,8 @@ failed = profile == os.environ.get('VERIFY_FAIL')
 result = dict(home=str(home), status='incomplete' if failed else 'ready', settings='current',
               gateway='unreachable' if failed else 'commands_reloaded',
               verified_gateway_commands=['kit:alpha', 'kit:beta'],
-              errors=['gateway control endpoint unavailable'] if failed else [])
+              errors=['gateway control endpoint unavailable'] if failed else [],
+              note='Existing sessions may retain their previous tools.')
 runtime = bundle._KIT_COMPAT.peer(vars(bundle), 'setup_runtime')
 runtime.finalize = lambda *_: (result, int(failed))
 parser = argparse.ArgumentParser()
@@ -177,16 +187,20 @@ raise SystemExit(bundle.handle_cli(parser.parse_args(['finalize', *sys.argv[5:]]
         first = self.run_hermes_item()
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         self.assertIn('Installed: alpha (sample)', first.stdout)
-        self.assertIn('Profile sample settings: changed', first.stdout)
+        self.assertIn('Profile sample config.yaml: changed', first.stdout)
         self.assertIn('Apply: config approvals.mode=manual (sample)', first.stdout)
         repeat = self.run_hermes_item()
         self.assertEqual(repeat.returncode, 0, repeat.stdout + repeat.stderr)
         for profile in ('default', 'sample'):
             self.assertEqual(repeat.stdout.count(f'Skills ({profile}): 0 installed, 0 planned, 2 skipped, 0 failed'), 2)
             self.assertIn(f'Profile {profile}: ready; settings current; gateway commands_reloaded', repeat.stdout)
-            self.assertIn(f'Profile {profile} settings: unchanged', repeat.stdout)
+            self.assertIn(f'Profile {profile} config.yaml: unchanged', repeat.stdout)
+            self.assertIn(f'Note: {profile}: Existing sessions may retain their previous tools.', repeat.stdout)
         for step in ('preflight', 'bundled skills', 'plugins and configuration', 'verify/wire sample'):
             self.assertRegex(repeat.stdout, rf'{step}: done in \d+\.\ds')
+        self.assertRegex(repeat.stdout, r'profile settings: done in \d+s')
+        self.assertNotIn('Plan: config ', repeat.stdout)
+        self.assertNotIn('Apply: config ', repeat.stdout)
         self.assertNotIn('already exists:', repeat.stdout)
         self.assertNotIn('"verified_gateway_commands"', repeat.stdout)
         self.assertNotIn('{"status": "complete"', repeat.stdout)

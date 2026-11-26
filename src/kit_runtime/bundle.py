@@ -259,14 +259,15 @@ def handle_cli(args):
         report = inventory()
         result, code = finalize(ROOT, report, args)
         if os.environ.get('KIT_INSTALL_HERMES_SUMMARY') == '1':
-            home = Path(result.get('home') or args.hermes_home)
-            root = Path(args.hermes_home).expanduser().resolve()
-            profile = ('verification' if 'home' not in result else
-                       'default' if home == root else home.name)
+            home = Path(result['home']) if 'home' in result else None
+            profile = ('verification' if home is None else
+                       'default' if home == Path(args.hermes_home) else home.name)
             print(f"Profile {profile}: {result['status']}; settings {result.get('settings', 'not checked')}; "
                   f"gateway {result.get('gateway', 'not checked')}", flush=True)
             for error in result.get('errors', []):
                 print(f'Failed: {profile}: {error}', flush=True)
+            if note := result.get('note'):
+                print(f'Note: {profile}: {note}', flush=True)
         else:
             print(json.dumps(result, indent=2))
         return code
