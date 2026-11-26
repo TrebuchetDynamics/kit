@@ -62,8 +62,10 @@ concrete unmet need, not a fixed sequence of model turns.
    partial manager/config coverage and observed totals, never an absolute host count.
    For host inventory interpretation, see [host inventory](references/lifecycle.md#host-inventory).
    For repository lifecycle actions, use the requested
-   repo/config or known current checkout. The helper resolves the canonical
-   worktree and verifies GitHub origin, deployment discovery and unit ownership;
+   repo/config or known current checkout. For `update --config PATH` without
+   `--repo-dir`, let the config select its checkout; do not inject the current one.
+   The helper resolves the canonical worktree and verifies GitHub origin,
+   deployment discovery and unit ownership;
    do not duplicate those reads in host tools. If target or intent is genuinely
    ambiguous, ask one focused question before mutation. Never run bare `orbi`
    (the Runner's one-tick entry), guess a typo alias or silently select an action.
@@ -88,8 +90,10 @@ concrete unmet need, not a fixed sequence of model turns.
    Plain `update` requests scheduling after engine validation, even after an earlier
    `stop`. Use `update --stop` to update and leave scheduling stopped. Stop and
    release maintenance disable owned timers, cancel verified queued starts and stop
-   owned workers through systemd as needed. Preserve attempts, worktrees and
-   recovery inputs; no direct kill or restart.
+   owned workers through systemd as needed. Explicit `update --wait` instead lets
+   workers finish naturally for up to 30 minutes, leaving scheduling paused if
+   they do not finish. Preserve attempts, worktrees and recovery inputs; no direct
+   kill or restart.
    Other mutations require their own accepted scope. Offline checks grant none.
 3. **Invoke once.** Preserve literal argument values, quoting, paths, provider/model
    IDs, `--config`, `--repo-dir` and all restrictions. Build argv, never interpolate
@@ -200,7 +204,7 @@ For host/fixture measurement limits, use the reference's
 | --- | --- |
 | "One more model should route or rephrase this." | Interpret once; the helper owns checks, and its safe receipt is the answer. Host-mandated continuations only relay it. |
 | "I remember help, so I can compose the table." | Run the helper's `help`; report observed output. |
-| "Start needs setup first; release maintenance needs a separate stop command." | Absent start composes preparation internally. Release maintenance verifies inactivity before syncing; no separate stop or natural-drain wait. |
+| "Start needs setup first; release maintenance needs a separate stop command." | Absent start composes preparation internally. Release maintenance verifies inactivity before syncing; no separate stop. Explicit `--wait` drains without interrupting workers. |
 | "A passing preview authorizes activation." | Only an explicit activating command authorizes it; previews perform no activation. |
 | "The command failed, so nothing changed and retry is safe." | Preserve mutation/activation evidence and repair deliberately; failure can be partially applied. |
 | "The queue is empty because the status read failed." | Failed reads are unavailable; partial reads disclose gaps. Zero verified ready is not zero pending. |

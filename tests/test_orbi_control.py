@@ -6299,6 +6299,101 @@ class SchedulingUpdateTests(unittest.TestCase):
         self.assertNotIn('resume_command', doc)
         self.assertNotIn(SECRET, result.stdout + result.stderr)
 
+    def test_config_only_cli_update_uses_config_checkout_from_unrelated_directory(self):
+        config = self.h.deploy / 'orbi.toml'
+        config.write_text(config.read_text().replace(
+            f'repo_dir = {json.dumps(str(self.h.repo))}',
+            f'repo_dir = {json.dumps(os.path.relpath(self.h.repo, config.parent))}'))
+        # A caller outside Git has no origin to use as a fallback.
+        unrelated = self.h.root / 'unrelated'
+        unrelated.mkdir()
+        self.active_rules(extra=[{'tool': 'git', 'argv_contains': [str(unrelated)], 'exit': 1}])
+        result = subprocess.run([sys.executable, '-B', str(HELPER), 'update', '--config',
+                                 os.path.relpath(config, unrelated), '--json'], cwd=unrelated,
+                                env=self.h.env, capture_output=True, text=True, timeout=45)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        doc = json.loads(result.stdout)
+        self.assertEqual(doc['repo'], REPO)
+        self.assertEqual(doc['deployment']['config'], str(config))
+        self.assertEqual(doc['engine_update'], 'updated')
+        self.assertEqual(doc['scheduler_confirmation'], 'enabled_active')
+        self.assert_a_unchanged()
+
+    def test_wait_update_handles_natural_drain_deadline_and_preview(self):
+        service = f'{self.prefix}@1.service'
+        timer = f'{self.prefix}@1.timer'
+        for scenario in ('finished', 'timeout', 'preview'):
+            with self.subTest(scenario=scenario):
+                self.h = self.fresh('wait-' + scenario)
+                self.active_rules(services={1: 'active'})
+                config = self.h.deploy / 'orbi.toml'
+                before = snapshot(self.h.home)
+                out, err = io.StringIO(), io.StringIO()
+                elapsed, sleeps = 0, []
+
+                def sleep(seconds):
+                    nonlocal elapsed
+                    self.assertLess(len(sleeps), 2, 'wait did not finish or honor its deadline')
+                    self.assertTrue((self.h.root / 'paused').exists())
+                    self.assertFalse((self.h.root / 'synced').exists())
+                    lock, = (self.h.home / '.cache/orbi-control').glob('*.lock')
+                    with lock.open('a+') as handle:
+                        with self.assertRaises(BlockingIOError):
+                            helper.fcntl.flock(handle, helper.fcntl.LOCK_EX | helper.fcntl.LOCK_NB)
+                    sleeps.append(seconds)
+                    # Model a slow wakeup so the last sleep must fit the remaining bound.
+                    elapsed += 1790 if scenario == 'timeout' and len(sleeps) == 1 else seconds
+
+                run = helper.Context.run
+
+                def run_with_worker(ctx, argv, **kwargs):
+                    if (scenario == 'finished' and len(sleeps) == 2 and argv[0] == 'systemctl'
+                            and {'show', 'ActiveState', service} <= set(argv)):
+                        return subprocess.CompletedProcess(argv, 0, 'inactive\n', '')
+                    return run(ctx, argv, **kwargs)
+
+                clock = mock.Mock(monotonic=lambda: elapsed, sleep=sleep)
+                with mock.patch.object(helper, 'time', clock, create=True), \
+                        mock.patch.object(helper.Context, 'run', run_with_worker):
+                    code = helper.main(['update', '--config', str(config), '--wait', '--json',
+                                        *(['--dry-run'] if scenario == 'preview' else [])],
+                                       cwd=self.h.root, env=self.h.env, platform='linux',
+                                       stdout=out, stderr=err)
+                doc = json.loads(out.getvalue())
+                calls = [c['argv'] for c in self.h.calls()]
+                self.assertFalse(any({'stop', 'kill', 'restart'} & set(a) for a in calls))
+                self.assert_a_unchanged()
+                if scenario == 'preview':
+                    self.assertEqual(code, 0, doc)
+                    steps = [s['step'] for s in doc['steps']]
+                    self.assertIn('wait_for_workers', steps)
+                    self.assertNotIn('stop_service', steps)
+                    self.assertEqual(sleeps, [])
+                    self.assertEqual(snapshot(self.h.home), before)
+                    continue
+                self.assertGreaterEqual(err.getvalue().count('still finishing'), 2)
+                self.assertIn(timer, doc['disabled_timers'])
+                self.assertEqual(doc['stopped_services'], [])
+                if scenario == 'timeout':
+                    self.assertNotEqual(code, 0, doc)
+                    self.assertEqual(sleeps, [60, 10])
+                    self.assertEqual(doc['error']['code'], 'update_busy')
+                    self.assertIn('Update not applied: 1 worker(s)', doc['error']['message'])
+                    self.assertIn('still finishing', doc['error']['message'])
+                    self.assertIn('--wait', shlex.split(doc['repair_command']))
+                    self.assertEqual(doc['engine_update'], 'not_applied')
+                    self.assertEqual(doc['scheduler']['services'][service]['state'], 'active')
+                    self.assertEqual(doc['scheduler']['timers'][timer]['active'], 'inactive')
+                    self.assertFalse(doc['scheduler']['timers'][timer]['enabled'])
+                    self.assertFalse(any({'sync-engine-source', 'enable'} & set(a) for a in calls))
+                    self.assertEqual(self.h.config()['engine_source_track'], helper.PIN_TRACK)
+                else:
+                    self.assertEqual(code, 0, doc)
+                    self.assertEqual(sleeps, [60, 60])
+                    self.assertEqual(doc['engine_update'], 'updated')
+                    self.assertEqual(doc['scheduler_confirmation'], 'enabled_active')
+                    self.assertEqual(sum('sync-engine-source' in a for a in calls), 1)
+
     def test_missing_duplicate_and_conflicting_config_never_guess_or_pause(self):
         for kind in ('missing', 'duplicate', 'conflicting'):
             with self.subTest(kind=kind):
@@ -6499,6 +6594,7 @@ class InterfaceAndSkillTests(unittest.TestCase):
                                 '--config': ['status', 'version', 'setup', 'start', 'update', 'stop'],
                                 '--dry-run': ['setup', 'start', 'update', 'stop'],
                                 '--stop': ['update'],
+                                '--wait': ['update'],
                                 '--json': list(expected),
                                 '--pi-providers': ['setup', 'start'],
                                 '--pi-provider': ['setup', 'start'],
