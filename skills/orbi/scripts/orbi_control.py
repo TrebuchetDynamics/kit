@@ -367,17 +367,25 @@ def load_deployments(ctx, repo_path, explicit_config=None, *, repo_full=None):
             if candidate in strict_paths or repo_full is None:
                 raise
             invalid.append((resolved, exc))
-    if invalid and not any(repo_full in item.source_repos for item in deployments):
-        raise invalid[0][1]
-    for path, exc in invalid:
-        # A broken TOML file can still name the repo; don't hide a possible duplicate.
-        try:
-            raw = path.read_text(encoding='utf-8', errors='replace')
-        except OSError:
-            raw = ''
-        if repo_full in raw:
-            raise exc
-        ctx.err.write(f'warning=invalid_discovered_config path={path} fix=repair or remove the config\n')
+    if invalid:
+        if not any(repo_full in item.source_repos for item in deployments):
+            raise invalid[0][1]
+        # A broken TOML file can still name the repo. Do not confuse it with a longer name.
+        repo_name = re.compile(rf'(?<![\w.-]){re.escape(repo_full)}(?![\w.-])', re.ASCII)
+        for path, exc in invalid:
+            try:
+                raw = path.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                raw = ''
+            if repo_name.search(raw):
+                raise exc
+            warning = f'warning=invalid_discovered_config path={path} fix=repair or remove the config\n'
+            with contextlib.suppress(OSError, ValueError):
+                if ctx.err is sys.__stderr__:
+                    # A failed buffered write could also fail on interpreter exit.
+                    os.write(ctx.err.fileno(), warning.encode(ctx.err.encoding or 'utf-8', 'backslashreplace'))
+                else:
+                    ctx.err.write(warning)
     return deployments
 
 
@@ -2430,7 +2438,7 @@ def command_setup(ctx, args, *, prepared_binding=None):
         repo = step('resolve_repository', lambda: repo_identity(ctx, args.repo_dir or ctx.cwd))
         current = 'preflight_target'
         target_path = args.config or str(data_home(ctx) / f'orbi-{derive_unit_name(repo.full)}' / 'orbi.toml')
-        deployments = load_deployments(ctx, repo.path, args.config, repo_full=repo.full)
+        deployments = load_deployments(ctx, repo.path, args.config)
         target = select_target(ctx, repo, args.config)
         new = target is None
         if not new:
@@ -2501,8 +2509,7 @@ def command_setup(ctx, args, *, prepared_binding=None):
                                    fix='inspect duplicate/concurrent deployment ownership', exit_code=2)
             if new:
                 # Repeat all unit/ownership checks, without silently adopting new selectors.
-                deployments = load_deployments(ctx, repo.path, repo_full=repo.full)
-                rechecked, _, _ = plan_new_deployment(ctx, repo, deployments, args)
+                rechecked, _, _ = plan_new_deployment(ctx, repo, load_deployments(ctx, repo.path), args)
                 if rechecked != target:
                     raise ControlError('target_changed', 'new deployment target changed',
                                        fix='inspect concurrent setup changes', exit_code=2)

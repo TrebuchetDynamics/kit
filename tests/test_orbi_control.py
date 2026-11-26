@@ -3088,7 +3088,7 @@ class LifecycleSequenceTests(unittest.TestCase):
         service = f'{prefix}@1.service'
         h.rules(*h.stop_service_rules(service), *h.scheduler_rules(services={1: 'active'}))
         for action, text in (
-            ('status', 'source_repos = ["other/project"]\nmax_concurrency = 0\n'),
+            ('status', f'source_repos = ["{REPO}-docs"]\nmax_concurrency = 0\n'),
             ('stop', 'source_repos = ["other/project",'),
         ):
             with self.subTest(action=action):
@@ -3108,6 +3108,20 @@ class LifecycleSequenceTests(unittest.TestCase):
                     self.assertEqual(doc['status'], 'stopped')
                     self.assertEqual(doc['stopped_services'], [service])
         self.assertEqual(snapshot(h.a['deploy']), h.a['snapshot'])
+
+    @unittest.skipUnless(Path('/dev/full').exists(), 'requires a failing stderr device')
+    def test_invalid_discovered_config_warning_is_best_effort(self):
+        h = self.fresh()
+        config = h.data_home / 'orbi-other/orbi.toml'
+        config.parent.mkdir()
+        config.write_text('source_repos = ["other/project",')
+        h.rules(*h.scheduler_rules())
+        with open('/dev/full', 'wb') as err:
+            result = subprocess.run([sys.executable, '-B', str(HELPER), 'status', '--repo-dir',
+                                     str(h.repo), '--json'], env=h.env, stdout=subprocess.PIPE,
+                                    stderr=err, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(json.loads(result.stdout)['deployment']['config'], str(h.deploy / 'orbi.toml'))
 
     def test_invalid_discovered_config_preserves_strict_binding_failures(self):
         h = self.fresh()
