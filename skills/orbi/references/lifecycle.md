@@ -29,7 +29,7 @@ setup's default mapping.
 python3 -B <loaded-skill>/scripts/orbi_control.py [status|version|setup|start|update|stop|help] [all] \
   [--repo-dir PATH] [--config PATH] [--dry-run] [--json] \
   [--pi-providers PATH --pi-provider ID --pi-model ID [--pi-thinking LEVEL]] \
-  [--resume-setup] [--harness {pi-bolt,pi}] [--stop]
+  [--resume-setup] [--harness {pi-bolt,pi}] [--stop] [--wait]
 ```
 
 - Omitted action means `status`. A bare `orbi` runs one Runner tick and is never
@@ -69,8 +69,8 @@ python3 -B <loaded-skill>/scripts/orbi_control.py [status|version|setup|start|up
   require `--config PATH` and complete matching provider inputs. It never changes
   a saved selection, pin or present provider file. See bounded resume below.
 - `update` accepts `--repo-dir`, `--config`, `--dry-run`, `--json` and update-only
-  `--stop`. Both authorize pausing owned timers by default without
-  another prompt, never service interruption or restart.
+  `--stop` and `--wait`. Use `--wait` to let running workers finish instead of
+  stopping them, and `--stop` to leave scheduling stopped after the update.
   Provider, resume and harness selectors are refused: an update preserves the
   saved selection.
 - `--dry-run` prints the plan. It creates no config, scratch file, lock or
@@ -119,20 +119,25 @@ installation command authorizes restarting verified scheduling, even if paused.
 
 ```text
 /orbi update --dry-run
-/orbi update
+/orbi update --config /path/to/orbi.toml --wait
 ```
 
-`update` binds the checkout's unique matching deployment, including a setup under
-user data when this checkout has no `orbi.toml`. It uses the same repository/config
-discovery as start/status. Missing, conflicting or duplicate configs refuse; no
-registry, remembered global target or fuzzy selection is used.
+Without `--config`, `update` discovers the checkout's unique matching deployment,
+including configurations under user data. With `--config` but no `--repo-dir`, it
+uses the config's `repo_dir`, even outside a Git checkout. The canonical checkout's
+GitHub origin must match the config's single `source_repos` entry. If you specify
+both paths, they must agree. Missing, conflicting or duplicate configs refuse.
 
 The helper validates ownership, clean source, saved harness/provider and prerequisites,
 then revalidates under the deployment lock. It uses the same
-[quiesce sequence as stop](#stop-status-and-drain), without waiting for workers to
-finish naturally. Before source mutation it rechecks repository/config/source
-ownership, cleanliness and scheduler inactivity. Failed quiesce is nonzero,
-blocks engine sync and reports completed scheduler steps and repair guidance.
+[quiesce sequence as stop](#stop-status-and-drain) unless `--wait` is present.
+With `--wait`, after disabling owned timers and cancelling verified queued starts,
+it lets running workers finish without stopping them. It polls once a minute and
+prints progress to stderr (JSON on stdout is unchanged). If work remains at the
+30-minute deadline, it returns `update_busy` with scheduling still paused and no
+engine update. Check status and rerun the bound `--wait` command after work finishes.
+Before source mutation it rechecks repository/config/source ownership, cleanliness
+and scheduler inactivity. Failed quiesce blocks sync and reports completed steps.
 
 Plain `/orbi update` authorizes maintenance and scheduling, even after an earlier
 `stop` or `update --stop`. It needs no separate approval. The helper keeps no saved
@@ -153,7 +158,7 @@ completed/failed steps, actual timer state (or unavailable), and exact bound
 `repair_command`/`error.fix`. It does not claim rollback or successful scheduling.
 A failed or timed-out source sync reports `engine_update: sync_unverified`: source
 may already have changed, but validation is not proven. Recovery commands preserve
-literal selectors and the explicit `--stop` choice, including after validation.
+literal selectors and the `--stop`/`--wait` choices when retrying an update.
 Inspect and repair that cause before deliberate recovery; never retry errors unchanged.
 Dry-run neither waits nor mutates: it previews conditional activation for plain update
 and continued stopped scheduling for `--stop`.
@@ -621,7 +626,8 @@ live qualification.
    disabled and inactive or failed. Skipping the daemon reload keeps the verified
    loaded binding in place for the timer stop.
 2. Cancel queued starts for owned units only, after rechecking job identity.
-3. Stop owned non-idle workers with `systemctl --user stop <service>`.
+3. Stop owned non-idle workers with `systemctl --user stop <service>`, or let them
+   finish naturally for explicit `update --wait`.
 4. Verify that every observed worker is inactive or failed and no target job remains.
    `stop` then reports `stopped`; `update` can proceed to source sync.
 
