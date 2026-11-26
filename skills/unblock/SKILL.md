@@ -39,6 +39,8 @@ it or the evidence changed, leave its state alone. Evaluate every open issue tag
   the publishing planner. Unresolved intent or an explicit no-dispatch request holds publication.
 - `ai-blocked` → `ai-ready`: verify the cause was fixed and the same-issue retry
   is safe. Use the deployment's supported requeue; preserve its recovery evidence.
+  If the fix is an owner's local-only commit, [hand the candidate to Orbi](#hand-off-a-local-candidate)
+  before requeuing.
 - If both labels apply, require both conditions. For each eligible unowned issue,
   publish `ai-ready` last, after the eligibility checks. Confirm readiness before
   removing resolved state labels. Preserve unrelated labels; read back the result
@@ -80,6 +82,39 @@ do not requeue an entire issue past that hold.
 After readback confirms the owner has the handoff, report **Handed back**. That
 is not **Recovered**: report resumed only after observed pickup or continued work
 on the revised requirement. A comment or label alone is not evidence of resumption.
+
+## Hand off a local candidate
+
+1. Verify the exact commit meets the current issue and checks. Confirm publication
+   authority, no pause, human gate or open dependency, and no other owner or linked
+   PR delivery line. Use the owning deployment's diagnostics and serialize manual
+   publishers. If ownership is unknown, hold the handoff.
+2. From the candidate checkout with `origin` bound to the source repository, run the
+   [candidate helper](scripts/adopt_candidate.py) with the deployment's effective
+   `base_branch` and `dispatch_label` (normally `ai-ready`), including repository overrides:
+
+   ```sh
+   python3 /path/to/adopt_candidate.py OWNER/REPO NUMBER COMMIT \
+     --config /path/to/orbi.toml --base BASE --dispatch-label LABEL
+   ```
+
+   The helper merges `origin/BASE` into the commit in a separate worktree, then
+   publishes on `orbi/<OWNER>-<REPO>-issue-<N>`. It refuses another remote head
+   or an owned issue, and requires an idle slot snapshot from the owning deployment.
+   On conflict, inspect the retained worktree; resolve and
+   recheck the candidate before publication. After an interrupted write, inspect
+   the remote branch, PR and labels first. If the branch already has the prepared
+   commit, supply that exact SHA on retry.
+3. Keep the **same PR URL** through resume. The new PR body starts with a run marker
+   (`<!-- orbi:run=... -->`) from the issue's trusted delivery-line comments, then
+   `Fixes #N` (`Closes #N` does not pass Orbi's check). The helper uses markers from
+   authors with repository write access. It does not rewrite an existing PR body,
+   replace the branch, or swap the PR for another one. Route an incompatible PR
+   through [owner-first repair](#blocked-prs-owner-first-repair-records).
+4. Use the helper's verified PR URL and queue label as the handoff receipt. It
+   replaces `ai-blocked` with the dispatch label only after PR readback; Orbi's
+   ready-queue takeover records that URL for review without starting another
+   implementer. Check for actual pickup before reporting **Recovered**.
 
 ## Recover, verify, continue
 
