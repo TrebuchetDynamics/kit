@@ -59,21 +59,30 @@ class UnblockSkillTests(unittest.TestCase):
         self.assertRegex(phase, r'Re-read .* `CLOSED`.* Remove only .*'
                          r'`ai-blocked`, `ai-fix-needed`, `ai-in-progress` and `ai-pr-opened`')
         self.assertIn('Keep `ai-merged` and unrelated labels', phase)
-        self.assertIn('Read back `CLOSED` and the remaining labels', phase)
+        self.assertIn('Read back `CLOSED` and the remaining labels; confirm the four stale labels are absent', phase)
 
     def test_base_red_requeue_requires_verified_base_pass_and_pr_update(self):
         phase = self.stale_state_phase().split('### Base-red blocks', 1)[1]
-        phase = ' '.join(phase.split())
-        for contract in ('latest trusted failure', '`origin/<base>`', 'Rerun',
-                         'on the new base SHA', 'leave the PR and labels unchanged',
+        rules, example = ' '.join(phase.split()).split('**Worked example:**', 1)
+        for contract in ('latest trusted failure', '`orbi:base-ci-red:v1`', '`origin/<base>`',
+                         'Rerun the named checks with a timeout', 'on the new base SHA',
+                         'leave the PR and labels unchanged', 'exact tested base SHA',
                          'normal merge', 'never force-push', 'Read back the remote PR head',
-                         'evidence comment', 'replace `ai-blocked` with `ai-fix-needed`',
-                         'Read back the issue and labels', 'Worked example'):
+                         'evidence comment', 'verified base and PR head still match',
+                         'replacing `ai-blocked` with `ai-fix-needed`', 'Read back the issue and labels'):
             with self.subTest(contract=contract):
-                self.assertIn(contract, phase)
-        self.assertLess(phase.index('Rerun'), phase.index('normal merge'))
-        self.assertLess(phase.index('Read back the remote PR head'),
-                        phase.index('replace `ai-blocked` with `ai-fix-needed`'))
+                self.assertIn(contract, rules)
+        self.assertLess(rules.index('Rerun'), rules.index('normal merge'))
+        self.assertLess(rules.index('Read back the remote PR head'),
+                        rules.index('replacing `ai-blocked` with `ai-fix-needed`'))
+        self.assertIn('readback shows `ai-fix-needed` instead of `ai-blocked`', example)
+
+    def test_base_red_blocks_do_not_fall_through_to_other_requeues(self):
+        text = ' '.join((ROOT / 'skills/unblock/SKILL.md').read_text().split())
+        self.assertIn('Route base-red blocks only to [base-red recovery](#base-red-blocks), '
+                      'even when `ai-planning` also applies', text)
+        self.assertIn('A held or failed base-red recheck does not fall through to '
+                      '`ai-ready` or another repair record for the same blocker', text)
 
     def test_service_boundary_preserves_pauses_jobs_and_evidence(self):
         text = (ROOT / 'skills/unblock/references/services.md').read_text()

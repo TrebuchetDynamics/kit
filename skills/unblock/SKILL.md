@@ -31,16 +31,18 @@ actionable prerequisite first and keep moving on independent issues.
 
 **Reconcile labels after fixing the cause.** Immediately re-read the issue, latest
 attempt, linked PR/head, dependencies and current labels. If another worker claimed
-it or the evidence changed, leave its state alone. Evaluate every open issue tagged
-`ai-planning` or `ai-blocked`, including issues with both labels:
+it or the evidence changed, leave its state alone. Route base-red blocks only to
+[base-red recovery](#base-red-blocks), even when `ai-planning` also applies.
+Evaluate all other open issues tagged `ai-planning` or `ai-blocked`:
 
 - `ai-planning` → `ai-ready`: resolve routine choices from accepted decisions and
   repository policy. Verify the issue's scope, acceptance, checks and native
   dependencies, and the complete batch if publication is in progress. Do not race
   the publishing planner. Unresolved intent or an explicit no-dispatch request holds publication.
-- `ai-blocked` → `ai-ready`: for blockers other than base-red, verify the cause
-  was fixed and the same-issue retry is safe. Use the deployment's supported
-  requeue; preserve its recovery evidence.
+- `ai-blocked` → `ai-ready`: verify the cause was fixed and the same-issue retry
+  is safe. Use the deployment's supported requeue; preserve its recovery evidence.
+  If the fix is an owner's local-only commit, use the [candidate handoff](#hand-off-a-local-candidate)
+  instead of changing the labels by hand.
 - If both labels apply, require both conditions. For each eligible unowned issue,
   publish `ai-ready` last, after the eligibility checks. Confirm readiness before
   removing resolved state labels. Preserve unrelated labels; read back the result
@@ -66,39 +68,44 @@ Include all pages of closed issues carrying **any** of the four labels below.
 Re-read each candidate's state and labels immediately before editing. Proceed only
 if the issue is still `CLOSED`. Remove only the labels present from this set:
 `ai-blocked`, `ai-fix-needed`, `ai-in-progress` and `ai-pr-opened`. Keep `ai-merged`
-and unrelated labels. Read back `CLOSED` and the remaining labels to confirm the
-cleanup; if the issue reopened or readback fails, report the observed state or
-read error instead of making further label changes.
+and unrelated labels. Read back `CLOSED` and the remaining labels; confirm the four
+stale labels are absent. If the issue reopened or readback fails, report the
+observed state or read error instead of making further label changes.
 
 ### Base-red blocks
 
 1. **Compare.** For an open `ai-blocked` issue, read the latest trusted failure.
-   When it records that the check also fails on the base (Orbi: `base_ci_red`),
-   bind the blocked base branch and SHA, named checks and retained PR from that
-   evidence. Compare the recorded SHA with current `origin/<base>` after verifying
-   the remote repository and live branch tip, not just a cached tracking ref.
-   An unchanged SHA or unavailable evidence leaves the issue blocked.
-2. **Recheck.** Rerun each recorded check using its documented invocation on the
-   new base SHA in isolation, not on the PR head. Require a passing result tied to
-   that SHA for every named check. If any check still fails or has no confirmed
-   result, leave the PR and labels unchanged. Report the check, SHA, exact error
-   or missing result, and what must change before retrying.
-3. **Update the retained PR.** Refresh the issue, block, PR head/base, ownership
-   and dispatch gates (planning, prerequisites, pauses and human gates) before
-   writing. If the evidence changed, reconcile it first. Use the existing owner's
-   authorized branch-update path to bring the tested base into the same PR branch
-   by normal merge; never force-push or rebase. Do not take over an active or
-   uncertain owner. Read back the remote PR head and verify it includes both
-   the retained head and the tested base, and that the live base still matches
-   the tested SHA. If the update conflicts or cannot be verified, report the
-   exact blocker and do not requeue.
+   When it records that a check also fails on the base (Orbi: `base_ci_red`), bind
+   the base branch, SHA, named checks and retained PR from that failure. If it
+   carries Orbi's `orbi:base-ci-red:v1` record, use that record; a malformed
+   record is unavailable evidence, not a reason to fall back to an older block.
+   Compare the recorded SHA with current `origin/<base>` after verifying the
+   remote repository and live branch tip, not just a cached tracking ref. If the
+   SHA is unchanged or evidence is missing, leave the issue blocked and report
+   the matching SHA or the evidence needed to retry.
+2. **Recheck.** Rerun the named checks with a timeout using their documented
+   invocation on the new base SHA in isolation, not on the PR head. For a hosted
+   check, verify the rerun's check identity and head SHA; a rerun of the old
+   failing run is not a check of the new SHA. If any check still fails or has no
+   confirmed pass on the new SHA, leave the PR and labels unchanged. Report the
+   check, SHA, exact error or missing result, and what must change before retrying.
+3. **Update the retained PR.** Refresh the open issue, current block, retained
+   open PR head/base, ownership and dispatch gates (planning, prerequisites,
+   pauses and human gates) before writing. If the evidence changed, reconcile it
+   first. Bring the exact tested base SHA into the same PR branch by normal
+   merge through the existing owner's authorized path; never force-push or rebase.
+   Do not take over an active or uncertain owner. Read back the remote PR head
+   and verify it includes both the retained head and the tested base, and that
+   the live base still matches the tested SHA. If the update conflicts or cannot
+   be verified, report the exact blocker and do not requeue.
 4. **Resume the same delivery.** Refresh the same gates before each write. Post
    a deduplicated evidence comment on the issue with the original and tested
    base SHAs, check result and log or run link, PR and verified updated head.
-   Confirm the comment is present, then replace `ai-blocked` with `ai-fix-needed`
-   using the deployment's supported resume path; keep all other labels. Read back
-   the issue and labels and verify the transition. Check for resumed work separately.
-   Do not fall back to `ai-ready` for this block.
+   Confirm the comment is present and the verified base and PR head still match
+   before replacing `ai-blocked` with `ai-fix-needed`. Keep all other labels.
+   Read back the issue and labels and verify the transition. Check for resumed
+   work separately. A held or failed base-red recheck does not fall through to
+   `ai-ready` or another repair record for the same blocker.
 
 **Worked example:** Issue #42's block names `python3 scripts/check.py` on
 `main` at `17a2b3c`. `origin/main` now points to `89d4e5f`; the same check exits
@@ -133,6 +140,43 @@ do not requeue an entire issue past that hold.
 After readback confirms the owner has the handoff, report **Handed back**. That
 is not **Recovered**: report resumed only after observed pickup or continued work
 on the revised requirement. A comment or label alone is not evidence of resumption.
+
+## Hand off a local candidate
+
+1. Verify the exact commit meets the current issue and checks. Confirm publication
+   authority, no pause, human gate or open dependency, and no other owner or linked
+   PR delivery line. Use the owning deployment's diagnostics and serialize manual
+   publishers. If ownership is unknown, hold the handoff.
+2. From the candidate checkout with `origin` bound to the source repository, run the
+   [candidate helper](scripts/adopt_candidate.py) with the deployment's effective
+   `base_branch` and `dispatch_label` (normally `ai-ready`), including repository overrides:
+
+   ```sh
+   timeout 15m python3 /path/to/adopt_candidate.py OWNER/REPO NUMBER COMMIT \
+     --config /path/to/orbi.toml --base BASE --dispatch-label LABEL
+   ```
+
+   The helper merges `origin/BASE` into the commit in a separate worktree, then
+   publishes on `orbi/<OWNER>-<REPO>-issue-<N>`. It refuses another remote head
+   or an owned issue, and requires an idle slot snapshot from the owning deployment.
+   For a merge conflict, inspect the retained worktree; resolve and recheck the
+   candidate before publication. After an interrupted write, inspect the remote
+   branch, PR and labels first. If the branch already has the prepared commit,
+   supply that exact SHA on retry. If the base advanced after publication, update
+   and recheck the same PR through the owner-first repair path before requeuing.
+3. Keep the **same PR URL** through resume. The new PR body starts with a run marker
+   (`<!-- orbi:run=... -->`) from the issue's trusted delivery-line comments, then
+   `Fixes #N` (`Closes #N` does not pass Orbi's check). The helper trusts authors
+   with repository write access. For a marker posted by the owning runner without
+   write access, add `--runner-login LOGIN` only after confirming the GitHub
+   account used by that deployment, not the publishing account or a name inferred
+   from issue comments. The helper does not rewrite an existing PR body,
+   replace the branch, or swap the PR for another one. Route an incompatible PR
+   through [owner-first repair](#blocked-prs-owner-first-repair-records).
+4. Use the helper's verified PR URL and queue label as the handoff receipt. It
+   replaces `ai-blocked` with the dispatch label only after PR readback; Orbi's
+   ready-queue takeover records that URL for review without starting another
+   implementer. Check for actual pickup before reporting **Recovered**.
 
 ## Recover, verify, continue
 
