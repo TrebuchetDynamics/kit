@@ -186,6 +186,10 @@ Kit must keep incomplete batches out of dispatch:
    ownership through [open-issue reconciliation](#open-issue-reconciliation).
    Reuse an existing issue; never reopen completed work or change a live worker's
    contract. Reconcile legacy work using this publication contract.
+   [Check issue contracts](PLANNING-CRAFT.md#check-issue-contracts-before-publication)
+   against Scope, Exclusions, Acceptance and native dependency order; baseline new
+   or widened checks on current `main` and record the result or reason not run in
+   Sources. Leave drafts with unresolved findings out of the publication batch.
 2. Create complete issues with `ai-planning` atomically on creation and without
    `ai-ready`. This explicit temporary exception prevents the default-label workflow
    racing publication. Proposals and unresolved intent retain `ai-planning` and a

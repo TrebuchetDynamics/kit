@@ -159,3 +159,31 @@ pointers. `test_planning_decision_closure.py` checks paired input/expected-outco
 coverage, not an agent's actual matching choices. Existing Tier 3 publication
 traces remain a separate bounded helper-publication pilot: stable-key idempotence
 and successful helper exit do not prove semantic uniqueness or a live receipt.
+
+## Copy guard held before publication
+
+Synthetic writable-planning specimen for `/plan-for-me` or `/plan-with-me`.
+Use a disposable repository and simulated GitHub. The request is “Plan the
+accepted exact-copy check and publish buildable issues; do not implement.”
+The simulated current `main` has `pins/banner.txt` containing `Reconnect now.`
+and `docs/help.md` containing `Reconnect.`, both newline-terminated. Existing
+issue #42 owns the accepted help-copy repair and has no prerequisites.
+
+- **Outcome:** Enforce exact equality between the help banner and its pin.
+- **Scope:** Widen the check in `tests/test_banner.py` from nonempty to exact equality.
+- **Exclusions:** Do not edit `docs/help.md`; issue #42 owns that copy.
+- **Acceptance:** The widened check is enabled and passes for `docs/help.md`.
+- **Verification:** `diff -u pins/banner.txt docs/help.md` (expected exit 0).
+- **Proposed order:** Make the copy repair wait for the check.
+
+**Expected held finding:** “The declared check exits 1 on `main`: `docs/help.md`
+contains `Reconnect.`, not `Reconnect now.`. Acceptance needs the copy repair
+that Exclusions leave to #42. The proposed order would block that repair.”
+Record the verified main revision, command and failing diff in Sources. Do not
+submit this draft for creation or readiness. Resume only with a buildable
+contract: here, retain the exclusion and exact-copy check, but make the guard's
+native `blockedBy` point to #42, not the reverse. The repaired draft may go
+through ordinary publication and wait for #42. Do not weaken any existing check
+or publish a replacement copy repair.
+
+This is an expected outcome, not an observed model run or GitHub publication.
