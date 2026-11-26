@@ -70,7 +70,7 @@ See [GitHub/Orbi migration](github-native.md#cutover).
 | Portable behavior | [host contract](../adapters/skills/COMMON.md) | Use the current host's tools and preserve its permissions, memory and credentials |
 | Issue publication | [publisher](../scripts/github_issues.py), [handoff](../skills/shared/PLAN-HANDOFF.md) | Publish complete GitHub Issues and native dependencies before readiness; preserve existing ownership |
 | Explicit suite refresh | [Update Kit](../skills/update-kit/SKILL.md), [helper](../skills/update-kit/scripts/update_kit.py) | Maintain dedicated persistent trusted upstream source and delegate installation; no automatic schedule, host-update fork or live qualification |
-| Orbi lifecycle client | [helper](../skills/orbi/scripts/orbi_control.py), [workflow](../skills/orbi/SKILL.md) | Inspect observable local host services or explicitly prepare/start/stop one deployment; the separate Orbi project owns implementation and delivery |
+| Orbi lifecycle client | [helper](../skills/orbi/scripts/orbi_control.py), [workflow](../skills/orbi/SKILL.md) | Inspect observable local host services or explicitly prepare/start/stop one deployment or update local deployments; the separate Orbi project owns implementation and delivery |
 
 Native Hermes Python owners live under `src/kit_runtime/`, loaded through
 `src/kit_bootstrap.py` by the existing thin entrypoints. The executor source
