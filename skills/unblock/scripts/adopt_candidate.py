@@ -14,6 +14,7 @@ from urllib.parse import quote
 RUN_MARKER = re.compile(r'<!-- orbi:run=[0-9a-f]{8} -->')
 COMMENT_KIND = re.compile(r'\A' + RUN_MARKER.pattern + r'\r?\n<!-- orbi:comment=([a-z-]+) -->')
 SCENE = re.compile(r'<!--\s*orbi:scene:v1\s+(.*?)-->', re.DOTALL)
+EXTERNAL_PR = re.compile(r'<!--\s*orbi:external-pr:(\d+)\s*-->')
 BLOCKED = 'ai-blocked'
 OWNED = {'ai-in-progress', 'ai-pr-opened', 'ai-fix-needed', 'ai-awaiting-merge'}
 HELD = {'ai-planning', 'ai-merged', 'ai-epic', 'ai-needs-detail', 'ai-release', 'ai-content-only', 'ai-ops-only'}
@@ -34,7 +35,7 @@ def read_issue(args, fields):
 
 
 def eligible_issue(args):
-    issue = read_issue(args, 'state,title,labels,blockedBy')
+    issue = read_issue(args, 'state,title,labels,blockedBy,body,closedByPullRequestsReferences')
     labels = {entry['name'] for entry in issue['labels']}
     if labels & (OWNED | {args.dispatch_label}):
         raise ValueError('Issue is already queued or owned; wait for its current delivery.')
@@ -45,7 +46,15 @@ def eligible_issue(args):
         node['state'] != 'CLOSED' for node in blockers['nodes']
     ):
         raise ValueError('Native blockers are open or unreadable; resolve them before requeuing.')
-    return issue['title']
+    if external := EXTERNAL_PR.search(issue['body']):
+        raise ValueError(f'Issue routes to external PR #{external[1]}; use the existing owner-first repair path.')
+    return issue
+
+
+def require_same_link(issue, url):
+    for link in issue['closedByPullRequestsReferences']:
+        if link['url'] != url:
+            raise ValueError(f'Issue already links to {link["url"]}; reconcile that PR before adopting.')
 
 
 def require_idle(args):
@@ -59,7 +68,11 @@ def require_idle(args):
         raise ValueError('The deployment has a live worker; wait for its slot to clear before adopting.')
 
 
-def delivery_history(repo, issue):
+def account_name(login):
+    return login.removesuffix('[bot]').lower()
+
+
+def delivery_history(repo, issue, runner_login):
     pages = json.loads(run('gh', 'api', f'repos/{repo}/issues/{issue}/comments', '--hostname',
                            'github.com', '--paginate', '--slurp'))
     permissions, live, markers = {}, set(), []
@@ -83,8 +96,10 @@ def delivery_history(repo, issue):
                         raise
                     permission = 'none'
                 permissions[login] = permission
-            # Write/admin is trusted regardless of which credential Orbi runs with.
-            trusted = permissions[login] in {'write', 'admin'}
+            account = account_name(login)
+            # Orbi trusts writers and the owning runner's own account. The
+            # publisher's gh credential need not be the runner's credential.
+            trusted = permissions[login] in {'write', 'admin'} or account == runner_login
             if trusted:
                 markers.extend(found)
                 scenes = SCENE.findall(body)
@@ -98,7 +113,6 @@ def delivery_history(repo, issue):
                         raise ValueError('Unreadable Orbi scene; reconcile the existing PR before adopting.') from exc
             # A bot on another deployment may not have collaborator permission.
             if kind and (trusted or login.endswith('[bot]')):
-                account = login.removesuffix('[bot]').lower()
                 if kind[1] == 'started':
                     live.add(account)
                 elif kind[1] in {'failure', 'merged', 'requeued'}:
@@ -106,7 +120,7 @@ def delivery_history(repo, issue):
     if live:
         raise ValueError('Run history shows a possible live worker; confirm the current attempt ended before adopting.')
     if not markers:
-        raise ValueError('No trusted Orbi run marker in issue history; recover the original run evidence first.')
+        raise ValueError('No trusted Orbi run marker in issue history; verify the owning runner login or recover the original run evidence.')
     return markers, scene_url
 
 
@@ -190,49 +204,54 @@ def adopt(args):
     candidate = run('git', 'rev-parse', '--verify', '--end-of-options', f'{args.commit}^{{commit}}')
     eligible_issue(args)
     require_idle(args)
-    delivery_history(args.repo, args.issue)
+    delivery_history(args.repo, args.issue, args.runner_login)
     existing = remote_tip(ref)
     if existing and existing != candidate:
         raise ValueError(f'Delivery branch {branch} already points to {existing}; reconcile with the owner.')
-    base_tracking = f'refs/remotes/origin/{args.base}'
-    run('git', 'fetch', '--no-tags', 'origin', f'{base_ref}:{base_tracking}')
-    base = run('git', 'rev-parse', '--verify', base_tracking)
     with candidate_worktree(candidate) as tree:
+        # FETCH_HEAD is per worktree. An empty refmap leaves the deployment's
+        # shared remote-tracking refs alone and pins the exact fetched base.
+        run('git', 'fetch', '--no-tags', '--refmap=', 'origin', base_ref, cwd=tree)
+        base = run('git', 'rev-parse', '--verify', 'FETCH_HEAD', cwd=tree)
         run('git', '-c', 'rerere.enabled=false', 'merge', '--no-edit', '--no-autostash', '--ff', base, cwd=tree)
         head = run('git', 'rev-parse', 'HEAD', cwd=tree)
         if head == base:
             raise ValueError(f'Candidate has no commits outside origin/{args.base}; check the supplied commit.')
         if existing and existing != head:
             raise ValueError(f'Delivery branch {branch} needs a base merge; use the existing owner-first repair path.')
-        title = eligible_issue(args)
-        require_idle(args)
-        markers, scene_url = delivery_history(args.repo, args.issue)
+        markers, scene_url = delivery_history(args.repo, args.issue, args.runner_login)
         pr = open_pr(args.repo, branch)
+        issue = eligible_issue(args)
+        require_same_link(issue, pr['url'] if pr else None)
+        require_idle(args)
         if not (pr or scene_url or existing):
             # The empty lease asserts ABSENCE, so this can only create the
             # ref, never force-update (or fast-forward) another writer's tip.
             run('git', '-c', 'remote.origin.mirror=false', 'push', '--no-follow-tags',
                 f'--force-with-lease={ref}:', 'origin', f'HEAD:{ref}', cwd=tree, timeout=180)
-            title = eligible_issue(args)
-            require_idle(args)
-            markers, scene_url = delivery_history(args.repo, args.issue)
+            markers, scene_url = delivery_history(args.repo, args.issue, args.runner_login)
             pr = open_pr(args.repo, branch)
+            issue = eligible_issue(args)
+            require_same_link(issue, pr['url'] if pr else None)
+            require_idle(args)
         if pr or scene_url:
             url = verify_pr(pr, args, branch, head, markers, expected_url=scene_url)
         else:
             if remote_tip(ref) != head:
                 raise ValueError(f'Delivery branch {branch} changed; reconcile with the owner.')
             url = run('gh', 'pr', 'create', '--repo', f'github.com/{args.repo}', '--base', args.base,
-                      '--head', branch, '--title', title, '--body', f'{markers[-1]}\nFixes #{args.issue}')
+                      '--head', branch, '--title', issue['title'], '--body', f'{markers[-1]}\nFixes #{args.issue}')
         print(f'Candidate {head} PR: {url}', flush=True)
-        eligible_issue(args)
-        require_idle(args)
-        markers, scene_url = delivery_history(args.repo, args.issue)
+        markers, scene_url = delivery_history(args.repo, args.issue, args.runner_login)
         if scene_url and scene_url != url:
             raise ValueError('The trusted scene now names another PR; keep the same PR URL and reconcile ownership.')
         verify_pr(open_pr(args.repo, branch), args, branch, head, markers, expected_url=url)
+        require_idle(args)
         if remote_tip(ref) != head:
             raise ValueError(f'Delivery branch {branch} changed; reconcile with the owner.')
+        if remote_tip(base_ref) != base:
+            raise ValueError(f'origin/{args.base} changed during publication; update and recheck the same PR before requeuing.')
+        require_same_link(eligible_issue(args), url)
         run('gh', 'issue', 'edit', str(args.issue), '--repo', f'github.com/{args.repo}',
             '--add-label', args.dispatch_label, '--remove-label', BLOCKED)
         labels = {entry['name'] for entry in read_issue(args, 'labels')['labels']}
@@ -249,9 +268,12 @@ def main():
     parser.add_argument('--config', required=True, type=Path, help='Owning deployment’s Orbi config')
     parser.add_argument('--base', required=True, help='Effective Orbi base branch')
     parser.add_argument('--dispatch-label', required=True, help='Effective Orbi queue label (normally ai-ready)')
+    parser.add_argument('--runner-login', type=account_name, help='Verified GitHub login of the owning Orbi credential')
     args = parser.parse_args()
     if not re.fullmatch(r'[A-Za-z0-9-]+/[A-Za-z0-9_.-]+', args.repo) or args.issue < 1:
         parser.error('expected a GitHub OWNER/REPO and positive issue number')
+    if args.runner_login is not None and not re.fullmatch(r'[a-z0-9-]+', args.runner_login):
+        parser.error('--runner-login must be the owning deployment’s GitHub account login')
     if not args.config.is_file():
         parser.error('--config must name the owning deployment’s configuration file')
     if (not args.dispatch_label.strip() or ',' in args.dispatch_label

@@ -32,6 +32,8 @@ if args[:2] == ['issue', 'view']:
         'state': 'OPEN', 'title': 'Repair delivery',
         'labels': [{'name': x} for x in data['labels']],
         'blockedBy': data.get('blockedBy', {'nodes': [], 'totalCount': 0}),
+        'body': data.get('body', ''),
+        'closedByPullRequestsReferences': [{'url': pr['url']} for pr in data['prs']] + data.get('linked', []),
     }
     print(json.dumps({x: results[x] for x in option('--json').split(',')}))
 elif args[:2] == ['api', 'repos/Owner/Repo/issues/17/comments']:
@@ -39,7 +41,11 @@ elif args[:2] == ['api', 'repos/Owner/Repo/issues/17/comments']:
     print(json.dumps([[comment] for comment in data['comments']]))
 elif args[:1] == ['api']:
     assert args[1].startswith('repos/Owner/Repo/collaborators/') and args[1].endswith('/permission')
-    author = args[1].split('/')[-2]
+    from urllib.parse import unquote
+    author = unquote(args[1].split('/')[-2])
+    if author not in data['permissions']:
+        print('gh: Not Found (HTTP 404)', file=sys.stderr)
+        sys.exit(1)
     print(json.dumps({'permission': data['permissions'][author]}))
 elif args[:2] == ['pr', 'list']:
     assert option('--repo') == 'github.com/Owner/Repo'
@@ -56,6 +62,9 @@ elif args[:2] == ['pr', 'create']:
                         'isDraft': False})
     data['writes'].append('pr create')
     path.write_text(json.dumps(data))
+    if advance := data.get('advance_base_on_create'):
+        subprocess.run([os.environ['REAL_GIT'], '--git-dir', os.environ['ORIGIN'],
+                        'update-ref', 'refs/heads/main', advance], check=True, timeout=5)
     print(data['url'])
 elif args[:2] == ['issue', 'edit']:
     assert args[2] == '17' and option('--repo') == 'github.com/Owner/Repo'
@@ -92,7 +101,11 @@ class AdoptCandidateTests(unittest.TestCase):
 import json, os, sys
 from pathlib import Path
 assert sys.argv[1:] == ['status', '--config', os.environ['CONFIG'], '--repo', 'Owner/Repo', '--issue', '17']
-data = json.loads(Path(os.environ['FIXTURE']).read_text())
+path = Path(os.environ['FIXTURE'])
+data = json.loads(path.read_text())
+if data.get('claimed_after_create') and data['prs']:
+    data['labels'] = ['ai-in-progress', 'bug']
+    path.write_text(json.dumps(data))
 print(f"slots: {data['slots']}/2\\nsource: Owner/Repo")
 ''')
         # Stub only remote identity; use actual Git transport and history for the fixture.
@@ -152,16 +165,17 @@ else:
         self.git('commit', '-m', name)
         return self.git('rev-parse', 'HEAD')
 
-    def adopt(self, candidate=None):
+    def adopt(self, candidate=None, *options):
         return subprocess.run([sys.executable, str(SCRIPT), REPO, '17', candidate or self.candidate,
                                '--config', str(self.config), '--base', 'main',
-                               '--dispatch-label', 'delivery-ready'],
+                               '--dispatch-label', 'delivery-ready', *options],
                               cwd=self.checkout, env=self.env, capture_output=True, text=True, timeout=30)
 
     def delivery_tip(self):
         return self.git('ls-remote', '--refs', 'origin', f'refs/heads/{BRANCH}').split('\t')[0]
 
     def test_merges_and_verifies_same_repository_pr_before_requeue(self):
+        self.git('update-ref', 'refs/remotes/origin/main', self.candidate)
         result = self.adopt()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(PR, result.stdout)
@@ -175,6 +189,7 @@ else:
         self.assertEqual(pr['headRefOid'], self.delivery_tip())
         self.assertEqual(self.git('show', '-s', '--format=%P', self.delivery_tip()).split(),
                          [self.candidate, self.base])
+        self.assertEqual(self.git('rev-parse', 'refs/remotes/origin/main'), self.candidate)
         self.assertEqual(self.git('rev-parse', 'HEAD'), self.candidate)
         self.assertEqual((self.checkout / 'fix.txt').read_text(), 'local uncommitted edit')
         self.assertNotIn(str(self.checkout / '.worktrees'), self.git('worktree', 'list', '--porcelain'))
@@ -237,6 +252,54 @@ else:
         self.assertIn('No trusted Orbi run marker', result.stderr)
         self.assertEqual(self.delivery_tip(), '')
         self.assertEqual(self.data()['writes'], [])
+
+    def test_accepts_marker_from_the_verified_runner_without_write_permission(self):
+        self.set_data(comments=[{'user': {'login': 'runner[bot]'},
+                                 'body': f'{MARKER}\n<!-- orbi:comment={kind} -->'}
+                                for kind in ('started', 'failure')])
+        rejected = self.adopt()
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertEqual(self.delivery_tip(), '')
+        result = self.adopt(None, '--runner-login', 'runner')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.data()['prs'][0]['body'], f'{MARKER}\nFixes #17')
+
+    def test_refuses_an_issue_with_a_pr_linked_on_another_branch(self):
+        self.set_data(linked=[{'url': PR}])
+        result = self.adopt()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(PR, result.stderr)
+        self.assertEqual(self.delivery_tip(), '')
+        self.assertEqual(self.data()['writes'], [])
+
+    def test_refuses_to_supersede_an_external_pr_route(self):
+        self.set_data(body='<!-- orbi:external-pr:42 -->')
+        result = self.adopt()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('external PR #42', result.stderr)
+        self.assertEqual(self.delivery_tip(), '')
+        self.assertEqual(self.data()['writes'], [])
+
+    def test_does_not_queue_a_pr_if_base_advanced_during_publication(self):
+        self.git('switch', '--discard-changes', 'main')
+        advance = self.commit('advanced-base.txt')
+        self.git('push', 'origin', 'HEAD:refs/heads/not-main')
+        self.set_data(advance_base_on_create=advance)
+        result = self.adopt()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('origin/main changed', result.stderr)
+        self.assertIn(PR, result.stdout)
+        self.assertEqual(self.data()['writes'], ['pr create'])
+        self.assertIn('ai-blocked', self.data()['labels'])
+
+    def test_does_not_relabel_an_issue_claimed_during_readback(self):
+        self.set_data(claimed_after_create=True)
+        result = self.adopt()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('already queued or owned', result.stderr)
+        self.assertIn(PR, result.stdout)
+        self.assertEqual(self.data()['writes'], ['pr create'])
+        self.assertCountEqual(self.data()['labels'], ['ai-in-progress', 'bug'])
 
     def test_existing_compatible_pr_is_reused_without_rewrite(self):
         self.assertEqual(self.adopt().returncode, 0)
