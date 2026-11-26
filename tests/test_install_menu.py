@@ -1931,6 +1931,8 @@ Path.stat = stat
                 self.assertIn(f'chmod g-w {path}', result.stdout)
                 fleet = next(row['orbi_fleet'] for row in map(json.loads, receipt.read_text().splitlines())
                              if row['item'] == 'orbi')
+                self.assertEqual(shlex.split(fleet['error']['fix'].split('then run: ', 1)[1]),
+                                 ['chmod', 'g-w', str(path)])
                 self.assertFalse(fleet.get('repaired_unit_fragments'))
                 self.assertEqual(path.stat().st_mode & 0o777, 0o664)
                 self.assertEqual(timer.stat().st_mode & 0o777, 0o666)
