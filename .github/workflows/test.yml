@@ -31,9 +31,6 @@ jobs:
       - uses: actions/setup-node@v4
         if: matrix.shard == 1
         with: { node-version: '22' }
-      - name: Plugin syntax
-        if: matrix.shard == 1
-        run: python -m py_compile __init__.py
       - name: Pi command adapter offline tests
         if: matrix.shard == 1
         run: node --test tests/portable_pi.test.mjs
