@@ -12,6 +12,7 @@ import pty
 import shutil
 import shlex
 import time
+import re
 import stat
 from types import SimpleNamespace
 import selectors
@@ -28,8 +29,16 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import checkout_lock  # noqa: E402
 import install_menu  # noqa: E402
 NEW = 'git:github.com/TrebuchetDynamics/kit'
-ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
-               '1a8b2f9603f6258cb105293f238a8d3f775f3393')
+# The fake official tag list; tests move it to show the installer follows any newer release.
+ORBI_TAG, ORBI_HEAD = 'v3.4.5', '7' * 40
+ORBI_VERSION = 'orbi ' + ORBI_TAG[1:]
+
+
+def orbi_uv(head=ORBI_HEAD):
+    return f'uv tool install --force --python 3.14 git+https://github.com/orbi-build/orbi.git@{head}'
+
+
+ORBI_UV = orbi_uv()
 
 # A fake Pi-Bolt: `pi-bolt list` reads installed sources from a file; install, update and remove edit it,
 # and install and update materialise the skill folders the checkout under test ships.
@@ -150,11 +159,20 @@ class InstallMenuTests(unittest.TestCase):
         self.fake_bolt(PI)
         (self.home / 'pi-bolt-fixture').write_text(PI)
         self.fake('uv', LOGGING + f'''
-if [[ "$*" != "tool install --python 3.14 {ORBI_SOURCE}" ]]; then exit 91; fi
+if [[ "$*" != "tool install --force --python 3.14 git+https://github.com/orbi-build/orbi.git@$FAKE_ORBI_HEAD" ]]; then exit 91; fi
 if [[ -n "$ORBI_INSTALL_FAIL" ]]; then exit 17; fi
 mkdir -p "$UV_TOOL_BIN_DIR"
-printf '#!/bin/sh\\necho "orbi $*" >> "$FAKE_LOG"\\necho orbi 0.7.41\\n' > "$UV_TOOL_BIN_DIR/orbi"
+printf '#!/bin/sh\\necho "orbi $*" >> "$FAKE_LOG"\\necho orbi %s\\n' "${{FAKE_ORBI_TAG#v}}" > "$UV_TOOL_BIN_DIR/orbi"
 chmod 755 "$UV_TOOL_BIN_DIR/orbi"
+''')
+        # Release resolution lists official tags; every other git call is real.
+        self.fake('git', f'''#!/usr/bin/env bash
+if [[ $1 == ls-remote ]]; then
+    echo "git $*" >> "$FAKE_LOG"
+    printf '{'1' * 40}\\trefs/tags/v0.0.1\\n%s\\trefs/tags/%s\\n' "$FAKE_ORBI_HEAD" "$FAKE_ORBI_TAG"
+    exit 0
+fi
+exec /usr/bin/git "$@"
 ''')
         self.upstream = self.home / 'upstream-pi-bolt-install.sh'
         self.upstream.write_text('''#!/bin/sh
@@ -197,7 +215,8 @@ if os.environ.get('PI_BOLT_FIXTURE_STAGE') == 'download-empty':
                     'FAKE_HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.home / '.config'),
                     'KIT_SYSTEMCTL': str(self.bin / 'systemctl'), 'LANG': 'C.UTF-8',
                     'FAKE_KIT_CHECKOUT': str(ROOT),
-                    'TMPDIR': str(self.home), 'KIT_INSTALL_NO_PULL': '1'}  # never pull the checkout under test
+                    'TMPDIR': str(self.home), 'KIT_INSTALL_NO_PULL': '1',
+                    'FAKE_ORBI_TAG': ORBI_TAG, 'FAKE_ORBI_HEAD': ORBI_HEAD}  # never pull the checkout under test
         # In-process installer tests must also never discover the real host fleet.
         self.environment = patch.dict(os.environ, self.env)
         self.environment.start()
@@ -1563,10 +1582,10 @@ exit 23
     def test_orbi_installs_cli_only_and_verifies_version(self):
         result = self.install('--only', 'orbi')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.calls('uv'), [f'uv tool install --python 3.14 {ORBI_SOURCE}'])
+        self.assertEqual(self.calls('uv'), [ORBI_UV])
         self.assertEqual(self.calls('orbi'), ['orbi --version'])
         self.assertTrue((self.home / '.local/bin/orbi').is_file())
-        self.assertIn('orbi 0.7.41', result.stdout)
+        self.assertIn(ORBI_VERSION, result.stdout)
         self.assertFalse(any('orbi-' in call for call in self.calls('systemctl')))
         self.assertFalse((self.home / 'orbi.toml').exists())
 
@@ -1576,7 +1595,8 @@ exit 23
                 result = self.install(*args)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertRegex(result.stdout, r'orbi\s+planned')
-                self.assertIn(f'uv tool install --python 3.14 {ORBI_SOURCE}', result.stdout)
+                self.assertIn('uv tool install --force --python 3.14 git+https://github.com/orbi-build/orbi.git@<release commit>',
+                              result.stdout)
         self.assertRegex(self.install('--list').stdout, r'orbi\s+available')
         self.assertIn('even if paused or already current', self.install('--only', 'orbi', '--dry-run').stdout)
         self.assertEqual(self.calls('orbi'), [])
@@ -1587,14 +1607,14 @@ exit 23
         self.assertEqual(self.calls('uv'), [])
         self.assertEqual(self.calls('orbi'), [])
 
-    def test_orbi_missing_git_refuses_fork_install_without_side_effects(self):
+    def test_orbi_missing_git_refuses_pinned_install_without_side_effects(self):
         with patch.object(install_menu, 'HOME', self.home), \
                 patch.object(install_menu, 'BIN', self.home / '.local/bin'), \
                 patch.object(install_menu.shutil, 'which',
                              side_effect=lambda name: str(self.bin / 'uv') if name == 'uv' else None), \
                 patch.object(install_menu, 'run_command') as run:
             with self.assertRaisesRegex(OSError, 'requires git'):
-                install_menu.install_orbi()
+                install_menu.install_orbi(release=(ORBI_TAG, ORBI_HEAD))
         run.assert_not_called()
         self.assertFalse((self.home / '.local/bin/orbi').exists())
 
@@ -2316,16 +2336,68 @@ Path.stat = stat
                     self.assertEqual(working['engine_update'], 'sync_unverified')
                     self.assertEqual(working['steps'][-1]['track'], 'tag:v1.2.3')
 
-    def test_orbi_preserves_existing_cli_even_on_update(self):
-        self.fake('orbi', LOGGING + 'echo orbi 0.7.41\n')
+    def test_orbi_keeps_a_cli_already_on_the_newest_release(self):
+        self.fake('orbi', LOGGING + f'echo {ORBI_VERSION}\n')
         before = (self.bin / 'orbi').read_bytes()
         for args in (('--only', 'orbi'), ('update', '--only', 'orbi')):
             result = self.install(*args)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn('kept', result.stdout)
+            self.assertIn(f'newest release {ORBI_TAG}; kept', result.stdout)
         self.assertEqual((self.bin / 'orbi').read_bytes(), before)
         self.assertEqual(self.calls('uv'), [])
         self.assertEqual(self.calls('orbi'), ['orbi --version', 'orbi --version'])
+
+    def test_orbi_upgrades_an_older_cli_to_the_newest_release(self):
+        local = self.home / '.local/bin'
+        local.mkdir(parents=True, exist_ok=True)
+        (local / 'orbi').write_text('#!/bin/sh\necho orbi 0.7.41\n')
+        (local / 'orbi').chmod(0o755)
+        self.env['PATH'] = f'{local}:{self.env["PATH"]}'
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('uv'), [ORBI_UV])
+        self.assertIn(f'{ORBI_VERSION} (was 0.7.41); newest release {ORBI_TAG}', result.stdout)
+        self.assertNotIn('comes first on PATH', result.stdout)
+
+    def test_orbi_follows_each_new_release_without_a_pinned_version(self):
+        self.assertEqual(self.install('--only', 'orbi').returncode, 0)
+        for tag, head in (('v3.5.0', '8' * 40), ('v4.0.0', '9' * 40)):
+            with self.subTest(tag=tag):
+                self.log.write_text('')
+                result = self.install('--only', 'orbi', env={'FAKE_ORBI_TAG': tag, 'FAKE_ORBI_HEAD': head})
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.calls('uv'), [orbi_uv(head)])
+                self.assertIn(f'orbi {tag[1:]} (was ', result.stdout)
+                self.assertIn(f'newest release {tag}', result.stdout)
+
+    def test_orbi_reports_an_older_cli_that_shadows_the_upgrade_on_path(self):
+        self.fake('orbi', LOGGING + 'echo orbi 0.7.41\n')
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('uv'), [ORBI_UV])
+        self.assertIn(f'{self.bin / "orbi"} comes first on PATH and was not replaced', result.stdout)
+
+    def test_orbi_keeps_an_editable_cli_that_follows_its_checkout(self):
+        tool = self.home / '.local/share/uv/tools/orbi-cli'
+        (tool / 'bin').mkdir(parents=True)
+        (tool / 'bin/orbi').write_text('#!/bin/sh\necho orbi 0.7.65\n')
+        (tool / 'bin/orbi').chmod(0o755)
+        (tool / 'uv-receipt.toml').write_text(
+            '[tool]\nrequirements = [{ name = "orbi-cli", editable = "/srv/orbi-deploy" }]\n')
+        local = self.home / '.local/bin'
+        local.mkdir(parents=True, exist_ok=True)
+        (local / 'orbi').symlink_to(tool / 'bin/orbi')
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls('uv'), [])
+        self.assertIn('editable from /srv/orbi-deploy; follows that checkout, not replaced', result.stdout)
+
+    def test_orbi_release_resolution_failure_installs_nothing(self):
+        self.fake('git', '#!/bin/sh\n[ "$1" = ls-remote ] && exit 128\nexec /usr/bin/git "$@"\n')
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.calls('uv'), [])
+        self.assertFalse((self.home / '.local/bin/orbi').exists())
 
     def test_orbi_reuses_user_local_cli_off_path_without_uv(self):
         self.assertEqual(self.install('--only', 'orbi').returncode, 0)
@@ -2772,8 +2844,8 @@ ln -s "$root/pi-bolt-linux-x64/pi" "$PIBOLT_BIN_DIR/pi-bolt"'''))
         calls = self.calls()
         self.assertLess(next(i for i, c in enumerate(calls) if c.startswith('pi-bolt-installer')),
                         calls.index(f'pi-bolt install {NEW}'))
-        self.assertRegex(result.stdout, r'orbi\s+installed.*orbi 0.7.41')
-        self.assertEqual(self.calls('uv'), [f'uv tool install --python 3.14 {ORBI_SOURCE}'])
+        self.assertRegex(result.stdout, r'orbi\s+installed.*' + re.escape(ORBI_VERSION))
+        self.assertEqual(self.calls('uv'), [ORBI_UV])
 
     def test_codex_unsupported_registry_interface_refuses_without_fallback(self):
         self.fake('codex', LOGGING + "echo 'unrecognized subcommand list' >&2; exit 2\n")

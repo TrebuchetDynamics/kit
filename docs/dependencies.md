@@ -29,7 +29,7 @@ default and fail on explicit selection. See [Pi-Bolt installation](installation.
 | Component | Selection | Reproducibility limit |
 | --- | --- | --- |
 | Bundled workflows | This repository revision | Pin the checkout revision to reproduce these files. |
-| Orbi CLI (when missing) | [XelHaku/orbi at `1a8b2f9603f6258cb105293f238a8d3f775f3393`](https://github.com/XelHaku/orbi/tree/1a8b2f9603f6258cb105293f238a8d3f775f3393), installed with uv and Python 3.14 | Git source is pinned; transitive dependencies and the interpreter are not fully locked. Existing CLIs and deployment pins are preserved, including on update. |
+| Orbi CLI | Newest official stable release of [orbi-build/orbi](https://github.com/orbi-build/orbi), resolved on each run and installed from its exact commit with uv and Python 3.14 | The release moves with upstream; transitive dependencies and the interpreter are not fully locked. A non-editable CLI on another version is replaced; an editable deployment CLI follows its checkout. |
 | pi-toolset specialists | Four pinned instruction-only workflows; [selection and hashes](#bundled-pi-toolset-specialists) | Local adapters preserve Kit scope and authority; no upstream runtime, scripts or installer dependency. |
 | Ponytail 5.3.2 | Six protocols, benchmark attribution and optional map script at [pinned revision and hashes](../skills/ponytail/UPSTREAM.json) | Offline on all hosts; local adapters scope upstream behavior. No upstream hooks, installers, persistent modes or telemetry are activated. |
 | Autoresearch 2.2.2 | Vendored revision and file hashes in [UPSTREAM.json](../skills/autoresearch/UPSTREAM.json) | Reviewed updates require refreshing the pinned subtree and tests. |
