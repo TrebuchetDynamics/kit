@@ -435,6 +435,8 @@ states its own boundaries and what "done" means.
 - [`/motion-graphics`](skills/motion-graphics/SKILL.md) — build timelines and [verify rendered frames by seeking](docs/workflows.md#motion-workflows).
 - `/brand-identity` — compare brand directions and export the selected brand kit.
 - `/styleseed` — create and maintain a project design system. See [design workflows and runtime checks](docs/workflows.md#brand-identity-and-design-systems).
+- [`/procedural-drawing`](skills/procedural-drawing/SKILL.md) — draw CPU-rendered illustrations from a selected style.
+- [`/genart`](skills/genart/SKILL.md) — create seeded generative art and [check Canvas repeatability locally](skills/genart/canvas.md). SVG verification is manual.
 - `/beautify-github-readme` — audit reader paths and publish verified issues; explicit redesign/hero and audit-only requests keep their scope.
 - [`/sakurai`](skills/sakurai/SKILL.md) — pointer to Sakurai's game-design guidance and 14 Japanese category references online; upstream text is not bundled without a redistribution grant.
 - `/responsive-screenshots` — capture pages at breakpoints, report overflow.

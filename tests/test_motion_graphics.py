@@ -21,6 +21,23 @@ if (location.search === '?render') window.seek = seconds => {
 else dot.hidden = true;
 </script>'''
 
+# Synthetic WOFF containing one glyph (A), with no system-font dependency.
+FONT = (
+    'd09GRgABAAAAAAJIAAoAAAAAAngAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAABZAAAACMAAABgQThB3WNt'
+    'YXAAAAGQAAAAKQAAADQADACUZ2x5ZgAAAcQAAAAYAAAAGBje+3loZWFkAAAA9AAAADYAAAA2L86z9GhoZWEAAAEs'
+    'AAAAHwAAACQFegH2aG10eAAAAYgAAAAGAAAABgK8AABsb2NhAAABvAAAAAYAAAAGAAwAAG1heHAAAAFMAAAAFgAA'
+    'ACAABAAFbmFtZQAAAdwAAABcAAAAbMto2eBwb3N0AAACOAAAAA8AAAAmACgAAAABAAAAAQAA6gcBWV8PPPUAAwPo'
+    'AAAAAOcwOCwAAAAA5zA4LABkAAAB9AK8AAAAAwACAAAAAAAAeJxjYGRgYFb4b8HAwBTBkMKQwviFASiCAhgBVP8D'
+    'dQB4nGNgZGBgYGJgZgDRIBYaAAAA+QAKAAB4nGNgZopgnMDAysDCQBgwInPsgQBIOQIhLqDAwAAAjJMClwACWAAA'
+    'AGQAAHicY2BgYGJgYGAGYhEgyQimWRgUgDQLEIL4jv//Q8j/B8B8BgBSlwadAAAAAAAAAAAMAAAAAQBkAAAB9AK8'
+    'AAIAADMTE2TIyAK8/UR4nC2IMQqAMBRDX6sgIjg4ODt6Ao/QpVtv0KFIwenTQo/vrxhI8hJg5MLQZVi+7LJMugbM'
+    'OOuzs/1sWTl9LofLrVRJId31iYInUzhw2k2pIiSC+lZ+iMgL99wO4nicY2BiwA9A8ioAAJ4AKQA='
+)
+FONT_PAGE = PAGE.replace('id="dot"></div>', 'id="dot">A</div>') + (
+    f'<style>@font-face {{ font-family: Fixture; src: url(data:font/woff;base64,{FONT});'
+    'unicode-range: U+0041; } #dot { font: 16px Fixture; }</style>'
+)
+
 
 def capture(folder, *args, site=True, env=None):
     return subprocess.run(
@@ -47,8 +64,8 @@ class CaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             page = folder / 'local motion.html'
-            page.write_text(PAGE)
-            success = capture(folder, '--loop', '--fps', '4')
+            page.write_text(FONT_PAGE)
+            success = capture(folder, '--loop', '--fps', '4', '--font', '16px Fixture', 'A')
             self.assertEqual(success.returncode, 0, success.stderr)
             self.assertIn('sample-001.png @ 0.37s', success.stdout)
             self.assertIn('sample-002.png @ 1.28s', success.stdout)
@@ -74,7 +91,12 @@ class CaptureTests(unittest.TestCase):
                  (), 'Repeat seek differs', None),
                 (PAGE.replace('dot.style.left =', 'if (seconds === 0.37) throw Error("broken seek"); dot.style.left ='),
                  (), 'broken seek', None),
-                (PAGE, ('--font', '16px "Missing Kit Fixture Face"'), 'Missing required font', None),
+                (PAGE.replace('dot.style.left =',
+                              'if (seconds === 2 && previous === 0) { dot.style.left = "70px"; return; }'
+                              'previous = seconds; dot.style.left ='),
+                 ('--loop',), 'Repeat seek differs at 2s', None),
+                (FONT_PAGE, ('--font', '16px Fixture', 'B'), 'Missing required font', None),
+                (PAGE, ('--font', '16px "Missing Kit Fixture Face"', 'A'), 'Missing required font', None),
                 (PAGE, (), 'Matching Playwright Chromium is unavailable',
                  dict(os.environ, PLAYWRIGHT_BROWSERS_PATH=str(folder / 'no-browser'))),
             ):

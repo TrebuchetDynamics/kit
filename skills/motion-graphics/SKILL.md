@@ -7,7 +7,8 @@ license: MIT
 # Motion graphics
 
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) and
-[communication rules](../shared/COMMUNICATION.md).
+[communication rules](../shared/COMMUNICATION.md). Load the recipes and
+capture procedure only when the user selects `/motion-graphics`.
 
 1. **Brief.** Agree on the subject, viewport, duration, loop or hold, deliverable
    and real content. Keep project branding, tokens, framework and motion constraints.

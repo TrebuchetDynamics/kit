@@ -7,7 +7,8 @@ license: MIT
 # Genjutsu
 
 Apply the [shared Ponytail method](../shared/PONYTAIL.md) and
-[communication rules](../shared/COMMUNICATION.md).
+[communication rules](../shared/COMMUNICATION.md). Load the playbooks only
+when the user selects `/genjutsu`.
 
 1. **Ground.** Identify the interaction, the current stack and the requested scope.
    Keep the project's branding, tokens, framework and motion constraints. Use the
@@ -25,9 +26,10 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) and
 4. **Apply.** Return a motion brief by default: trigger, start and end states,
    timing, interruption behavior and reduced-motion treatment. For an authorized
    edit, use the existing stack and verify the interaction and reduced-motion state.
-   Delegate only if the selected workflow calls for it and this session has the
-   needed tools. Give each child a fresh context, scope, completion criterion,
-   and read-only or explicit write limits. Preserve checkout ownership and required
+   When the selected workflow calls for delegation, translate only the authorized
+   roles into tasks for the host's existing tools; the upstream role scripts are
+   not shipped. Give each child a fresh context, scope, completion criterion, and
+   read-only or explicit write limits. Preserve checkout ownership and required
    review; do not install a host extension to gain delegation or visual evidence.
 
 [Source pin and hashes](UPSTREAM.json) · [Genjutsu MIT](upstream/LICENSE) ·

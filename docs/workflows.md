@@ -130,6 +130,8 @@ is limited, so some commands must be typed directly.
 | `/motion-graphics` | `/motion_graphics` | Build and verify a seekable timeline |
 | `/brand-identity` | `/brand_identity` | Compare brand directions and export the selected kit |
 | `/styleseed` | `/styleseed` | Create or maintain a project design system |
+| `/procedural-drawing` | `/procedural_drawing` | Draw a CPU-rendered illustration from a selected style |
+| `/genart` | `/genart` | Create seeded art and check Canvas 2D output locally |
 | `/beautify-github-readme` | `/beautify_github_readme` | [Audit README reader paths and publish verified issues](../skills/beautify-github-readme/SKILL.md); explicit redesign/hero and audit-only requests keep their scope. Use `no-dispatch` to withhold readiness, or `read-only` for an inline report without writes. |
 
 For the Orbi first-deployment journey, `/orbi help` gives context-free examples and

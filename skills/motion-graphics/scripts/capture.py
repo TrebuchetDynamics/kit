@@ -66,9 +66,10 @@ def capture(args, width, height):
             # Start the asynchronous loads without making evaluate wait indefinitely.
             page.evaluate('''fonts => {
                 window.__kitFontFailures = null;
-                Promise.all(fonts.map(async font => {
-                    try { return (await document.fonts.load(font)).length ? null : font; }
-                    catch { return font; }
+                Promise.all(fonts.map(async ([font, text]) => {
+                    try { if ((await document.fonts.load(font, text)).length) return null; }
+                    catch { /* A rejected font load also fails preflight. */ }
+                    return `${font} for ${JSON.stringify(text)}`;
                 })).then(results => { window.__kitFontFailures = results.filter(Boolean); });
             }''', args.font)
             page.wait_for_function('window.__kitFontFailures !== null')
@@ -78,8 +79,11 @@ def capture(args, width, height):
 
         times = [0.0, *args.at, args.duration]
         frames = [seek_frame(page, t, errors) for t in times]
-        for seconds, frame in reversed(list(zip(times, frames))):
-            if seek_frame(page, seconds, errors) != frame:
+        # Reverse direction without immediately reusing the endpoint frame.
+        # Re-seek the duration after zero to test that it too can be reached out of order.
+        for i in [*range(len(times) - 2, -1, -1), len(times) - 1]:
+            seconds = times[i]
+            if seek_frame(page, seconds, errors) != frames[i]:
                 raise RuntimeError(f'Repeat seek differs at {seconds:g}s. Derive the frame from time alone and retry.')
         if args.loop and frames[0] != frames[-1]:
             raise RuntimeError('Loop endpoints differ. Match the frame at the duration to the frame at zero.')
@@ -111,7 +115,8 @@ def main():
     parser.add_argument('--duration', type=float, required=True, help='timeline duration in seconds')
     parser.add_argument('--at', type=float, nargs='+', required=True, help='intermediate times in seconds')
     parser.add_argument('--loop', action='store_true', help='require identical start and end frames')
-    parser.add_argument('--font', action='append', help='required embedded CSS font shorthand (repeatable)')
+    parser.add_argument('--font', action='append', nargs=2, metavar=('FONT', 'TEXT'),
+                        help='required embedded CSS font shorthand and sample text (repeatable)')
     parser.add_argument('--fps', type=int, help='also capture a numbered PNG sequence at this rate')
     args = parser.parse_args()
     size = re.fullmatch(r'([1-9][0-9]*)x([1-9][0-9]*)', args.size)
@@ -122,6 +127,8 @@ def main():
         parser.error('--duration must be finite and positive; --at times must fall strictly inside it')
     if args.fps is not None and args.fps <= 0:
         parser.error('--fps must be a positive integer')
+    if args.font and any(not text.strip() for _, text in args.font):
+        parser.error('--font requires nonblank sample text')
     args.html = args.html.resolve()
     if not args.html.is_file():
         parser.error(f'HTML file does not exist: {args.html}')

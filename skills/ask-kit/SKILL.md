@@ -73,6 +73,8 @@ not ask for.
 | Build timeline graphics and verify frames by seeking | `/motion-graphics` |
 | Compare brand directions and export the selected identity | `/brand-identity` |
 | Create or maintain project design rules, components and tokens | `/styleseed` |
+| Draw an illustration in a CPU-rendered style | `/procedural-drawing` |
+| Create or verify a seeded browser sketch | `/genart` |
 | Sakurai's game-design guidance and Japanese references online (pointer-only) | `/sakurai` |
 | README visuals and SVG assets | `/beautify-github-readme` |
 | Responsive captures at chosen breakpoints | `/responsive-screenshots` |

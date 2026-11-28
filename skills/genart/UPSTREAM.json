@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/camilleroux/genart-skill",
+  "revision": "36bb7f1f673580c6d6cbb13a80a15062d6c00459",
+  "source_path": "skills/genart",
+  "license": "MIT",
+  "transform": "Copy the contents of skills/genart and the repository-root LICENSE unchanged; store SKILL.md as PROTOCOL.md to prevent discovery. Kit owns the separate Canvas verifier.",
+  "files": {
+    "LICENSE": "d9e68d88fd4a07a056217fed7e11f9068171ba899bbfc8889587a89e0fad13ce",
+    "PROTOCOL.md": "8e4b20dd96057da166d7e257cf133e3a81afb6f289fe44d8bedb8a68eb3de1a2",
+    "references/determinism.md": "98ceb408abf1c1b075d1e56da8aefe50ac635836c2e4d6d6744b933a9a2bf72d",
+    "references/ethics.md": "19d05f794a4e1011539086477cbd1a166a35015fc3b09e0c46b7b5ed61cad70f",
+    "references/features.md": "853afed957c7dadea54a41f173a5377cea539a9430283522dca1bf3f8bca72dd",
+    "references/platforms/256art.md": "683b147b3ca9df1475103195bd248c934397cf512b5e5b7c3d68f0b1050cdc1a",
+    "references/platforms/abx.md": "4e7fa3658de07990b6758d71dcb927aaaa04a87eafd2a380b3e6f82b9e915fb1",
+    "references/platforms/artblocks.md": "08796a9674bad830aa5c8ee5d25bffe6a4ad02aa900c536d5055ae99525a987b",
+    "references/platforms/artpoint.md": "88741dba418660988d06fe6f12dac1d174c1716a23145c1aa4836e3ef2b4b95e",
+    "references/platforms/bootloader.md": "61dc60b55d2216cb3cfafc688be010291de097c11063463e6dc3f0c89b9b231e",
+    "references/platforms/comparison.md": "56e9195ec4f83a9c5202417bba93923aad8e84dff891b511994dfd6c582a3c02",
+    "references/platforms/highlight.md": "0d5ab7ecc855ba1b0f213a51e33ffb9031ba91e88878ed1ea374ebb8648281f9",
+    "references/platforms/plottables.md": "d159cf7d18143b4fa3e809cd99227795e9a80520e4d9010b2b50e756dc1b04b5",
+    "references/platforms/self-hosted.md": "e684cb2576de54c355559193f5fb6ebd02a0db5655328b8bde8c26add79a6425",
+    "references/platforms/verse.md": "4e4e8a1303f49e4ee1ff7fd9375608a479229d81afba46785fb98c5ea88863db",
+    "references/resolution.md": "5fac49e6496d94d2c76c44b1fa76219e0f534214c12dd8afb3633fa382cd0ede",
+    "references/tooling.md": "1ab9e217bd0c195e21eee230f37379476cd1319c64cf5f8ff5b6fa11e4f7216c",
+    "references/verification.md": "ce9818e95d15503e6b08f0127149c0abed10f10ff30da733cd6917599070d7f6"
+  }
+}
