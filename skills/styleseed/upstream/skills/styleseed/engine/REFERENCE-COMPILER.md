@@ -139,7 +139,7 @@ Distance compares one built screen with one approved reference contract (`drift-
 both sides are measured the same way).
 
 Record every value, decision, and rule candidate with one evidence level from
-[`research/cases/README.md`](../research/cases/README.md): `observed` (measured, or stated in
+[`research/cases/README.md`](https://github.com/bitjaru/styleseed/blob/78d1e08e6e931e04c737d34ed3cde1dda540faa6/research/cases/README.md): `observed` (measured, or stated in
 the product's own public documentation), `derived` (computed from observations), `inferred`
 (a reason we supply), `approved` (a named design reviewer accepted it). The measurement step
 produces `observed` and `derived` rows and leaves the rest to a person: the job itself, the
@@ -196,7 +196,7 @@ long/translated content, missing media/data, and relevant narrow-screen transfor
 Do not turn every observed pattern into a mandatory scoring item. Inspect the actual
 transfer artifact before claiming visual quality; expert acceptance remains separate.
 Bind source versions to concrete copy/media/state specimens using the
-[applied transfer procedure](.claude/skills/styleseed/workflows/ss-verify/references/applied-checks.md#reference-transfer).
+[applied transfer procedure](../workflows/ss-verify/references/applied-checks.md#reference-transfer).
 An old case-study article and a changed live URL are not evidence of the same implementation.
 
 ## Generated project artifacts

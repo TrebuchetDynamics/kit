@@ -32,15 +32,16 @@ Figma Variables file is recorded as the canon (`tokens` in `.styleseed/project.j
 the semantic roles below onto the imported tokens, measures the same contrast gates, and compiles only
 imported values. The recipe still supplies posture and semantic restrictions; its hex values are
 withheld. Roles the file cannot supply are mapped explicitly or reported, never generated. See the
-[token canon guide](.claude/skills/styleseed/workflows/ss-resolve/references/tokens.md).
+[token canon guide](../workflows/ss-resolve/references/tokens.md).
 
 ## Generation model
 
-Use `engine/color/generate-palette.mjs` directly, `$ss-tokens generate color`, or persist the
-same inputs in `STYLESEED.md` and run `$ss-resolve`:
+Use the bundled generator directly, or follow the internal [tokens workflow](../workflows/ss-tokens/WORKFLOW.md).
+To persist the inputs, follow the [resolve workflow](../workflows/ss-resolve/WORKFLOW.md).
+Set `STYLESEED_DIR` to the installed directory that contains `PROTOCOL.md`, then run from the project root:
 
 ```bash
-node engine/color/generate-palette.mjs \
+timeout 30 node "$STYLESEED_DIR/workflows/ss-tokens/scripts/generate-palette.mjs" \
   --key-color "#5B5BD6" \
   --mode light \
   --character calm \
@@ -69,7 +70,7 @@ node engine/color/generate-palette.mjs \
 A generated `valid` result covers the declared role pairs only. Actual consumers, state colors,
 required control boundaries, and photo/gradient backgrounds need their own applicability and render
 checks. Reuse existing project tokens and follow the
-[applied color procedure](.claude/skills/styleseed/workflows/ss-verify/references/applied-checks.md#color-inspect-the-consumer-state-and-background).
+[applied color procedure](../workflows/ss-verify/references/applied-checks.md#color-inspect-the-consumer-state-and-background).
 Generated-media anchors support the approved image role; they do not impose a universal background
 or accent area hierarchy on categorical, editorial, or multicolor brand content.
 

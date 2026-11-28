@@ -12,13 +12,13 @@ id · axis · statement · kind · scope · priority · exceptions · rationale 
   decision; `project-decision` is reserved and has no entries. A project's decisions and its
   approved exceptions to defaults live in the project, in the `decisions` ledger of
   `.styleseed/project.json`, not in this catalog (see
-  [the decisions ledger](../.claude/skills/styleseed/workflows/ss-resolve/references/decisions.md)).
+  [the decisions ledger](../../workflows/ss-resolve/references/decisions.md)).
 - `scope` — grammars, adapters, domains, page types, components, states. Empty means any. The
   resolver includes an entry when every non-empty list intersects the artifact's selection.
 - `priority` — `blocks` is a fail state independent of any score; `strong` weighs heavily;
   `advisory` is a default to prefer.
 - `evidence.level` — observed / derived / inferred / approved, the levels defined in
-  [`research/cases/README.md`](../../research/cases/README.md). Most first entries are
+  [`research/cases/README.md`](https://github.com/bitjaru/styleseed/blob/78d1e08e6e931e04c737d34ed3cde1dda540faa6/research/cases/README.md). Most first entries are
   `inferred`: reasons the maintainer supplies. Cases move entries toward `observed` and a named
   review toward `approved`.
 - `reviews` — named reviews, oldest first: `reviewer`, `date`, `verdict` (agree / conditional /

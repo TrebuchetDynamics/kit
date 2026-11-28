@@ -1,14 +1,14 @@
 {
   "schemaVersion": 5,
   "engineVersion": "5.0.0",
-  "engineRevision": "sha256:1b6afe0319f0ae6748dc804a1c5ddc03de616d15012fed6113af21cafd95ddf4",
+  "engineRevision": "sha256:a03422f6c8ea276a8556926071eee52963d6b865e50346c96cbe8b3c43e78213",
   "distributionSource": {
     "schemaVersion": 1,
     "channel": "kit"
   },
   "distributions": {
     "skills": {
-      "revision": "sha256:1b6afe0319f0ae6748dc804a1c5ddc03de616d15012fed6113af21cafd95ddf4",
+      "revision": "sha256:a03422f6c8ea276a8556926071eee52963d6b865e50346c96cbe8b3c43e78213",
       "files": [
         {
           "path": "engine/.claude/skills/styleseed/PROTOCOL.md",
@@ -32,8 +32,8 @@
         },
         {
           "path": "engine/.claude/skills/styleseed/engine/PALETTE-RECIPES.md",
-          "sha256": "1a12adceb5545913eb071a0c385b2a67d219ef67feb24e0e5bc4c84f06e662df",
-          "bytes": 8630
+          "sha256": "5d4283e751fca46b817fd24f88f7c896994362b23a95f754aea239144daff6c9",
+          "bytes": 8795
         },
         {
           "path": "engine/.claude/skills/styleseed/engine/PRESETS.md",
@@ -47,8 +47,8 @@
         },
         {
           "path": "engine/.claude/skills/styleseed/engine/REFERENCE-COMPILER.md",
-          "sha256": "9b2422f1469bd68c477e5c5ed350c5dbbc6f4dd5735d45d477b935cfb936210f",
-          "bytes": 24162
+          "sha256": "169305a16bd7c88ec66f627ad08dd47cb50b6e029f8f65215e3e154ab14719d0",
+          "bytes": 24220
         },
         {
           "path": "engine/.claude/skills/styleseed/engine/RULESETS.md",
@@ -157,8 +157,8 @@
         },
         {
           "path": "engine/.claude/skills/styleseed/engine/rules/README.md",
-          "sha256": "ae33bc19a7a193d139b3eceacf5630aac0ea84902975ce87b0d5ad7bea9f4431",
-          "bytes": 4625
+          "sha256": "6fe934409fd8fce569869ee18b290d82844a74948da8cb5bbe261a46c86c12c7",
+          "bytes": 4680
         },
         {
           "path": "engine/.claude/skills/styleseed/engine/rules/catalog.json",
@@ -686,8 +686,8 @@
     },
     {
       "path": ".claude/skills/styleseed/engine/PALETTE-RECIPES.md",
-      "sha256": "1a12adceb5545913eb071a0c385b2a67d219ef67feb24e0e5bc4c84f06e662df",
-      "bytes": 8630
+      "sha256": "5d4283e751fca46b817fd24f88f7c896994362b23a95f754aea239144daff6c9",
+      "bytes": 8795
     },
     {
       "path": ".claude/skills/styleseed/engine/PRESETS.md",
@@ -701,8 +701,8 @@
     },
     {
       "path": ".claude/skills/styleseed/engine/REFERENCE-COMPILER.md",
-      "sha256": "9b2422f1469bd68c477e5c5ed350c5dbbc6f4dd5735d45d477b935cfb936210f",
-      "bytes": 24162
+      "sha256": "169305a16bd7c88ec66f627ad08dd47cb50b6e029f8f65215e3e154ab14719d0",
+      "bytes": 24220
     },
     {
       "path": ".claude/skills/styleseed/engine/RULESETS.md",
@@ -811,8 +811,8 @@
     },
     {
       "path": ".claude/skills/styleseed/engine/rules/README.md",
-      "sha256": "ae33bc19a7a193d139b3eceacf5630aac0ea84902975ce87b0d5ad7bea9f4431",
-      "bytes": 4625
+      "sha256": "6fe934409fd8fce569869ee18b290d82844a74948da8cb5bbe261a46c86c12c7",
+      "bytes": 4680
     },
     {
       "path": ".claude/skills/styleseed/engine/rules/catalog.json",
