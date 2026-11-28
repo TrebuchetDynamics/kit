@@ -1,4 +1,4 @@
-"""Portable hosts expose adapters rather than Hermes-only worker instructions."""
+"""Portable hosts expose adapters rather than raw worker instructions."""
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -25,8 +25,10 @@ class PortablePackageTests(unittest.TestCase):
             for name in ('work', 'pending', 'blockers'):
                 self.assertFalse((ROOT / root / name).exists(), f'{root}/{name}')
 
-    def test_only_the_required_hermes_adapter_is_python_at_root(self):
-        self.assertEqual({p.name for p in ROOT.glob('*.py')}, {'__init__.py'})
+    def test_no_python_entry_point_at_the_repository_root(self):
+        self.assertEqual({p.name for p in ROOT.glob('*.py')}, set())
+        for removed in ('plugin.yaml', 'install-plugins.sh', 'install-skills.sh', 'src', 'plugins'):
+            self.assertFalse((ROOT / removed).exists(), removed)
 
     def test_native_manifests_select_portable_resources(self):
         codex = json.loads((ROOT / '.codex-plugin/plugin.json').read_text())
@@ -147,7 +149,7 @@ class PortablePackageTests(unittest.TestCase):
 
             # The packaged lifecycle helper resolves its skill and reference from the
             # archive and reads status from a foreign directory without a checkout,
-            # Hermes source, executor payload or any staged/installed deployment.
+            # executor payload or any staged/installed deployment.
             helper = installed / 'skills/orbi/scripts/orbi_control.py'
             canonical = (installed / 'skills/orbi/SKILL.md').read_text()
             reference = (installed / 'skills/orbi/references/lifecycle.md').read_text()
@@ -306,7 +308,7 @@ class PortablePackageTests(unittest.TestCase):
         self.assertIn('Kit does not install Designlang', external.stderr)
         self.assertEqual(list(project.iterdir()), [uv])
         resolve = workflows / 'ss-resolve/scripts/resolve-context.mjs'
-        for host, title in [('pi', 'Pi'), ('hermes', 'Hermes')]:
+        for host, title in [('pi', 'Pi'), ('claude', 'Claude Code')]:
             with self.subTest(host=host):
                 cmd = ['node', str(resolve), '--agent', host, '--grammar', 'operations-console',
                        '--adapter', 'product-ui', '--key-color', '#2468AB']
@@ -322,12 +324,12 @@ class PortablePackageTests(unittest.TestCase):
                 checked = run(*cmd, '--check')
                 self.assertEqual(checked.returncode, 0, checked.stderr)
 
-        # The catalog cannot hash itself in the upstream inventory. Its Hermes mapping
+        # The catalog cannot hash itself in the upstream inventory. Its agent mappings
         # must still be checked against the digest tied to the Kit distribution.
         catalog = workflows / 'ss-resolve/references/catalog.json'
         original = catalog.read_bytes()
         data = json.loads(original)
-        data['agents']['hermes'] = 'Replaced execution contract'
+        data['agents']['pi'] = 'Replaced execution contract'
         catalog.write_text(json.dumps(data))
         for result in (run('node', str(style / 'preflight.mjs')), run(*cmd)):
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -670,7 +672,7 @@ class PortablePackageTests(unittest.TestCase):
         # update` then reports "already at the latest version" and keeps a stale copy.
         self.assertNotIn('version', plugin)
         # A plugin.json `skills` path adds to the default root skills/ scan, which holds
-        # the Hermes-only skills; only the marketplace entry's list replaces that scan.
+        # the canonical protocols, not host adapters; only the marketplace entry's list replaces that scan.
         for key in ('skills', 'commands', 'agents', 'hooks', 'mcpServers'):
             self.assertNotIn(key, plugin)
         [entry] = marketplace['plugins']

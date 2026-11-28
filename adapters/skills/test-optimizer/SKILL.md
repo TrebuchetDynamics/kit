@@ -12,8 +12,8 @@ Use the [ASD-STE100 and project language rules](../../../skills/shared/COMMUNICA
 
 Read the [host contract](../COMMON.md), then the
 [host-neutral Test Optimizer workflow](../../../skills/test-optimizer/SKILL.md).
-It reuses the bundled test-suite optimization protocol; no Hermes runtime, Pi
-extension or external test tool is required.
+It reuses the bundled test-suite optimization protocol; no Pi extension or
+external test tool is required.
 
 Follow its [single-invocation specialist handoff](../../../skills/shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff)
 for the default publication route, no-write overrides and separate authorized local

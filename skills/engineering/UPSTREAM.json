@@ -1,5 +1,5 @@
 {
-  "excluded": "Host manifests/hooks, evals, root scripts and hidden integration directories; never activated by Hermes",
+  "excluded": "Host manifests/hooks, evals, root scripts and hidden integration directories; never activated by a host",
   "files": {
     "CONTRIBUTING.md": {
       "path": "upstream/CONTRIBUTING.md",

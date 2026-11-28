@@ -198,8 +198,8 @@ not establish application. A usable accepted backlog does not need repeated plan
 
 TDD identity collision: use the engineering reference's pinned
 `upstream/skills/test-driven-development/PROTOCOL.md` by default. Neither a bare
-`test-driven-development` name nor Hermes's bundled
-`software-development/test-driven-development` establishes Addy provenance.
+`test-driven-development` name nor another host's bundled skill of that name
+establishes Addy provenance.
 If the vendored protocol is unavailable, identify the actual fallback and gap.
 
 If a domain skill is scanner-blocked or unavailable, use verified repository

@@ -22,7 +22,7 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) and the
    Report missing capabilities and leave those checks unmet. Use `/update-kit` for
    an authorized Kit refresh; do not run upstream installers or consolidation.
    For reference measurement, omit the upstream optional `--designlang` install path.
-3. **Resolve.** Use `--agent pi` on Pi and `--agent hermes` on Hermes when compiling
+3. **Resolve.** Use `--agent pi` on Pi when compiling
    or checking bundles; on other hosts use their existing mapping. Preserve approved
    tokens (import the project's token canon where supported), branding, stack and motion
    constraints. If a choice cannot be represented, report the gap and keep the existing

@@ -14,12 +14,12 @@
 - Keep one writer per checkout. Interactive sessions use the main checkout one at a time. A second writer uses a worktree. Delivery workers and parallel delegated agents may use worktrees.
 - Resolve the canonical checkout with `git worktree list --porcelain`. Create task worktrees under `<canonical-repo>/.worktrees/<task>/`, never in sibling `<repo>-<task>` or `.claude/worktrees/` directories. Follow [worktree placement](docs/worktree-placement.md) for hook and ownership rules.
 - Give each dispatched subagent a fresh context window, scope, completion criterion and explicit write permission or read-only limit.
-- Preserve unrelated changes and other workers’ files. Commit only your own verified work. Never force-push, reset, rewrite history or discard recovery state. Keep credentials, private identities and runtime state out of Git. Do not patch upstream Hermes Agent.
+- Preserve unrelated changes and other workers’ files. Commit only your own verified work. Never force-push, reset, rewrite history or discard recovery state. Keep credentials, private identities and runtime state out of Git.
 
 ## Edit the owning source
 
 - **Skills:** Start with `skills/<name>/SKILL.md`. Read the [contributing guide](docs/contributing.md), [skill standard](docs/skill-standard.md), adapter, references and tests. Every public skill links the shared [Ponytail method](skills/shared/PONYTAIL.md) and [communication rules](skills/shared/COMMUNICATION.md).
-- **Hosts:** `adapters/skills/` serves portable hosts. `adapters/pi.mjs` dispatches Pi commands. Claude Code and Codex use `.claude-plugin/` and `.codex-plugin/`, respectively. Hermes uses `plugin.yaml`. Check [host limits](docs/cross-host.md) before claiming parity.
+- **Hosts:** `adapters/skills/` serves portable hosts. `adapters/pi.mjs` dispatches Pi commands. Claude Code and Codex use `.claude-plugin/` and `.codex-plugin/`, respectively. Check [host limits](docs/cross-host.md) before claiming parity.
 - **Packaging:** `files` in `package.json` defines the shipped inventory. Add a path only if existing entries do not cover it. Test the actual portable package.
 - **Documentation:** Use the [reference](docs/reference.md) and [workflows](docs/workflows.md) for commands and configuration.
 - **Instruction maintenance:** When accepted work changes a documented command, source-of-truth path, architectural boundary or durable convention, update only the affected guidance in the same PR. If no guidance is affected, make no instruction edit. Follow the [maintenance procedure](skills/shared/AGENT-INSTRUCTIONS.md).

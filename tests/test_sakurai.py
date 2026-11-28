@@ -1,8 +1,6 @@
 """Pointer-only licensing boundary and real offline skills installation, not model proof."""
 import json
 from pathlib import Path
-import subprocess
-import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,26 +34,6 @@ class SakuraiTests(unittest.TestCase):
         standard = (ROOT / 'docs/skill-standard.md').read_text()
         self.assertIn('sakurai', standard)
         self.assertIn('pointer-only', standard)
-
-    def test_real_installer_failure_then_readable_pointer_without_upstream_payload(self):
-        with tempfile.TemporaryDirectory(prefix='sakurai install ') as temporary:
-            home = Path(temporary) / 'profile'
-            command = ['bash', str(ROOT / 'install-skills.sh'), '--profile-home', str(home)]
-            failed = subprocess.run(command, cwd=temporary, capture_output=True, text=True, timeout=30)
-            self.assertEqual(failed.returncode, 2, failed.stdout + failed.stderr)
-            self.assertIn(f'Hermes home does not exist: {home}', failed.stderr)
-            self.assertFalse(home.exists())
-            home.mkdir()  # Documented repair: select/create an existing profile.
-            installed = subprocess.run(command, cwd=temporary, capture_output=True, text=True, timeout=60)
-            self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
-            self.assertIn('Installed: sakurai (current)', installed.stdout)
-            target = home / 'skills/sakurai'
-            self.assertEqual({p.name for p in target.iterdir()}, {'SKILL.md', 'UPSTREAM.json'})
-            for name in ('SKILL.md', 'UPSTREAM.json'):
-                self.assertEqual((target / name).read_bytes(), (PACK / name).read_bytes())
-            for name in ('PONYTAIL.md', 'COMMUNICATION.md'):
-                self.assertTrue((home / 'skills/shared' / name).is_file())
-
 
 if __name__ == '__main__':
     unittest.main()

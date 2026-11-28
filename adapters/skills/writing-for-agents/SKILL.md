@@ -12,8 +12,8 @@ Use the [ASD-STE100 and project language rules](../../../skills/shared/COMMUNICA
 
 Read the [host contract](../COMMON.md), then the
 [host-neutral Writing For Agents workflow](../../../skills/writing-for-agents/SKILL.md)
-and its pinned reference. Use this host's file tools; no Hermes runtime, Pi extension
-or external service is required.
+and its pinned reference. Use this host's file tools; no Pi extension or
+external service is required.
 
 The workflow applies mattpocock's `writing-for-agents` reference, formerly
 `writing-great-skills`: sharp pointers, one meaning in one home, positive

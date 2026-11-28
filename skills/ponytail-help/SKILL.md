@@ -24,8 +24,6 @@ Display the following Kit-specific reference, not the upstream help card.
 | `ponytail-help` | This reference; no mode or file changes. |
 
 **Invoke in the installed host:**
-- Hermes: `/ponytail-review` (Telegram: `/ponytail_review`), or resolve the
-  bundled `kit:ponytail-review` skill if an external command has that name.
 - Claude Code: `/kit:ponytail-review`.
 - Codex: `$kit:ponytail-review`.
 - Pi: `/ponytail-review` or `/skill:ponytail-review`.

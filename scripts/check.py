@@ -17,18 +17,10 @@ import sys
 import tempfile
 import time
 
-TEST_DIRS = ('tests', 'tests/native', 'skills/docs-sync/scripts',
-             'skills/git-commit-push/scripts')
-EXCLUSIONS = {
-    'tests/integration_plugin.py':
-        ('integration', 'requires the optional Hermes loader environment'),
-    'tests/integration_autoresearch.py':
-        ('integration', 'requires Hermes loader, CLI queue and gateway routing; no model or network calls'),
-    'tests/integration_bundle.py':
-        ('integration', 'requires an existing isolated Hermes installation'),
-}
-LIVE_FLAGS = ('CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX',
-              'HERMES_NATIVE_HANDOFF_TEST', 'HERMES_NATIVE_REGISTRATION_TEST')
+TEST_DIRS = ('tests', 'skills/docs-sync/scripts', 'skills/git-commit-push/scripts')
+# Modules that need an environment the offline suite cannot provide: path -> (category, reason).
+EXCLUSIONS = {}
+LIVE_FLAGS = ('CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX')
 
 
 def discover_tests(root):
@@ -207,27 +199,6 @@ def affected_selection(root, revision_range):
                 reasons=reasons, full=full, core=['tree_guard', 'docs check'])
 
 
-def source_guard(root):
-    """Check actual selected-release owners without importing product modules.
-
-    Old copies of the checker without a source foundation keep their inventory.
-    A present bootstrap is authoritative: missing payloads are not a fallback.
-    """
-    bootstrap = root / 'scripts/kit_bootstrap.py'
-    if not bootstrap.is_file():
-        return True
-    try:
-        layout_api = runpy.run_path(str(bootstrap))['Layout']
-        sources = layout_api.python_sources(root)
-        for source in sources:
-            ast.parse(source.read_bytes(), str(source))
-    except (OSError, ImportError, SyntaxError, ValueError) as error:
-        location = f'{error.filename}: ' if isinstance(error, SyntaxError) else ''
-        print(f'FAIL: source guard: {location}{error}', flush=True)
-        return False
-    return True
-
-
 def affected_core(root):
     """Cheap repository contracts, even when no test modules were selected."""
     docs = root / 'skills/docs-sync/scripts/docs.py'
@@ -331,8 +302,6 @@ def main(argv=None):
     guard = root / 'scripts/tree_guard.py'
     if guard.is_file() and subprocess.run([sys.executable, str(guard), '--repo', str(root)]).returncode:
         print('FAIL: the tree guard refused this tree; no tests ran', flush=True)
-        return 1
-    if not source_guard(root):
         return 1
     if selection is not None and not affected_core(root):
         print('FAIL: an affected core contract refused this tree; no tests ran', flush=True)

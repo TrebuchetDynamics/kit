@@ -229,7 +229,7 @@ runtime behavior, severity or effort saved. The Graphify workflow in
 `adapters/skills/graphify/SKILL.md` owns how this tool reaches each state.
 
 Resolve helper paths from the actual loaded skill directory, not an assumed
-Hermes home. Sibling bundled skills and this support directory retain their
+host home. Sibling bundled skills and this support directory retain their
 relative layout. Quote absolute paths and repository arguments in shell commands.
 Before creating or refining repository work, read
 [Plan Handoff](PLAN-HANDOFF.md) for issue content, publication and dependency rules.

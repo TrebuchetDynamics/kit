@@ -1,6 +1,6 @@
 # Product scope and architecture
 
-Kit supplies coding-agent skills and optional native Hermes integration.
+Kit supplies coding-agent skills for Claude Code, Codex and Pi.
 GitHub Issues own executable work; Orbi is the delivery successor. Explicit
 lifecycle commands authorize activation; live delivery requires separate evidence.
 This document specifies current product contracts and accepted planned directions,
@@ -24,9 +24,8 @@ Status: Accepted
   preserve their own scope, ownership, checks, independent review and PR gates.
 - Load supporting methods only when useful, not every skill on every task. Preserve
   explicit exclusions, concurrent work, caller limits and live gates.
-- Support Hermes CLI/Telegram and native Claude Code, Codex and Pi packages.
-  Workers, profiles, permissions, credentials and external integrations remain
-  host-specific. Paseo can host these agents without a Kit executor plugin.
+- Support native Claude Code, Codex and Pi packages. Kit no longer supports Hermes.
+  Workers, permissions, credentials and external integrations remain host-specific. Paseo can host these agents without a Kit executor plugin.
 - GitHub Issues are the work board; Kanban and historical local records are never
   prerequisites for execution, recovery, review, installation or integration.
 
@@ -62,50 +61,34 @@ See [GitHub/Orbi migration](github-native.md#cutover).
 
 | Component | Source / contract | Responsibility |
 | --- | --- | --- |
-| Hermes registration | [entry point](../__init__.py), [workflow aliases](../scripts/workflow_commands.py), [research aliases](../scripts/autoresearch_commands.py) | Provision bundled skills/shared resources, defaults and cron scripts; register commands and literal arguments |
-| Hermes maintenance | [bundle](../scripts/bundle.py), [menu policy](../scripts/telegram_menu_policy.py) | Own `hermes kit` maintenance registration; separate core registration from integration readiness and prioritize public commands |
-| Fleet installation | [orchestrator](../scripts/setup_bundle.py), [preflight](../scripts/setup_preflight.py), [finalization](../scripts/setup_runtime.py) | Validate prerequisites, install resources/configuration, inspect profiles and refresh supported gateways |
-| Portable packages | [Claude marketplace](../.claude-plugin/marketplace.json), [Codex manifest](../.codex-plugin/plugin.json), [marketplace](../.agents/plugins/marketplace.json), [Pi manifest](../package.json), [Pi extension](../adapters/pi.mjs) | Discover explicit portable workflows without Hermes configuration dependencies |
+| Suite installer | [entry point](../install.sh), [implementation](../scripts/install_menu.py) | Install or refresh every available host package, Pi-Bolt, `tx` and the Orbi CLI; restart only proven affected services |
+| Portable packages | [Claude marketplace](../.claude-plugin/marketplace.json), [Codex manifest](../.codex-plugin/plugin.json), [marketplace](../.agents/plugins/marketplace.json), [Pi manifest](../package.json), [Pi extension](../adapters/pi.mjs) | Discover explicit portable workflows |
 | OpenCode planning commands | [Command installer](../adapters/opencode/install.py), [setup](cross-host.md#opencode) | Expose the two planning workflows as opt-in user commands |
 | Portable behavior | [host contract](../adapters/skills/COMMON.md) | Use the current host's tools and preserve its permissions, memory and credentials |
 | Issue publication | [publisher](../scripts/github_issues.py), [handoff](../skills/shared/PLAN-HANDOFF.md) | Publish complete GitHub Issues and native dependencies before readiness; preserve existing ownership |
 | Explicit suite refresh | [Update Kit](../skills/update-kit/SKILL.md), [helper](../skills/update-kit/scripts/update_kit.py) | Maintain dedicated persistent trusted upstream source and delegate installation; no automatic schedule, host-update fork or live qualification |
 | Orbi lifecycle client | [helper](../skills/orbi/scripts/orbi_control.py), [workflow](../skills/orbi/SKILL.md) | Inspect observable local host services or explicitly prepare/start/stop one deployment or update local deployments; the separate Orbi project owns implementation and delivery |
 
-Native Hermes Python owners live under `src/kit_runtime/`, loaded through
-`src/kit_bootstrap.py` by the existing thin entrypoints. The executor source
-and integrations are absent; native maintenance is not a replacement executor.
-The [bootstrap](../src/kit_bootstrap.py) resolves peers and resources within
-the selected release. Native owners are split into
-[installation](../src/kit_runtime/install/),
-[updates](../src/kit_runtime/update/) and
-[commands](../src/kit_runtime/commands/); `scripts/` also contains standalone
-portable installers, publication and verification helpers. Keep those helpers and
-the selected release together; an entrypoint alone is not the native payload.
+The executor source and integrations are absent. `scripts/` contains the suite
+installer, publication and verification helpers.
 
-Hermes workflow registration requests skill loading in the current conversation.
-Registration does not execute a workflow.
 Codex and Claude Code load portable adapters. Pi commands read adapter instructions
 and send a user message, queued as a follow-up when busy. The [current host spellings](cross-host.md) and [README](../README.md)
 own the public catalog; engineering remains a reference pack, not another public
 coordinator. Grill Me compatibility opens Plan With Me challenge behavior.
-Independent Autoresearch and its selectors remain available; its Hermes plan
-selector uses the pinned protocol with Plan For Me adaptations, while portable
-adapters hand planning to Plan For Me. Shared helper/reference paths remain valid.
+Independent Autoresearch and its selectors remain available; its adapters hand
+planning to Plan For Me. Shared helper/reference paths remain valid.
 Update Kit is explicit-only across these hosts. Its durable source lives at
 `${XDG_DATA_HOME:-$HOME/.local/share}/kit/source`, outside project and host package
 caches. It delegates full-suite effects (including supported active-integration
-restarts) to the fetched installer; restricted Hermes cascades and no-restarts
-requests hold before mutation. Nested native refresh can advance source again;
-selected/final SHA reporting does not imply immutable installation or reload of
-an already-running agent. See [installation boundaries](installation.md#update-kit).
+restarts) to the fetched installer; no-restarts requests hold before mutation.
+Selected/final SHA reporting does not imply reload of an already-running agent. See [installation boundaries](installation.md#update-kit).
 Package discovery is not model execution or cross-host live qualification.
 
 ## Interface and state contract
 
-The [workflow registrar](../scripts/workflow_commands.py) and
-[research registrar](../scripts/autoresearch_commands.py) own Hermes aliases and
-literal routing; [Pi registration](../adapters/pi.mjs) owns its commands. These are
+[Pi registration](../adapters/pi.mjs) owns Pi commands and literal routing;
+Claude Code and Codex use their plugin manifests. These are
 conversation interfaces, not an owned HTTP service or Toolset OpenAPI contract.
 Command collisions preserve the existing owner ([rules](workflows.md#commands)).
 
@@ -116,16 +99,14 @@ No store cleanup, setup preview or source change proves live qualification.
 
 ## Data and trust boundaries
 
-Project documents and tasks belong to the target repository. Hermes receipts and
-profile stores belong to its configured home and must not enter Git. Portable
-packages do not configure those stores. [Memory](memory.md) owns capture/storage
+Project documents and tasks belong to the target repository. Host session and
+memory stores belong to each host and must not enter Git. Portable packages do not
+configure those stores. [Memory](memory.md) owns capture/storage
 behavior; [dependencies](dependencies.md) owns source pins and licenses.
 
-Hermes defaults intentionally change approval settings; portable adapters do not.
-Preserve the runtime-default opt-out. Preflight prevents installer-stage writes on
-prerequisite failure, but CLI plugin loading may precede it and later failures are
-not transactionally rolled back. [Installation's boundary](installation.md#preflight-before-fleet-writes)
-is authoritative. No document or source-only change grants live, secret,
+Portable adapters do not change approval settings. Installer failures are not
+transactionally rolled back; [installation](installation.md) is authoritative.
+No document or source-only change grants live, secret,
 publication, money, destructive or deployment authority.
 
 ## Planned work and verification
@@ -133,7 +114,7 @@ publication, money, destructive or deployment authority.
 GitHub Issues own priorities, unresolved decisions and goal evidence.
 Eligibility does not establish live ownership, execution, review or qualification.
 [Testing](testing.md) owns executable checks and their limits. Clean installation,
-actual model execution, Telegram delivery and task acceptance are separate outcomes;
+actual model execution and task acceptance are separate outcomes;
 offline helper tests prove none of those live outcomes by themselves.
 Measured native qualification remains pending. Model-driven recovery, original-environment delivery
 and externally enforced spending/descendant limits still require their own evidence
@@ -265,13 +246,13 @@ silently marked current by this review.
 | --- | --- |
 | [Architecture](#current-components) | Current entrypoints, native registration, issue publication and lifecycle-client ownership are source-checked; workflow instruction adherence needs model evaluation. |
 | [Test plan](testing.md) | Checker, CI and bundled Docs Sync test coverage are mapped; the inventory is not a full-suite execution or live qualification. |
-| [Workflows](workflows.md) | Alias/routing/menu claims are checked against native implementations and Pi dispatch; actual model behavior and Telegram delivery remain separate. |
+| [Workflows](workflows.md) | Alias/routing claims are checked against host manifests and Pi dispatch; actual model behavior remains separate. |
 | [Cross-host](cross-host.md) | Adapter/package contracts are source-checked; historical install/discovery records do not qualify every current host/model. |
 | [Reference](reference.md) | Current issue publication is mapped; historical task-store interfaces are retired, not missing implementation. |
 | [Troubleshooting](troubleshooting.md) | Current remedies still need their target's actual environment and recovery evidence. |
 | [Memory](memory.md) | Externally owned capture-policy claims need live qualification; no store access/replay is implied. |
 | [Dependencies](dependencies.md) | Impeccable/Beautify inventories and command dependency pins extend beyond current coverage. |
-| [README](../README.md), [installation](installation.md) | Covered-source reviews and structural links do not execute commands, install profiles or establish current live behavior. |
+| [README](../README.md), [installation](installation.md) | Covered-source reviews and structural links do not execute commands, install host packages or establish current live behavior. |
 
 [`docs.py`](../skills/docs-sync/scripts/docs.py) accepts `reason` on mapped roles;
 `check` scans entire mapped documents, including combined roles; `stale` uses only
@@ -327,7 +308,7 @@ upstream under `upstream/` with `SKILL.md` renamed `PROTOCOL.md`, and tested has
 manifest. Preserve explicit-only Codex/Pi adapters and the hyphen/underscore commands.
 
 README claims remain source-backed through Docs Sync; run its checks after edits.
-Pure SVG is the default; no bundled Hermes image generator is assumed. Never offer
+Pure SVG is the default; no bundled image generator is assumed. Never offer
 upstream attribution/showcase submission unsolicited. Scheduled invocation
 audits only unless task scope authorizes edits. Use the normal commit workflow.
 
@@ -368,7 +349,7 @@ hash integrity.
 Status: Accepted portable marketplace support.
 
 The root marketplace exposes the portable adapters, not an accidental default scan
-of Hermes-only root skills. The copied plugin must retain adapter reference closure.
+of the canonical root skills. The copied plugin must retain adapter reference closure.
 Portable adapters use `disable-model-invocation: true` and Codex explicit-only policy;
 Pi registered commands read their instructions directly. Keep host package versions
 consistent and add no hooks, agents, MCP servers or settings merely for packaging.
@@ -404,7 +385,7 @@ Thin native/portable entrypoints share the existing protocol and
 [test budget](../skills/shared/ENGINEERING-CYCLE.md#test-budget); retain the protocol
 path/selector, explicit-only policy, Codex metadata and Pi command compatibility.
 Verify archive/install reference closure instead of adding another installer or
-copying the method. Do not change vendored protocols, scheduling or Telegram policy.
+copying the method. Do not change vendored protocols or scheduling policy.
 
 Default invocation audits the named/current repository and records supported findings
 in its existing plan/queue. Explicit read-only saves nothing. Explicit apply or an
@@ -480,19 +461,8 @@ or benchmark results are not installed adoption, model execution or live qualifi
 
 ## Gentler update rollout (2026-10-15)
 
-Status: Accepted
-
-Updater-requested restarts wait for a quiet gateway and report `deferred` rather than
-force a drain. Quiet means no chat/API turn in flight, not no cron run: subtract
-claimed restart-safe external cron workers from `active_agents`; unknown activity
-is busy. Preserve Hermes' documented cron behavior without changing upstream code
-or global timeout settings.
-
-Coalesce bursts into one restart, expose concurrent-update ownership/wait clearly,
-and report restart outcome, new process identity and menu resends rather than leaving
-`requested` as final status. Report linked profiles and offer pinned clones so a
-restart does not silently deploy unreleased checkout state. Preserve rollout scope,
-active consumers and genuine pauses. Files updated is not running-code activation.
+Superseded: Kit no longer supports Hermes. The original contract remains in Git
+history as evidence, not a current requirement.
 
 ## Retired external-memory catalog policy (2026-10-15)
 
@@ -512,17 +482,16 @@ See [GitHub/Orbi migration](github-native.md#cutover).
 
 Current GitHub Issues and native dependencies, not dated queue snapshots or
 local task records, control priority and ordering.
-Split offline implementation from installed-profile refresh, service migration,
+Split offline implementation from installed-package refresh, service migration,
 model/authentication and external-delivery qualification. Check real writers before
 adopting candidates; an old review does not prove current source freshness. Preserve
 owner-only decisions, stopped schedules and original-environment obligations; a
-replacement host/profile does not satisfy a missing original delivery target.
+replacement host does not satisfy a missing original delivery target.
 
 ## Kit maintenance
 
-Terminal maintenance uses `hermes kit doctor --json` for inventory and
-`hermes kit update [--check]` for synchronous maintenance with a printed receipt.
-A source change does not reinstall profiles, reset private state or restart hosts;
+Maintenance uses `./install.sh` (or `/update-kit`); `--dry-run` previews it.
+A source change does not reinstall host packages, reset private state or restart hosts;
 live adoption remains a separately authorized operation.
 
 <a id="pi-agent-harness-bootstrap"></a>
@@ -542,8 +511,8 @@ first; `pi` installs or refreshes `git:github.com/TrebuchetDynamics/kit` through
 verified destination `pi-bolt` only, never a CLI found on PATH. Both items have
 Pi-Bolt's supported-platform availability. An absent or unusable destination fails
 the package item with `./install.sh --only pi-bolt,pi` as repair; the package item
-does not bootstrap a harness itself. `--skip hermes,pi` remains valid for nested
-Hermes refreshes and leaves package installation/refresh untouched.
+does not bootstrap a harness itself. `--skip pi` leaves package installation/refresh
+untouched.
 
 Every package install/update verifies registration and shipped skills before the
 existing package-filter reconciliation. Stock Pi shares `~/.pi/agent` and sees
@@ -576,51 +545,8 @@ See [GitHub/Orbi migration](github-native.md#cutover).
 
 ## Managed Hermes checkout recovery
 
-Status: Accepted recovery contract; no live host operation is implied.
-
-When a verified managed checkout cannot fast-forward, recover automatically only
-when safety checks pass, preserving original source/profile edits. Classify ancestry
-exit 1 separately from Git failure; distinguish shallow/incomplete history, local
-ahead/divergence and unrelated histories rather than guessing corruption/rewrite.
-Allow bounded supported deepening only from the fixed trusted source; no arbitrary
-remote/helper or network loop. Preserve pre-fetch provenance before it changes.
-
-Replacement requires a same-user standalone registered managed path with expected
-plugin identity/trusted binding, clean tracked/untracked source, installed HEAD
-matching recorded managed provenance, and no live/unknown consumer or extra linked
-worktree that would be unsafely rebound. URL/cleanliness alone proves neither
-provenance nor absence of local commits. Ahead/local commits, unknown clones, unsafe
-paths, dirt or uncertain ownership hold with precise recovery instructions; no force
-flag weakens checks. Customized profile skills use evidence-based three-way merge.
-
-Stage the exact trusted fetched revision; preflight native admission/scanning, profile
-merges, source identity, shared consumers and permissions. Back up the complete old
-checkout and necessary original merge source, not unrelated secrets/runtime state.
-Publish through existing lock/freshness/transaction/backup/receipt machinery. Preserve
-manifest metadata, modes, settings, opt-outs, selected profiles and pauses. Recover a
-shared source once without expanding mutation to unselected consumers. Active users
-defer; no kill, restart or repin is implied. No hard reset, stash, forced merge/push
-or arbitrary old-source deletion.
-
-Failures retain per-target evidence and resumable state. Resume reuses the original
-backup/base, not a partially switched baseline. Rollback refuses newer foreign edits.
-Read back source HEAD, managed bytes and preserved profile edits; unchanged repeat is
-a no-op. Actual Git/network/native-scan errors stay actionable failures, not blanket
-replacement triggers.
-
-Installer summaries consume structured status/error/action receipts with bounded
-text fallback. Show the actual cause/next action, not a JSON brace; preserve successful
-component results and continue-after-component-failure behavior, with nonzero partial
-failure. Retry only selected failed components. Respect skips and dry-run: preview
-performs no recovery/network/write operation.
-
-Offline proof uses disposable Git/fake homes/subprocesses for equal/fast-forward,
-trusted rewrite, shallow history, local divergence, unknown/dirty/unrelated sources,
-shared/live consumers, custom skills and scan denial. Inject fetch/stage/backup/switch/
-publication failures and stale edits; prove resumable/no-op retry, source/profile
-preservation, exact revision and unchanged pauses/config/successful components. No real
-profiles, credentials, network or installers. Normal integration checks and independent
-review remain required; source acceptance is not installed adoption.
+Superseded: Kit no longer supports Hermes. The original contract remains in Git
+history as evidence, not a current requirement.
 
 <a id="task-status-vocabulary"></a>
 

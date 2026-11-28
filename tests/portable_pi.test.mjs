@@ -215,7 +215,7 @@ test('Update Kit dispatch is explicit-only, literal and queues while busy', asyn
   const commands = new Map(), messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  const raw = '--only pi --hermes-home "space $(literal); home"\nno restarts';
+  const raw = '--only pi --skip "space $(literal); home"\nno restarts';
   for (const idle of [true, false]) {
     await commands.get('update-kit').handler(raw, {isIdle: () => idle});
     const [message, delivery] = messages.at(-1);

@@ -37,7 +37,7 @@ deliberately leaves to the host.
 - No SQLite database, hidden state file, Stop hook or background process.
 - No second judge model. The agent audits its own evidence, and the host's native
   goal loop keeps its own judge where it exists.
-- No project-level `GOAL.md` or instruction file. Codex and Hermes keep goal state
+- No project-level `GOAL.md` or instruction file. Codex keeps goal state
   in the thread or session, not in project instructions.
 - No automatic Kanban or issue creation. GitHub Issues own executable work; they are not a store for thread-local goal state.
 - No exact token metering. A token budget is a user-declared soft limit because a
@@ -46,9 +46,8 @@ deliberately leaves to the host.
 ## Limits
 
 This is instruction, not a runtime. It cannot force a new host turn after the agent
-stops. On Hermes, use the native `/goal` loop with its judge and gates. On hosts
-without native continuation, the skill keeps the objective visible and continues
-within the current turn and session.
+stops. On hosts without native continuation, the skill keeps the objective
+visible and continues within the current turn and session.
 
 Offline checks can prove that the skill files, links, command registration and
 adapter metadata are present. They cannot prove that a live model follows the

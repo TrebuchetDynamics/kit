@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "distribution": "https://uizze.sh/.well-known/skills/index.json",
   "domain_check": "2026-10-15: the uizze.sh copy is byte-identical on the 13 content files (SKILL.md, agents/openai.yaml, LICENSE, NOTICE, reference/*, references/*); MANIFEST.json, MODIFICATIONS.md and CHECKSUMS.sha256 differ as packaging metadata.",
-  "transform": "All 16 files copied byte-for-byte with git show <revision>:<path> into upstream/; SKILL.md is stored as PROTOCOL.md so Hermes registers only the toolset adapter. Upstream's CHECKSUMS.sha256 still names it SKILL.md.",
+  "transform": "All 16 files copied byte-for-byte with git show <revision>:<path> into upstream/; SKILL.md is stored as PROTOCOL.md so hosts register only the toolset adapter. Upstream's CHECKSUMS.sha256 still names it SKILL.md.",
   "files": {
     "CHECKSUMS.sha256": "f6d00c0577709e7137defae9ace6a2cba2d1d00aefb60284909f60332393a109",
     "LICENSE": "02bb8c3b4e70190e3986c0404ad2fd8d639b4f534252d82379cc1b502b6d1812",

@@ -1,6 +1,6 @@
 """install.sh's component menu against fake host CLIs in a throwaway HOME.
 
-The Hermes item runs only as a dry run here: the real setup changes live profiles.
+Orbi runs against a fake systemd fleet; no real host CLI, unit or network is touched.
 """
 import contextlib
 import errno
@@ -955,21 +955,12 @@ fi'''
                     self.assertIn('[x] 2 Kit package for Pi', result.stdout)
         self.assertNotIn('pi.dev', (ROOT / 'scripts/install_menu.py').read_text())
 
-    def test_nested_hermes_refresh_skips_pi_package(self):
-        result = self.install('--full', '--skip', 'hermes,pi')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.calls('pi-bolt-installer'),
-                         [f'pi-bolt-installer {self.bolt.parent}|1|no'])
-        self.assertEqual(self.calls('pi-bolt install'), [])
-        self.assertEqual(self.calls('pi-bolt update'), [])
-        self.assertEqual(self.calls('pi-bolt list'), [])
-
     def recording_services(self):
         self.fake('systemctl', LOGGING + r'''
 case "$*" in
   *--no-ask-password*) exit 0 ;;
   *list-units*)
-    printf '%s\n' 'kit-bolt.service loaded active running Bolt' 'kit-other.service loaded active running Other' 'kit-stopped.service loaded inactive dead Stopped' 'orbi-kit@1.service loaded active running Paused' 'hermes-gateway.service loaded active running Hermes' ;;
+    printf '%s\n' 'kit-bolt.service loaded active running Bolt' 'kit-other.service loaded active running Other' 'kit-stopped.service loaded inactive dead Stopped' 'orbi-kit@1.service loaded active running Paused' 'foreign-gateway.service loaded active running Foreign' ;;
   *show*kit-bolt.service*)
     printf 'ExecStart={ path=%s ; argv[]=%s ; }\n' "$FAKE_HOME/.local/bin/pi-bolt" "$FAKE_HOME/.local/bin/pi-bolt"
     printf 'Environment=PI_CODING_AGENT_DIR=%s/.pi/agent\n' "$FAKE_HOME" ;;
@@ -998,7 +989,7 @@ esac
             'PI_CODING_AGENT_DIR=%s/.pi/agent\\n', 'PI_CODING_AGENT_DIR=%s/.pi/agent ORBI_CONFIG=/orbi/orbi.toml\\n')
         self.fake('systemctl', body)
         self.bolt.write_text(PI + '# previous release\n')
-        result = self.install('--only', 'pi-bolt,orbi', '--skip', 'orbi')
+        result = self.install('--only', 'pi-bolt,orbi', '--skip', 'orbi', '--verbose')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('kit-bolt.service: skipped (Orbi lifecycle is separate)', result.stdout)
         self.assertEqual(self.calls('systemctl --user try-restart'), [])
@@ -1269,180 +1260,6 @@ if [[ "$*" == *list-units* ]]; then echo 'kit-unknown.service loaded active runn
         self.assertEqual(self.calls('systemctl --user try-restart'),
                          ['systemctl --user try-restart kit-bolt.service'])
 
-    def nested_installer_fixture(self):
-        source = self.home / 'nested-source'
-        (source / 'scripts').mkdir(parents=True)
-        shutil.copy2(INSTALL, source / 'install.sh')
-        shutil.copy2(ROOT / 'scripts/install_menu.py', source / 'scripts/install_menu.py')
-        shutil.copytree(ROOT / 'tmux', source / 'tmux')
-        shutil.copytree(ROOT / 'skills/orbi/scripts', source / 'skills/orbi/scripts')
-        clone = self.home / '.hermes/plugins/kit'
-        (clone / '.git').mkdir(parents=True)
-        self.fake('hermes', LOGGING)
-        (source / 'scripts/update_bundle.py').write_text(f'''
-from pathlib import Path
-import importlib.util, os
-
-def plugin_dir(home): return home / 'plugins/kit'
-if __name__ == '__main__':
-    spec = importlib.util.spec_from_file_location('native_fixture', {str(ROOT / 'scripts/update_bundle.py')!r})
-    updater = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(updater)
-    if os.environ.get('NATIVE_HOST_FAIL'): os.environ['PI_BOLT_FIXTURE_STAGE'] = 'install'
-    if os.environ.get('NATIVE_PAYLOAD'): Path(os.environ['NATIVE_PAYLOAD']).write_text('native-current')
-    receipt_fd = os.environ.pop('KIT_INSTALL_HERMES_RECEIPT_FD', None)
-    if os.environ.get('NATIVE_UP_TO_DATE'):
-        updater.print_update_receipt({{'status': 'up_to_date', 'gateway_restart': 'not_needed'}}, receipt_fd)
-    else:
-        updater.print_update_receipt({{'status': 'updated', 'gateway_restart': os.environ['NATIVE_DISPOSITION'],
-                                      'hosts': updater.refresh_hosts(Path(__file__).resolve().parents[1])}}, receipt_fd)
-''')
-        return source / 'install.sh'
-
-    def test_outer_and_real_nested_installer_preserve_native_gateway_decisions(self):
-        self.recording_services()
-        installer = self.nested_installer_fixture()
-        source = installer.parent
-        report = self.home / 'report.jsonl'
-        for command in ((), ('update',)):
-            for disposition in ('deferred', 'pending', 'not_needed'):
-                with self.subTest(command=command, disposition=disposition):
-                    self.log.write_text('')
-                    self.bolt.write_text(PI + '# previous release\n')
-                    env = {**self.env, 'KIT_INSTALL_REPORT': str(report), 'NATIVE_DISPOSITION': disposition}
-                    for _ in range(2):
-                        result = subprocess.run(['bash', str(source / 'install.sh'), *command,
-                                                 '--only', 'pi-bolt,hermes'], env=env,
-                                                capture_output=True, text=True, timeout=30, cwd=self.project)
-                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                        rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
-                        self.assertEqual(rows['hermes']['gateway_restart'], disposition)
-                        nested = {r['item']: r for r in rows['hermes']['hosts']}
-                        self.assertIn('evidence', nested['pi-bolt'])
-                        self.assertEqual(nested['orbi']['orbi_fleet']['status'], 'no_deployments')
-                        self.assertIn('delegated to outer installer', nested['services']['decision'])
-                    self.assertEqual(len(self.calls('pi-bolt-installer')), 4)
-                    self.assertEqual(self.calls('systemctl --user try-restart'),
-                                     ['systemctl --user try-restart kit-bolt.service'])
-        for flags in (('--only', 'hermes', '--skip', 'orbi'), ('--only', 'hermes,orbi')):
-            self.log.write_text('')
-            result = subprocess.run(['bash', str(source / 'install.sh'), *flags], env=env,
-                                    capture_output=True, text=True, timeout=30, cwd=self.project)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
-            nested = {r['item']: r for r in rows['hermes']['hosts']}
-            self.assertEqual(nested['orbi']['status'], 'skipped')
-            self.assertEqual(len(self.calls('systemctl --system --no-ask-password list-units')),
-                             0 if '--skip' in flags else 1)
-        self.log.write_text('')
-        self.bolt.write_text(PI + '# previous release\n')
-        env['NATIVE_HOST_FAIL'] = '1'
-        failed = subprocess.run(['bash', str(source / 'install.sh'), '--only', 'pi-bolt,hermes'],
-                                env=env, capture_output=True, text=True, timeout=30, cwd=self.project)
-        self.assertEqual(failed.returncode, 0, failed.stdout + failed.stderr)  # native host refresh remains best effort
-        self.assertIn('kit-bolt.service: held (incomplete/unverified pi-bolt)', failed.stdout)
-        self.assertEqual(self.calls('systemctl --user try-restart'), [])
-        # Native apply may change a source-linked host before refresh_hosts takes
-        # its own baseline. This must work even when only Hermes is selected.
-        payload = self.home / 'native-payload'
-        payload.mkdir()
-        skill = payload / 'SKILL.md'
-        registration = {**self.marketplace('kit-marketplace'), 'root': str(payload)}
-        self.codex_registry([registration], {'kit-marketplace': {'available': [], 'installed': [{
-            'pluginId': 'kit@kit-marketplace', 'name': 'kit', 'marketplaceName': 'kit-marketplace',
-            'installed': True, 'enabled': True, 'source': {'source': 'local', 'path': str(payload)},
-            'marketplaceSource': registration['marketplaceSource']}]}})
-        self.fake('systemctl', LOGGING + f'''
-if [[ "$*" == *--no-ask-password* ]]; then exit 0;
-elif [[ "$*" == *list-units* ]]; then echo 'kit-codex.service loaded active running Codex';
-elif [[ "$*" == *show* ]]; then echo 'ExecStart={{ path=/usr/bin/codex ; argv[]=/usr/bin/codex --plugin {payload}/SKILL.md ; }}'; fi
-''')
-        env.pop('NATIVE_HOST_FAIL')
-        env['NATIVE_PAYLOAD'] = str(skill)
-        for command in ((), ('update',)):
-            with self.subTest(native_source_change=command):
-                self.log.write_text('')
-                skill.write_text('previous-native-payload')
-                for _ in range(2):
-                    updated = subprocess.run(['bash', str(source / 'install.sh'), *command,
-                                              '--no-pull', '--only', 'hermes'], env=env,
-                                             capture_output=True, text=True, timeout=30, cwd=self.project)
-                    self.assertEqual(updated.returncode, 0, updated.stdout + updated.stderr)
-                self.assertEqual(skill.read_text(), 'native-current')
-                self.assertEqual(self.calls('systemctl --user try-restart'),
-                                 ['systemctl --user try-restart kit-codex.service'])
-
-        # On an up-to-date rerun Hermes does not refresh hosts or emit host rows.
-        # A service restart failed for a payload installed by the nested refresh.
-        self.log.write_text('')
-        self.bolt.write_text(PI + '# previous release\n')
-        self.recording_services()
-        systemctl = (self.bin / 'systemctl').read_text()
-        self.fake('systemctl', systemctl + '\nif [[ "$*" == *try-restart* ]]; then exit 17; fi\n')
-        argv = ['bash', str(source / 'install.sh'), '--no-pull', '--only', 'hermes', '--skip', 'orbi']
-        env.pop('NATIVE_PAYLOAD')
-        failed = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=30, cwd=self.project)
-        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
-        self.assertIn('kit-bolt.service: restart failed (exit 17)', failed.stdout)
-        self.fake('systemctl', systemctl)
-        env['NATIVE_UP_TO_DATE'] = '1'
-        restart = 'systemctl --user try-restart kit-bolt.service'
-        rerun = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=30, cwd=self.project)
-        self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
-        self.assertEqual(self.calls('systemctl --user try-restart'), [restart, restart])
-        third = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=30, cwd=self.project)
-        self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
-        self.assertEqual(self.calls('systemctl --user try-restart'), [restart, restart])
-        self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
-
-    def test_nested_missing_evidence_holds_an_earlier_changed_consumer(self):
-        self.recording_services()
-        before = (PI + '# old release\n').encode()
-        bolt = install_menu.Item('pi-bolt', 'Bolt', inputs=lambda:
-            install_menu.installed_evidence([self.bolt]), steps=[install_menu.Step(
-                'refresh', run=lambda: (self.bolt.write_text(PI) and 'refreshed'))])
-        hermes = install_menu.Item('hermes', 'Hermes', steps=[install_menu.Step('native', ['native'])])
-        for state in ('failed', 'timeout', 'unavailable', 'installed'):
-            with self.subTest(state=state):
-                self.bolt.write_bytes(before)
-                self.log.write_text('')
-                receipt = {'status': 'updated', 'gateway_restart': 'deferred',
-                           'hosts': [{'item': 'pi-bolt', 'status': state, 'exit': 1}]}
-                original = install_menu.run_command
-                def native(argv, output, **kwargs):
-                    if argv == ['native']:
-                        return 0, json.dumps(receipt)
-                    return original(argv, output, **kwargs)
-                with patch.object(install_menu, 'BIN', self.bolt.parent), \
-                        patch.object(install_menu, 'run_command', side_effect=native), \
-                        patch.dict(os.environ, self.env), contextlib.redirect_stdout(io.StringIO()) as out:
-                    self.assertEqual(install_menu.install([bolt, hermes], {'pi-bolt', 'hermes'}), 0)
-                self.assertEqual(self.calls('systemctl --user try-restart'), [])
-                self.assertIn('kit-bolt.service: held (incomplete/unverified pi-bolt)', out.getvalue())
-                self.assertIn('repair those inputs before manual restart', out.getvalue())
-
-    def test_large_native_receipt_keeps_gateway_and_nested_evidence(self):
-        report = self.home / 'large-native-report.jsonl'
-        evidence = install_menu.installed_evidence([self.bolt])
-        receipt = {'status': 'updated', 'gateway_restart': 'pending',
-                   'activation': [{'status': 'ready', 'commands': ['command'] * 5000}],
-                   'hosts': [{'item': 'pi-bolt', 'status': 'installed', 'exit': 0,
-                              'evidence': {'before': evidence, 'after': evidence}}]}
-        item = install_menu.Item('hermes', 'Hermes', steps=[install_menu.Step('native',
-            [sys.executable, '-c', 'import json; print(json.dumps(' + repr(receipt) + '))'])])
-        original = install_menu.run_command
-        def bounded(argv, output, **kwargs):
-            kwargs['timeout'] = 5
-            return original(argv, output, **kwargs)
-        with patch.dict(os.environ, {'KIT_INSTALL_REPORT': str(report)}), \
-                patch.object(install_menu, 'run_command', side_effect=bounded), \
-                contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(install_menu.install([item], {'hermes'}), 0)
-        row = next(r for r in map(json.loads, report.read_text().splitlines()) if r['item'] == 'hermes')
-        self.assertEqual(row['gateway_restart'], 'pending')
-        self.assertEqual(row['activation'], receipt['activation'])
-        self.assertEqual(row['hosts'], receipt['hosts'])
-
     def test_marketplace_payload_repairs_at_same_identity_restart_only_own_consumer(self):
         for host, command in (('claude', ()), ('codex', ('update',))):
             with self.subTest(host=host):
@@ -1529,56 +1346,59 @@ exit 23
         self.assertEqual(self.calls('systemctl --user try-restart'), [])
 
     def test_every_host_includes_bundled_ponytail_without_a_second_plugin(self):
-        self.fake('hermes', LOGGING)
-        result = self.install('--only', 'pi,claude,codex,hermes', '--dry-run',
-                              '--hermes-home', str(self.home))
+        result = self.install('--only', 'pi,claude,codex', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout.count('bundled Ponytail'), 4)
+        self.assertEqual(result.stdout.count('bundled Ponytail'), 3)
         self.assertNotIn('DietrichGebert/ponytail', result.stdout)
         self.assertFalse(self.calls('pi-bolt install'))
         self.assertFalse(self.calls('claude plugin install'))
         self.assertFalse(self.calls('codex plugin add'))
 
     def test_list_marks_missing_hosts(self):
+        (self.bin / 'claude').unlink()
         out = self.install('--list').stdout
-        for key in ('pi', 'pi-bolt', 'tx', 'claude', 'codex'):
+        for key in ('pi', 'pi-bolt', 'tx', 'codex'):
             self.assertRegex(out, rf'{key}\s+available')
-        self.assertRegex(out, r'hermes\s+unavailable.*hermes not found')
+        self.assertRegex(out, r'claude\s+unavailable.*claude not found')
+        self.assertNotIn('hermes', out)
+
+    def test_hermes_is_no_longer_an_item(self):
+        for flag in ('--only', '--skip'):
+            result = self.install(flag, 'hermes,tx')
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn('Kit no longer supports Hermes', result.stderr)
+        self.assertFalse((self.home / '.local/bin/tx').exists())
 
     def test_full_skips_a_stale_optional_host_launcher(self):
-        self.fake('hermes', f'#!/bin/sh\nexec {self.home}/missing-hermes "$@"\n')
-        (self.home / '.hermes').mkdir()
+        self.fake('claude', f'#!/bin/sh\nexec {self.home}/missing-claude "$@"\n')
         result = self.install('--full')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertRegex(result.stdout, r'hermes\s+skipped.*launcher target')
+        self.assertRegex(result.stdout, r'claude\s+skipped.*launcher target')
         self.assertIn('codex plugin add kit@kit-marketplace', self.calls('codex'))
-        self.assertRegex(self.install('--list').stdout, r'hermes\s+unavailable.*launcher target')
+        self.assertRegex(self.install('--list').stdout, r'claude\s+unavailable.*launcher target')
 
     def test_an_explicit_stale_host_fails_without_stopping_other_components(self):
-        self.fake('hermes', f'#!/bin/sh\nexec {self.home}/missing-hermes "$@"\n')
-        (self.home / '.hermes').mkdir()
-        result = self.install('--only', 'hermes,tx')
+        self.fake('claude', f'#!/bin/sh\nexec {self.home}/missing-claude "$@"\n')
+        result = self.install('--only', 'claude,tx')
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertRegex(result.stdout, r'hermes\s+failed.*launcher target')
+        self.assertRegex(result.stdout, r'claude\s+failed.*launcher target')
         self.assertTrue((self.home / '.local/bin/tx').is_file())
 
     def test_dynamic_shell_targets_are_left_to_native_host_admission(self):
-        self.fake('hermes', '#!/bin/sh\nexec "/bin/${KIT_HOST:-sh}" "$@"\n')
-        (self.home / '.hermes').mkdir()
+        self.fake('claude', '#!/bin/sh\nexec "/bin/${KIT_HOST:-sh}" "$@"\n')
         result = self.install('--full', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertRegex(result.stdout, r'hermes\s+planned')
+        self.assertRegex(result.stdout, r'claude\s+planned')
 
     def test_a_working_shell_wrapper_is_available_without_executing_it(self):
-        target = self.home / 'real hermes'
+        target = self.home / 'real claude'
         marker = self.home / 'executed'
         target.write_text(f'#!/bin/sh\ntouch {marker}\n')
         target.chmod(0o755)
-        self.fake('hermes', f'#!/bin/sh\nexec "{target}" "$@"\n')
-        (self.home / '.hermes').mkdir()
+        self.fake('claude', f'#!/bin/sh\nexec "{target}" "$@"\n')
         result = self.install('--full', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertRegex(result.stdout, r'hermes\s+planned')
+        self.assertRegex(result.stdout, r'claude\s+planned')
         self.assertFalse(marker.exists())
 
     def test_orbi_installs_cli_only_and_verifies_version(self):
@@ -1964,23 +1784,19 @@ Path.stat = stat
 
     def test_orbi_full_install_prints_four_short_rows_and_only_counts_in_summary(self):
         self.orbi_fleet_fixture(extra_deployments=(('checkout-a', 'mobile-app', 3), ('checkout-b', 'web-app', 2)))
-        # Exercise all seven stages, substituting only the unrelated Hermes setup.
+        # Exercise every stage from a copied checkout.
         source = self.home / 'suite-source'
         (source / 'scripts').mkdir(parents=True)
         for relative in ('install.sh', 'scripts/install_menu.py'):
             shutil.copy2(ROOT / relative, source / relative)
         for relative in ('skills', 'adapters', 'tmux', '.claude-plugin', '.codex-plugin', '.agents'):
             (source / relative).symlink_to(ROOT / relative)
-        (source / 'scripts/update_bundle.py').write_text("def plugin_dir(home): return home / 'plugins/kit'\n")
-        (source / 'scripts/setup_bundle.py').write_text('print("Hermes setup fixture")\n')
-        self.fake('hermes', LOGGING)
-        (self.home / '.hermes').mkdir()
         env = {**self.env, **self.unreadable_root_fixture(extra_account=True)}
         result = subprocess.run(['bash', str(source / 'install.sh')], env=env, cwd=self.project,
                                 capture_output=True, text=True, timeout=120)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         progress, summary = result.stdout.split('\nSummary:', 1)
-        _, heading, stage = progress.partition('\n[7/7] Orbi host deployment refresh / CLI bootstrap\n')
+        _, heading, stage = progress.partition('\n[6/6] Orbi host deployment refresh / CLI bootstrap\n')
         self.assertTrue(heading, progress)
         self.assertEqual([line.split() for line in stage.splitlines() if ' started (' in line], [
             ['mobile-app', 'started', '(updated),', '3', 'slots'],
@@ -2010,58 +1826,6 @@ Path.stat = stat
         self.assertIn('verify_scheduling user:paused-worker.timer', progress)
         self.assertNotIn('verify_scheduling', summary)
         self.assertNotIn('orbi.toml', summary)
-
-    def test_delegated_orbi_shows_rows_and_honors_verbose(self):
-        installer = self.nested_installer_fixture()
-        for flags in ((), ('--verbose',)):
-            with self.subTest(flags=flags):
-                receipt, _, _ = self.orbi_fleet_fixture()
-                config = self.home / 'paused/orbi.toml'
-                config.write_text(config.read_text().replace('example/paused', 'fork/working'))
-                result = subprocess.run(['bash', str(installer), '--only', 'hermes', *flags],
-                                        env={**self.env, 'NATIVE_DISPOSITION': 'not_needed',
-                                             'KIT_INSTALL_REPORT': str(receipt)},
-                                        capture_output=True, text=True, timeout=120, cwd=self.project)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                progress, summary = result.stdout.rsplit('\nSummary:', 1)
-                self.assertRegex(progress, r'(?m)^  example/working  started \(up to date\), 1 slot')
-                row = next(line for line in progress.splitlines() if line.startswith('  fork/working  started'))
-                self.assertTrue(row.startswith('  fork/working  started (updated), 1 slot'), row)
-                if flags:
-                    self.assertIn('completed: set_release_track, sync_engine_source', row)
-                else:
-                    self.assertEqual(row, '  fork/working  started (updated), 1 slot')
-                    self.assertNotIn('verify_scheduling', progress)
-                    self.assertNotIn('"steps"', progress)
-                self.assertRegex(summary, r'orbi\s+installed\s+Hermes delegated: Orbi fleet completed: 2 started')
-                self.assertNotIn('started (', summary)
-                recorded = next(row for row in map(json.loads, receipt.read_text().splitlines())
-                                if row['item'] == 'orbi')
-                self.assertIn('verify_scheduling', [step['step'] for deployment in recorded['orbi_fleet']['deployments']
-                                                    for step in deployment['steps']])
-
-    def test_delegated_orbi_replays_diagnostics_when_quiet_or_interrupted(self):
-        installer = self.nested_installer_fixture()
-        config = str(self.home / 'working/orbi.toml')
-        for flags, fault, failure in (
-            (('--quiet',), {'ELAPSED_TIMER': 'working-worker.timer'}, 'verify_scheduling:'),
-            ((), {'ELAPSED_TIMER': 'working-worker.timer'}, 'verify_scheduling:'),
-            ((), {'INTERRUPT_INSTALLER': config}, 'apply_release: fleet refresh did not return a terminal receipt'),
-        ):
-            with self.subTest(flags=flags, fault=fault):
-                self.orbi_fleet_fixture()
-                result = subprocess.run(['bash', str(installer), '--only', 'hermes', *flags],
-                                        env={**self.env, 'NATIVE_DISPOSITION': 'not_needed', **fault},
-                                        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120,
-                                        cwd=self.project)
-                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                progress, summary = result.stdout.rsplit('\nSummary:', 1)
-                diagnostics = [line for line in progress.splitlines() if line.startswith('  FAILED: Orbi fleet')]
-                self.assertEqual(len(diagnostics), 1, result.stdout)
-                self.assertIn(failure, diagnostics[0])
-                self.assertIn('completed: disable_trigger system:working-worker.timer', progress)
-                self.assertRegex(summary, r'orbi\s+failed\s+Hermes delegated: Orbi fleet incomplete:')
-                self.assertNotIn('completed:', summary)
 
     def test_plain_install_holds_for_an_unreadable_live_account(self):
         receipt, state, _ = self.orbi_fleet_fixture()
@@ -2348,22 +2112,6 @@ Path.stat = stat
                 self.assertEqual(state.read_bytes(), original)
                 self.assertEqual(self.calls('orbi sync-engine-source'), [])
                 del service[prop]
-
-    def test_orbi_delegated_receipt_survives_installer_interruption(self):
-        receipt, _, _ = self.orbi_fleet_fixture()
-        config = str(self.home / 'working/orbi.toml')
-        result = self.install('--only', 'orbi', env={'KIT_INSTALL_REPORT': str(receipt),
-                              'KIT_INSTALL_ORBI_PROGRESS': '1', 'INTERRUPT_INSTALLER': config})
-        self.assertNotEqual(result.returncode, 0)
-        row = json.loads(receipt.read_text().splitlines()[-1])
-        self.assertEqual((row['item'], row['status']), ('orbi', 'failed'))
-        fleet = row['orbi_fleet']
-        self.assertEqual(fleet['status'], 'incomplete')
-        self.assertEqual(fleet['error']['config'], config)
-        self.assertEqual(fleet['error']['step'], 'apply_release')
-        paused, working = fleet['deployments']
-        self.assertEqual((paused['status'], working['status']), ('started', 'stopped'))
-        self.assertIn('last request may have taken effect', fleet['recovery'])
 
     def test_orbi_partial_failures_keep_bound_receipts(self):
         for phase, failed_step in (('stop', 'stop_service'), ('sync', 'sync_engine_source'),
@@ -2895,7 +2643,7 @@ ln -s "$root/pi-bolt-linux-x64/pi" "$PIBOLT_BIN_DIR/pi-bolt"'''))
         for shell in ('bash', 'zsh', 'fish'):
             self.assertIn(f'{shell} completion written', result.stdout)
         self.assertTrue((self.home / '.tmux.conf').is_file())  # none existed
-        self.assertRegex(result.stdout, r'hermes\s+skipped\s+hermes not found')
+        self.assertNotIn('hermes', result.stdout)
         self.assertRegex(result.stdout, r'tx\s+installed')
         self.assertRegex(result.stdout, r'pi-bolt\s+installed.*1\.4\.0')
         self.assertEqual(len(self.calls('pi-bolt-installer')), 1)
@@ -2988,84 +2736,6 @@ exit 0
         self.assertEqual(self.calls('claude'), ['claude plugin list --json', 'claude plugin marketplace update kit',
                                                'claude plugin install kit@kit', 'claude plugin list --json'])
 
-    def test_a_transient_preflight_race_is_retried_once(self):
-        import sys
-        sys.path.insert(0, str(ROOT / 'scripts'))
-        self.addCleanup(sys.path.remove, str(ROOT / 'scripts'))
-        import install_menu
-        original = install_menu.run_command
-        self.addCleanup(setattr, install_menu, 'run_command', original)
-        answers = [(1, 'ValueError: Destination changed since preflight: /x/skills/SKILL.md'), (0, '')]
-        install_menu.run_command = lambda argv, output, **kwargs: answers.pop(0)
-        continued = self.home / 'after-retry'
-        def next_step():
-            continued.touch()
-            return 'finished next step'
-        item = install_menu.Item('hermes', 'Hermes plugin', steps=[
-            install_menu.Step('update_bundle.py', ['true'], retry_on='changed since preflight'),
-            install_menu.Step('dependent step', run=next_step)])
-        code = install_menu.install([item], {'hermes'}, output=install_menu.Output('never', 0))
-        self.assertEqual(code, 0)
-        self.assertEqual(answers, [])  # the second (successful) run consumed the queue
-        self.assertTrue(continued.exists())
-
-    def test_a_failure_without_the_retry_marker_is_not_retried(self):
-        import sys
-        sys.path.insert(0, str(ROOT / 'scripts'))
-        import install_menu
-        original = install_menu.run_command
-        self.addCleanup(setattr, install_menu, 'run_command', original)
-        seen = []
-
-        def fake(argv, output, **kwargs):
-            seen.append(argv)
-            return 1, 'some other failure'
-
-        install_menu.run_command = fake
-        item = install_menu.Item('hermes', 'Hermes plugin', steps=[
-            install_menu.Step('update_bundle.py', ['true'], retry_on='changed since preflight')])
-        code = install_menu.install([item], {'hermes'}, output=install_menu.Output('never', 0))
-        self.assertEqual(code, 1)
-        self.assertEqual(len(seen), 1)
-
-    def test_partial_suite_reports_structured_hermes_cause_with_bounded_fallback(self):
-        import contextlib
-        import io
-        import json
-        import sys
-        from unittest.mock import patch
-        sys.path.insert(0, str(ROOT / 'scripts'))
-        self.addCleanup(sys.path.remove, str(ROOT / 'scripts'))
-        import install_menu
-        failures = (
-            ('native log\n' + json.dumps({'status': 'incomplete', 'error': 'Unproven checkout',
-                'action': 'Preserve local commits; retry ./install.sh --only hermes'}, indent=2),
-             'Unproven checkout'),
-            (json.dumps({'status': 'incomplete', 'recovery': {'profiles': {
-                'default': {'error': 'Native scanner denied staged source'}}},
-                'action': 'Preserve backup; retry ./install.sh --only hermes'}, indent=2),
-             'Native scanner denied staged source'),
-            ('network unavailable\n{\n  "status": "incomplete",\n}', 'network unavailable'),
-            ('x' * 4000 + '\nGit fetch failed\n}', 'Git fetch failed'),
-        )
-        for text, cause in failures:
-            with self.subTest(cause=cause):
-                items = [install_menu.Item(key, key, steps=[install_menu.Step('install', [key])])
-                         for key in ('pi', 'orbi', 'tx', 'hermes', 'claude', 'codex')]
-                output = io.StringIO()
-                with patch.object(install_menu, 'run_command',
-                        side_effect=lambda argv, _, **kwargs: (1, text) if argv == ['hermes'] else (0, 'ok')), \
-                     contextlib.redirect_stdout(output):
-                    code = install_menu.install(items, {item.key for item in items},
-                                                output=install_menu.Output('never', 0))
-                self.assertEqual(code, 1)
-                summary = output.getvalue().split('Summary:')[1]
-                self.assertIn('6 installed', summary)  # five components plus service activation
-                self.assertIn(cause, summary)
-                self.assertNotIn('failed    }', summary)
-                self.assertLess(len(summary), 2000)
-                if cause == 'Unproven checkout': self.assertIn('--only hermes', summary)
-
     def test_no_arguments_installs_full_suite_with_live_output_and_commands(self):
         result = self.install()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -3073,9 +2743,10 @@ exit 0
         self.assertIn('claude plugin install kit@kit', self.calls('claude'))
         self.assertIn('codex plugin add kit@kit-marketplace', self.calls('codex'))
         self.assertTrue((self.home / '.local/bin/tx').is_file())
-        self.assertIn('$ codex plugin add kit@kit-marketplace', result.stdout)
+        # Helper commands are audit detail, printed only with --verbose or --dry-run.
+        self.assertNotIn('$ codex plugin add kit@kit-marketplace', result.stdout)
         self.assertRegex(result.stdout, r'pi-bolt\s+installed.*1\.4\.0')
-        self.assertRegex(result.stdout, r'hermes\s+skipped.*hermes not found')
+        self.assertNotIn('hermes', result.stdout)
 
     def test_default_install_enables_the_pi_package_without_extra_flags(self):
         settings = self.home / '.pi/agent/settings.json'
@@ -3089,15 +2760,12 @@ exit 0
         self.assertIn('enabled', result.stdout)
 
     def test_dry_run_defaults_to_the_full_suite_without_installing(self):
-        self.fake('hermes', LOGGING)
-        (self.home / '.hermes').mkdir()
         result = self.install('--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
-        for key in ('pi', 'pi-bolt', 'tx', 'hermes', 'claude', 'codex'):
+        for key in ('pi', 'pi-bolt', 'tx', 'claude', 'codex'):
             self.assertRegex(result.stdout, rf'{key}\s+planned')
         self.assertEqual(self.calls('pi-bolt install'), [])
         self.assertEqual(self.calls('codex'), [])
-        self.assertEqual(self.calls('hermes'), [])
         self.assertFalse(self.calls('curl'))
         self.assertEqual(list((self.home / '.local/bin').iterdir()), [self.bolt])
         self.assertIn('enable the package skills and commands in Pi settings', result.stdout)
@@ -3153,7 +2821,7 @@ exit 0
             path = self.home / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.symlink_to(link_target if index != 1 else self.home / 'missing-completion')
-        preview = self.install('--full', '--skip', 'hermes,pi', '--dry-run')
+        preview = self.install('--full', '--skip', 'pi', '--dry-run')
         self.assertEqual(preview.returncode, 0, preview.stderr)
         self.assertFalse((self.home / '.local/bin/tx').exists())
         result = self.install('--only', 'tx')
@@ -3383,7 +3051,7 @@ fi
                 expected = b''.join((json.dumps({'item': key, 'status': status, 'exit': code}) + '\n').encode()
                                     for key, status, code in [
                                         ('pi-bolt', 'skipped', None), ('pi', 'skipped', None),
-                                        ('tx', 'skipped', None), ('hermes', 'skipped', None),
+                                        ('tx', 'skipped', None),
                                         ('claude', 'installed', 0), ('codex', 'skipped', None),
                                         ('orbi', 'skipped', None), ('services', 'installed', 0)])
                 self.assertEqual(b''.join((json.dumps({k: row[k] for k in ('item', 'status', 'exit')}) + '\n').encode()
@@ -3401,7 +3069,7 @@ fi
         self.fake('claude', LOGGING + 'echo "boom: no network" >&2; exit 1\n')
         self.fake('codex', LOGGING + 'echo "marketplace already added" >&2; exit 4\n')
         report = self.home / 'install.jsonl'
-        result = self.install('--full', '--skip', 'hermes,pi', '-q',
+        result = self.install('--full', '--skip', 'pi', '-q',
                               env={'KIT_INSTALL_REPORT': str(report)})
         self.assertEqual(result.returncode, 1)
         import json
@@ -3409,12 +3077,11 @@ fi
         self.assertEqual(rows['claude'], {'item': 'claude', 'status': 'failed', 'exit': 1})
         self.assertEqual(rows['codex'], {'item': 'codex', 'status': 'failed', 'exit': 4})
         self.assertEqual({k: rows['tx'][k] for k in ('item', 'status', 'exit')}, {'item': 'tx', 'status': 'installed', 'exit': 0})
-        self.assertEqual(rows['hermes'], {'item': 'hermes', 'status': 'skipped', 'exit': None})
         self.assertRegex(result.stdout, r'claude\s+failed.*boom: no network')
         self.assertRegex(result.stdout, r'codex\s+failed.*marketplace already added')
         self.assertIn('unknown item(s): nope', self.install('--only', 'nope').stderr)
         (self.bin / 'codex').unlink()
-        self.install('--full', '--skip', 'hermes,pi', '-q',
+        self.install('--full', '--skip', 'pi', '-q',
                      env={'KIT_INSTALL_REPORT': str(report)})
         rows = {r['item']: r for r in map(json.loads, report.read_text().splitlines())}
         self.assertEqual(rows['codex'], {'item': 'codex', 'status': 'skipped', 'exit': None})
@@ -3464,7 +3131,7 @@ fi
                 self.assertEqual(dependent, [])
                 self.assertEqual(independent, ['ran'])
 
-    def test_exhausted_retry_stops_dependent_steps_and_preserves_failure_receipt(self):
+    def test_a_failed_step_stops_dependent_steps_and_preserves_failure_receipt(self):
         import contextlib
         import io
         import json
@@ -3476,34 +3143,30 @@ fi
                   'p.write_text(p.read_text() + "x" if p.exists() else "x"); '
                   'print("changed since preflight"); raise SystemExit(23)')
         item = install_menu.Item('retry', 'Retry fixture', steps=[
-            install_menu.Step('retryable command', [sys.executable, '-c', script],
-                              retry_on='changed since preflight'),
+            install_menu.Step('failing command', [sys.executable, '-c', script]),
             install_menu.Step('dependent step', run=lambda: continued.append('ran') or 'ok')])
         with patch.dict(os.environ, KIT_INSTALL_REPORT=str(report)), contextlib.redirect_stdout(io.StringIO()):
             code = install_menu.install([item], {'retry'}, output=install_menu.Output('never', 0))
         self.assertEqual(code, 1)
-        self.assertEqual(attempts.read_text(), 'xx')
+        self.assertEqual(attempts.read_text(), 'x')  # never retried
         self.assertEqual(continued, [])
         rows = [json.loads(line) for line in report.read_text().splitlines()]
         self.assertEqual(rows[0], {'item': 'retry', 'status': 'failed', 'exit': 23})
         self.assertEqual({k: rows[1][k] for k in ('item', 'status', 'exit')}, {'item': 'services', 'status': 'installed', 'exit': 0})
 
     def test_full_selects_all_hosts_and_bundled_skills(self):
-        self.fake('hermes', LOGGING)
-        (self.home / '.hermes').mkdir()
         result = self.install('--full', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
-        for key in ('pi', 'tx', 'hermes', 'claude', 'codex'):
+        for key in ('pi', 'tx', 'claude', 'codex', 'orbi'):
             self.assertRegex(result.stdout, rf'{key}\s+planned')
         self.assertIn('codex plugin add kit@kit-marketplace', result.stdout)
-        self.assertIn('setup_bundle.py', result.stdout)
         self.assertEqual(self.calls('codex'), [])
-        self.assertEqual(self.calls('hermes'), [])
 
     def test_explicit_missing_host_fails_but_other_items_continue(self):
-        result = self.install('--only', 'hermes,tx')
+        (self.bin / 'claude').unlink()
+        result = self.install('--only', 'claude,tx')
         self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertRegex(result.stdout, r'hermes\s+failed.*hermes not found')
+        self.assertRegex(result.stdout, r'claude\s+failed.*claude not found')
         self.assertTrue((self.home / '.local/bin/tx').is_file())
 
     def test_default_output_shows_both_child_streams(self):
@@ -3602,39 +3265,6 @@ fi
                 if proc.poll() is None:
                     proc.kill()
                     proc.wait()
-
-    def test_hermes_options_reach_the_hermes_item(self):
-        self.fake('hermes', LOGGING)
-        result = self.install('--only', 'hermes', '--dry-run', '--hermes-home', '/h', '--yes-deps')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('setup_bundle.py --yes-deps --dry-run --hermes-home /h', result.stdout)
-        # Profiles with their own plugin clone (`hermes plugins install`) are updated: setup
-        # would refuse them as "another checkout".
-        clone = self.home / '.hermes/profiles/work/plugins/kit'
-        (clone / '.git').mkdir(parents=True)
-        (clone / 'plugin.yaml').write_text('name: kit\n')
-        result = self.install('--only', 'hermes', '--dry-run')
-        self.assertIn(f"update_bundle.py --hermes-home {self.home / '.hermes'}", result.stdout)
-        self.assertNotIn('setup_bundle.py', result.stdout)
-
-
-    def test_hermes_discovery_identity_matrix(self):
-        self.fake('hermes', LOGGING)
-        plugins = self.home / '.hermes/plugins'
-        plugins.mkdir(parents=True)
-        canonical = plugins / 'kit'
-        (canonical / '.git').mkdir(parents=True)
-        (canonical / 'plugin.yaml').write_text('name: kit\n')
-        result = self.install('--only', 'hermes', '--dry-run')
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn('update_bundle.py --hermes-home', result.stdout)
-        (canonical / 'plugin.yaml').write_text('name: foreign\n')
-        result = self.install('--only', 'hermes', '--dry-run')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Invalid or foreign plugin identity', result.stdout)
-        self.assertIn(str(canonical), result.stdout)
-        self.assertEqual((canonical / 'plugin.yaml').read_text(), 'name: foreign\n')
-        self.assertEqual(self.calls('hermes'), [])
 
     def test_tx_moves_a_symlink_aside_instead_of_writing_through_it(self):
         elsewhere = self.home / 'other-checkout/tx'
@@ -3777,81 +3407,6 @@ fi
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(settings.read_text())['packages'], [NEW])
         self.assertFalse((self.home / '.pi/agent/settings.json').exists())
-
-    def test_missing_manifest_pyyaml_warns_and_keeps_failure_receipt(self):
-        self.fake('hermes', LOGGING)
-        profile = self.home / 'alternate Hermes'
-        plugin = profile / 'plugins/kit'
-        (plugin / '.git').mkdir(parents=True)
-        manifest = plugin / 'plugin.yaml'
-        manifest.write_text('name: kit\n')
-        imports = self.home / 'imports'
-        imports.mkdir()
-        (imports / 'sitecustomize.py').write_text(
-            'import sys\n'
-            'class NoYAML:\n'
-            '    def find_spec(self, fullname, path=None, target=None):\n'
-            '        if fullname == "yaml":\n'
-            '            raise ModuleNotFoundError("fixture", name="yaml")\n'
-            'sys.meta_path.insert(0, NoYAML())\n')
-        report = self.home / 'report.jsonl'
-        env = {'PYTHONPATH': str(imports), 'KIT_INSTALL_REPORT': str(report)}
-        for selection, tx_status in ((('--only', 'hermes'), 'skipped'),
-                                     (('--full', '--skip', 'pi,pi-bolt,orbi,claude,codex'), 'installed')):
-            with self.subTest(selection=selection):
-                result = self.install(*selection, '--quiet', '--hermes-home', str(profile), env=env)
-                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn("WARNING: Hermes was not updated. The installer's python3 could not load PyYAML",
-                              result.stdout)
-                self.assertIn("python3 -c 'import yaml'", result.stdout)
-                self.assertIn(f"./install.sh --only hermes '--hermes-home={profile}'\n", result.stdout)
-                self.assertNotIn('pip install --user', result.stdout)
-                self.assertRegex(result.stdout, r'hermes\s+failed')
-                rows = {row['item']: row for row in map(json.loads, report.read_text().splitlines())}
-                self.assertEqual(rows['hermes'], {'item': 'hermes', 'status': 'failed', 'exit': 1})
-                self.assertEqual(rows['tx']['status'], tx_status)
-                self.assertEqual(manifest.read_text(), 'name: kit\n')
-                self.assertEqual(set(plugin.iterdir()), {manifest, plugin / '.git'})
-                self.assertEqual(self.calls('hermes'), [])
-
-        # An installed reader with a broken import must not get the missing-module warning.
-        (imports / 'sitecustomize.py').unlink()
-        (imports / 'yaml.py').write_text('raise ImportError("fixture broken reader")\n')
-        broken = self.install('--only', 'hermes', '--quiet', '--hermes-home', str(profile), env=env)
-        self.assertEqual(broken.returncode, 1, broken.stdout + broken.stderr)
-        self.assertIn('Cannot load plugin identity reader', broken.stdout)
-        self.assertNotIn('could not load PyYAML', broken.stdout)
-        self.assertNotIn('fixture broken reader', broken.stdout + broken.stderr)
-
-        manifest.write_text('name: [invalid\n')
-        invalid = self.install('--only', 'hermes', '--quiet', '--hermes-home', str(profile))
-        self.assertEqual(invalid.returncode, 1, invalid.stdout + invalid.stderr)
-        self.assertIn('Invalid plugin manifest', invalid.stdout)
-        self.assertNotIn('could not load PyYAML', invalid.stdout)
-
-    def test_setup_only_hermes_options_are_refused_for_profile_clones(self):
-        self.fake('hermes', LOGGING)
-        clone = self.home / '.hermes/profiles/work/plugins/kit'
-        (clone / '.git').mkdir(parents=True)
-        (clone / 'plugin.yaml').write_text('name: kit\n')
-        for flag in ('--no-reload', '--bundle-only', '--yes-deps'):
-            with self.subTest(flag=flag):
-                result = self.install('--only', 'hermes,tx', flag)
-                self.assertEqual(result.returncode, 1, result.stdout)
-                self.assertRegex(result.stdout, rf'hermes\s+failed\s+{flag} cannot apply')
-                self.assertNotIn('update_bundle.py --hermes-home', self.calls())
-                self.assertRegex(result.stdout, r'tx\s+installed')
-
-    def test_hermes_without_a_home_is_unavailable_not_a_failed_setup(self):
-        self.fake('hermes', LOGGING)
-        result = self.install()
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertRegex(result.stdout, r'hermes\s+skipped\s+no Hermes home at .*\.hermes')
-        self.assertRegex(self.install('--list').stdout, r'hermes\s+unavailable.*no Hermes home')
-        result = self.install('--only', 'hermes')
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertRegex(result.stdout, r'hermes\s+failed\s+no Hermes home')
-        self.assertEqual(self.calls('hermes'), [])
 
 class PullCheckoutTests(unittest.TestCase):
     """install.sh first fast-forwards its own checkout (owner request 2026-10-21)."""

@@ -3,7 +3,6 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import tempfile
@@ -13,20 +12,6 @@ ROOT=Path(__file__).resolve().parents[1]
 PACK=ROOT/'skills/engineering'
 
 class EngineeringVendorTests(unittest.TestCase):
-    def test_installed_skills_ship_helpers_without_an_executor(self):
-        """Native profiles receive instructions and Docs Sync helpers, not a runner."""
-        spec = importlib.util.spec_from_file_location('ready_install_fixture', ROOT / 'scripts/install_skills.py')
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        with tempfile.TemporaryDirectory() as td:
-            home = Path(td)
-            selected = [ROOT / 'skills' / name for name in ('docs-sync', 'engineering')]
-            self.assertEqual(module.install(ROOT / 'skills', [('fixture', home)], skills=selected, report=lambda _: None), 0)
-            for name in ('work', 'pending', 'blockers'):
-                self.assertFalse((home / 'skills' / name).exists())
-            self.assertEqual((home / 'skills/docs-sync/scripts/docs.py').read_bytes(),
-                             (ROOT / 'skills/docs-sync/scripts/docs.py').read_bytes())
-
     def test_exact_protocol_selection_has_no_implicit_phase_bundle(self):
         result = subprocess.run(['python3', str(PACK/'scripts/route.py'),
                                  '--protocol', 'performance-optimization'],
@@ -110,27 +95,5 @@ class EngineeringVendorTests(unittest.TestCase):
             self.assertIn('not proof',result['boundary'])
         r=subprocess.run(['python3',str(script),'plan','--domain','../../bad'],capture_output=True)
         self.assertNotEqual(r.returncode,0)
-
-    def test_native_install_preserves_support_tree(self):
-        spec=importlib.util.spec_from_file_location('install_fixture',ROOT/'scripts/install_skills.py')
-        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-        with tempfile.TemporaryDirectory() as td:
-            home=Path(td)
-            selected = [PACK, ROOT/'skills/test-optimizer', ROOT/'skills/shared',
-                        ROOT/'skills/state-machine']
-            self.assertTrue(all(p.is_dir() for p in selected))
-            self.assertEqual(module.install(ROOT/'skills',[('fixture',home)],skills=selected,report=lambda _:None),0)
-            optimizer = home/'skills/test-optimizer/SKILL.md'
-            self.assertEqual(optimizer.read_bytes(), (ROOT/'skills/test-optimizer/SKILL.md').read_bytes())
-            # Follow the installed entry's actual links, not paths assumed by the test.
-            targets = {(optimizer.parent/link.split('#')[0]).resolve()
-                       for link in re.findall(r'\[[^\]]*\]\(([^)]+)\)', optimizer.read_text())
-                       if '://' not in link and not link.startswith('#')}
-            self.assertTrue(all(p.is_file() for p in targets))
-            method = home/'skills/engineering/local/test-suite-optimization/PROTOCOL.md'
-            self.assertIn(method.resolve(), targets)
-            self.assertEqual(method.read_bytes(), (PACK/'local/test-suite-optimization/PROTOCOL.md').read_bytes())
-            self.assertTrue((home/'skills/engineering/upstream/references/security-checklist.md').is_file())
-            self.assertEqual((home/'skills/engineering/UPSTREAM.json').read_bytes(),(PACK/'UPSTREAM.json').read_bytes())
 
 if __name__=='__main__':unittest.main()

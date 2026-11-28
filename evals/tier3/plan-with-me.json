@@ -115,35 +115,11 @@
     },
     {
       "event": "write",
-      "path": "__init__.py"
-    },
-    {
-      "event": "edit",
-      "path": "__init__.py"
-    },
-    {
-      "event": "write",
       "path": "install.sh"
     },
     {
       "event": "edit",
       "path": "install.sh"
-    },
-    {
-      "event": "write",
-      "path": "install-plugins.sh"
-    },
-    {
-      "event": "edit",
-      "path": "install-plugins.sh"
-    },
-    {
-      "event": "write",
-      "path": "install-skills.sh"
-    },
-    {
-      "event": "edit",
-      "path": "install-skills.sh"
     },
     {
       "event": "write",
@@ -168,14 +144,6 @@
     {
       "event": "edit",
       "path": "package.json"
-    },
-    {
-      "event": "write",
-      "path": "plugin.yaml"
-    },
-    {
-      "event": "edit",
-      "path": "plugin.yaml"
     },
     {
       "event": "write",

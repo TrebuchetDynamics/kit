@@ -107,7 +107,7 @@ class UnblockSkillTests(unittest.TestCase):
                          'actual executable release', 'attempts/recovery state',
                          'An Unblock invocation does not enable a deployment'):
             self.assertIn(contract, text)
-        self.assertIn('No Hermes runtime', (ROOT / 'adapters/skills/unblock/SKILL.md').read_text())
+        self.assertIn('No Pi extension', (ROOT / 'adapters/skills/unblock/SKILL.md').read_text())
 
     def pr_phase(self):
         text = (ROOT / 'skills/unblock/SKILL.md').read_text()

@@ -5,10 +5,6 @@ version: 2.1.1
 author: "Rafael Zendron (rafaumeu) + Matt Pocock (mattpocock/skills, grilling) + Hermes Agent"
 license: MIT
 platforms: [linux, macos, windows]
-metadata:
-  hermes:
-    tags: [planning, adversarial, interview, decision-tree, pre-implementation, review, alignment]
-    related_skills: [requesting-code-review, subagent-driven-development, test-driven-development]
 ---
 
 # Grill Me

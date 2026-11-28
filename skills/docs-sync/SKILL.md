@@ -3,9 +3,6 @@ name: docs-sync
 description: "Maintain docs and GitHub issue handoffs."
 version: 1.0.0
 license: MIT
-metadata:
-  hermes:
-    tags: [documentation, governance, technical-writing, backlog]
 ---
 
 # Docs Sync

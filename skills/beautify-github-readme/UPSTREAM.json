@@ -10,7 +10,7 @@
     "skills/beautify-github-readme/scripts"
   ],
   "excluded": "Showcase assets, translated READMEs and agents/openai.yaml (a Codex manifest whose default prompt uses upstream invocation syntax); the toolset adapter supplies host integration.",
-  "transform": "SKILL.md becomes PROTOCOL.md so Hermes does not register a second skill; all bytes unchanged.",
+  "transform": "SKILL.md becomes PROTOCOL.md so hosts do not register a second skill; all bytes unchanged.",
   "files": {
     "LICENSE": "d44a3ca218007a85d3be41a0b76553d746e42336c7a63c6c6687d2619199c3c4",
     "PROTOCOL.md": "f3854a1ff509d26f44e5e6a7547a3670e1d2733987d6b300ddcc68c1a17aa14b",

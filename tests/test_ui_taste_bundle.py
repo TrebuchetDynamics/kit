@@ -1,17 +1,15 @@
 """The vendored UI Taste skill is an exact, licensed snapshot of a pinned Uizze commit behind a toolset adapter."""
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
 import re
-import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 PACK = ROOT / 'skills/ui-taste'
 UPSTREAM = PACK / 'upstream'
 REVISION = 'afd703a14a5db5f2fe6c2860badbe811058aa9e5'
-# The upstream SKILL.md is stored as PROTOCOL.md so Hermes registers only the adapter.
+# The upstream SKILL.md is stored as PROTOCOL.md so hosts register only the adapter.
 RENAMED = {'SKILL.md': 'PROTOCOL.md'}
 
 
@@ -52,7 +50,7 @@ class UiTasteBundleTests(unittest.TestCase):
         adapter = (PACK / 'SKILL.md').read_text()
         self.assertIn('\nname: ui-taste\n', adapter)
         description = re.search(r'\ndescription: "?(.*?)"?\n', adapter).group(1)
-        # Hermes' skill index keeps 60 characters; the trigger must survive it.
+        # Host skill indexes truncate long descriptions; the trigger must survive that.
         self.assertLessEqual(len(description), 60, description)
         self.assertTrue(description.startswith('Use '), description)
         for rule in ('upstream/PROTOCOL.md', 'Impeccable', 'audit only unless',
@@ -88,18 +86,6 @@ class UiTasteBundleTests(unittest.TestCase):
                      'without selection, confirmation or a second command',
                      'UNSAVED', 'UNKNOWN', 'stable key'):
             self.assertIn(rule, guidance)
-
-    def test_clean_profile_receives_ui_taste_offline(self):
-        spec = importlib.util.spec_from_file_location('ui_taste_installer', ROOT / 'scripts/install_skills.py')
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        with tempfile.TemporaryDirectory() as td:
-            home = Path(td) / 'default'
-            self.assertEqual(module.install(ROOT / 'skills', [('default', home)], report=lambda _: None), 0)
-            for name in ('SKILL.md', 'upstream/PROTOCOL.md', 'upstream/reference/craft.md',
-                         'upstream/NOTICE', 'upstream/LICENSE'):
-                self.assertTrue((home / 'skills/ui-taste' / name).is_file(), name)
-
 
 if __name__ == '__main__':
     unittest.main()

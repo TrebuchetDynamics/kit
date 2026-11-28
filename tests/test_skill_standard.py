@@ -13,7 +13,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 BANNED_OPENERS = ('use when', 'use to', 'use for', 'use if', 'use after', 'use before')
-# Hermes installs Graphify's own skill into profiles, so Kit ships the adapter only.
+# Graphify's own skill comes from the official Graphify CLI, so Kit ships the adapter only.
 ADAPTER_ONLY = {'graphify'}
 PILOT = ('orbi', 'update-kit', 'unslop', 'plan-for-me', 'ponytail-review',
          'git-commit-push', 'push', 'unblock', 'docs-sync', 'plan-with-me')
@@ -27,7 +27,7 @@ def gui_entrypoint_routes(root):
     """Check the explicit conditional instruction, not fragment-stripped reachability.
 
     Also used against the actual npm archive. Only Kit-owned SKILL entrypoints are
-    in scope: independently installed upstream Hermes Graphify is not bundled.
+    in scope: an independently installed upstream Graphify skill is not bundled.
     """
     owner = root / 'skills/shared/COMMON-CONTRACT.md'
     if '## GUI actions and visual evidence' not in owner.read_text():

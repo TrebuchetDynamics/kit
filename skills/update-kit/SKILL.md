@@ -16,13 +16,14 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this scope and 
    Before execution explain: default scope includes all available components, may
    bootstrap Pi-Bolt, and may restart only proven affected active integrations.
    Every run checks for updates under source/pin policies. Healthy unchanged reruns
-   request no service restarts. Hermes owns its native gateway deferral/restart decision.
+   request no service restarts. Selecting Orbi stops, updates and restarts verified
+   local deployments.
    Pi-Bolt is the only Pi harness Kit installs; the Kit Pi package is installed or
    refreshed through the verified destination Pi-Bolt, never stock Pi. Native
    dependency/security prompts remain in force. Missing hosts and partial failures
    follow the [suite installer contract](../../docs/installation.md#full-suite-from-a-checkout).
-   An explicit no-restarts restriction cannot be honored: `--no-reload` does **not**
-   suppress other affected-host restarts. Refuse incompatible restrictions before any
+   An explicit no-restarts restriction cannot be honored: the installer restarts
+   proven affected services. Refuse incompatible restrictions before any
    source/host mutation; never translate them into weaker flags.
 2. **Preview branch.** For read-only, questions-only or dry-run requests, run only
    the helper's `--dry-run` with applicable literal flags, or explain without tools.
@@ -37,13 +38,10 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this scope and 
    arbitrary developer checkout or a host package/plugin cache. Keep source after
    installation: native installs can link to it. Establish that preexisting source
    consumers and native update owners are idle using their native receipts; unknown
-   ownership holds. The destination lock serializes update-kit only, not Hermes.
+   ownership holds. The destination lock serializes update-kit only.
 4. **Selection.** Forward documented installer flags as separate argv, preserving
-   literal values: `--only`, `--skip`, `--all`/`--full`, verbosity/color, and explicit
-   Hermes options. The outer `--only`/`--skip` do not constrain Hermes's nested
-   full-suite refresh. If a restriction selects Hermes but excludes any other
-   component, refuse before mutation. Offer excluding Hermes (`--skip hermes`) or
-   separately authorizing an unrestricted native cascade. Menu selection cannot
+   literal values: `--only`, `--skip`, `--all`/`--full` and verbosity/color.
+   Menu selection cannot
    be preflighted here; use explicit selection. Add no consent, sudo, autonomous
    policy, service activation or restart-control flags.
 5. **Execute.** Resolve [the helper](scripts/update_kit.py) from this **loaded skill's
@@ -60,10 +58,9 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this scope and 
    every hold; never reset, stash, clean, force, repin, adopt or delete source.
    It fetches fixed upstream, fast-forwards only, then invokes that checkout's
    `bash install.sh update --no-pull` exactly once even at equal SHA. `--no-pull`
-   suppresses only the outer automatic pull. Unrestricted Hermes native updates
-   may fetch their installed source and launch another full-suite refresh.
-6. **Receipt.** Report persistent source path, old/helper-selected/final SHA, any
-   secondary source advance, native component outcomes and installer exit code.
+   suppresses only the outer automatic pull.
+6. **Receipt.** Report persistent source path, old/helper-selected/final SHA, native
+   component outcomes and installer exit code.
    Partial successes remain installed; preserve diagnostics and repair/retry only
    the reported failures. Do not claim rollback. Reopen/reload the current agent
    session to discover resources: package refresh does not reload a running agent.
@@ -77,15 +74,14 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) within this scope and 
 | --- | --- |
 | The current checkout is more convenient. | Only the dedicated persistent source is updater-owned. |
 | Same SHA means nothing to do. | Host installation can be stale; rerun the installer. |
-| `--no-reload` means no restarts. | Other changed hosts can still restart; refuse a no-restarts request. |
-| `--only hermes` contains the update. | Hermes can launch a broader refresh; restricted cascades hold. |
+| A restriction can prevent restarts. | Proven affected services still restart; refuse a no-restarts request. |
 | A successful install proves the session is updated. | Reload and live checks are separate evidence. |
 
 ## Red Flags
 
 - Choosing another checkout/cache, repairing dirt with force, or deleting failed staging.
 - Running source/network/host probes in preview or scheduling background updates.
-- Hiding secondary source changes, partial failures or native ownership uncertainty.
+- Hiding source changes, partial failures or native ownership uncertainty.
 - Running extra Orbi lifecycle actions outside the installer or treating installation as live qualification.
 
 ## Boundaries

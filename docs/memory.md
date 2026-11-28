@@ -1,19 +1,13 @@
 # Memory and retained data
 
-Sources: [native setup preflight](../src/kit_runtime/install/setup_preflight.py),
-[configuration validation](../src/kit_runtime/install/preflight_config.py),
-[runtime policy](../src/kit_runtime/runtime_defaults.py),
-[source installer](../install-plugins.sh) and [bundle defaults](../plugins/defaults.json).
-The `scripts/` Python entrypoints load these same-release native implementations.
+Source: [suite installer](../scripts/install_menu.py).
 
-Kit does not install or select an external memory provider. Full setup and
-bundle-only setup preserve existing provider selection, store bindings and records.
-They do not migrate data, start a memory server or change capture policy.
-Configuration shape checks still apply before setup writes.
+Kit does not install or select an external memory provider. Installation
+preserves existing provider selection, store bindings and records.
+It does not migrate data, start a memory server or change capture policy.
 
-Hermes built-in `MEMORY.md` and `USER.md` files remain separate from external
-stores. A shared plugin installation does not prove that profiles share a store.
-Inspect the actual provider and profile configuration before relying on recall.
+A shared plugin installation does not prove that sessions share a store.
+Inspect the actual provider configuration before relying on recall.
 A running service or passing setup check does not prove memory capture or replay.
 
 ## Inspection and removal

@@ -18,8 +18,8 @@ The description names what the skill does in one sentence, under the 60-characte
 limit. It is a summary, not a trigger list: no "Use when the user…". A reader browsing
 commands must know the job without loading the file.
 
-*Why:* every entry here is user-invoked (Hermes registers it as a command, portable
-hosts disable model invocation), so the description is read by a person, not a router.
+*Why:* every entry here is user-invoked (hosts register it as a command and
+disable model invocation), so the description is read by a person, not a router.
 
 ## 2. Boundaries before overlap
 

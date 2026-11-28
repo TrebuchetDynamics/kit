@@ -7,13 +7,6 @@
       "path": "README.md",
       "covers": [
         "install.sh",
-        "scripts/bundle.py",
-        "plugins/defaults.json",
-        "scripts/update_bundle.py",
-        "scripts/runtime_defaults.py",
-        "src/kit_runtime/bundle.py",
-        "src/kit_runtime/update/update_bundle.py",
-        "src/kit_runtime/runtime_defaults.py",
         "scripts/install_menu.py"
       ],
       "verified_at": "61e8e4b7",
@@ -24,25 +17,9 @@
       "path": "docs/reference.md",
       "verified_at": "61e8e4b7",
       "covers": [
-        "scripts/bundle.py",
-        "scripts/setup_bundle.py",
-        "scripts/update_bundle.py",
-        "scripts/install_skills.py",
-        "install-plugins.sh",
-        "scripts/install-graphify.py",
-        "scripts/runtime_defaults.py",
-        "plugins/defaults.json",
-        "scripts/telegram_menu_policy.py",
         "scripts/check.py",
         "scripts/github_issues.py",
         "skills/docs-sync/scripts/docs.py",
-        "src/kit_runtime/bundle.py",
-        "src/kit_runtime/install/setup_bundle.py",
-        "src/kit_runtime/update/update_bundle.py",
-        "src/kit_runtime/install/install_skills.py",
-        "src/kit_runtime/install/install_graphify.py",
-        "src/kit_runtime/runtime_defaults.py",
-        "src/kit_runtime/telegram_menu_policy.py",
         "scripts/install_menu.py",
         "skills/orbi/scripts/orbi_control.py",
         "skills/update-kit/scripts/update_kit.py"
@@ -53,44 +30,17 @@
       "status": "maintained",
       "path": "docs/installation.md",
       "covers": [
-        "scripts/setup_bundle.py",
-        "scripts/setup_preflight.py",
-        "scripts/setup_runtime.py",
-        "scripts/update_bundle.py",
-        "scripts/update_bundle_native.py",
-        "install-plugins.sh",
-        "plugins/PLUGINS.md",
-        "plugins/defaults.json",
-        "scripts/runtime_defaults.py",
         "skills/grill-me/SKILL.md",
-        "src/kit_runtime/install/setup_bundle.py",
-        "src/kit_runtime/install/setup_preflight.py",
-        "src/kit_runtime/install/setup_runtime.py",
-        "src/kit_runtime/update/update_bundle.py",
-        "src/kit_runtime/update/update_bundle_native.py",
-        "src/kit_runtime/runtime_defaults.py",
         "scripts/install_menu.py"
       ],
       "verified_at": "61e8e4b7",
-      "reason": "Reviewed suite refresh, same-release native setup, policy opt-out and source/identity preservation contracts. Portable host installs/updates were exercised in isolated homes; no Hermes fleet or service activation was tested."
+      "reason": "Reviewed suite refresh, same-release native setup, policy opt-out and source/identity preservation contracts. Portable host installs/updates were exercised in isolated homes."
     },
     "troubleshooting": {
       "status": "created",
       "path": "docs/troubleshooting.md",
       "verified_at": "61e8e4b7",
-      "covers": [
-        "scripts/bundle.py",
-        "scripts/setup_runtime.py",
-        "scripts/update_bundle.py",
-        "scripts/runtime_defaults.py",
-        "scripts/telegram_menu_policy.py",
-        "src/kit_runtime/bundle.py",
-        "src/kit_runtime/install/setup_runtime.py",
-        "src/kit_runtime/update/update_bundle.py",
-        "src/kit_runtime/runtime_defaults.py",
-        "src/kit_runtime/telegram_menu_policy.py",
-        "src/kit_runtime/plugin.py"
-      ],
+      "covers": [],
       "reason": "Reviewed diagnosis fields, command ownership, native updater/restart boundaries and exact-slot recovery. No original-host or messaging recovery is claimed."
     },
     "architecture": {
@@ -98,15 +48,6 @@
       "status": "maintained",
       "path": "docs/project.md#current-components",
       "covers": [
-        "__init__.py",
-        "scripts/kit_bootstrap.py",
-        "src/kit_bootstrap.py",
-        "src/kit_runtime/plugin.py",
-        "scripts/bundle.py",
-        "scripts/workflow_commands.py",
-        "scripts/autoresearch_commands.py",
-        "src/kit_runtime/commands",
-        "src/kit_runtime/telegram_menu_policy.py",
         "scripts/github_issues.py",
         "skills",
         "adapters/pi.mjs",
@@ -114,11 +55,6 @@
         ".claude-plugin",
         ".codex-plugin",
         ".agents/plugins",
-        "src/kit_runtime/bundle.py",
-        "src/kit_runtime/commands/workflow_commands.py",
-        "src/kit_runtime/commands/autoresearch_commands.py",
-        "src/kit_runtime/install",
-        "src/kit_runtime/update",
         "skills/update-kit/scripts/update_kit.py"
       ],
       "verified_at": "61e8e4b7"
@@ -145,8 +81,6 @@
       "status": "maintained",
       "path": "docs/project.md#current-components",
       "covers": [
-        "src/kit_runtime",
-        "src/kit_bootstrap.py",
         "scripts"
       ],
       "verified_at": "61e8e4b7",
@@ -165,16 +99,8 @@
       "status": "maintained",
       "path": "docs/workflows.md",
       "covers": [
-        "scripts/workflow_commands.py",
-        "scripts/autoresearch_commands.py",
-        "scripts/telegram_menu_policy.py",
-        "src/kit_runtime/plugin.py",
-        "src/kit_runtime/commands",
-        "src/kit_runtime/telegram_menu_policy.py",
         "adapters/pi.mjs",
-        "skills",
-        "src/kit_runtime/commands/workflow_commands.py",
-        "src/kit_runtime/commands/autoresearch_commands.py"
+        "skills"
       ],
       "verified_at": "61e8e4b7"
     },
@@ -203,16 +129,7 @@
     "memory": {
       "status": "maintained",
       "path": "docs/memory.md",
-      "covers": [
-        "scripts/setup_preflight.py",
-        "scripts/runtime_defaults.py",
-        "plugins/defaults.json",
-        "src/kit_runtime/install/setup_preflight.py",
-        "src/kit_runtime/runtime_defaults.py",
-        "src/kit_runtime/install/preflight_config.py",
-        "install-plugins.sh",
-        "plugins/PLUGINS.md"
-      ],
+      "covers": [],
       "verified_at": "61e8e4b7",
       "reason": "Reviewed native preflight shape checks, runtime policy patch and source installer: existing providers/stores are preserved and no external memory provider is installed. Actual capture/recall was not tested."
     },
@@ -220,11 +137,8 @@
       "status": "maintained",
       "path": "docs/dependencies.md",
       "covers": [
-        "plugins/PLUGINS.md",
         "requirements-test.txt",
         "package.json",
-        "plugins/defaults.json",
-        "plugin.yaml",
         "skills/grill-me/SKILL.md",
         "skills/autoresearch/UPSTREAM.json",
         "skills/engineering/UPSTREAM.json",
