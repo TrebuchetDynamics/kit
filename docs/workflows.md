@@ -123,9 +123,11 @@ is limited, so some commands must be typed directly.
 | `/plan_for_me` | `/plan_for_me` | Investigate accepted scope and publish complete GitHub Issues without an interview |
 | `/grill-me` | `/grill_me` | Stress-test a plan through questions |
 | `/autoresearch` | `/autoresearch` | Route a research goal or run a bounded metric loop |
+| `/100x <brief>` | `/100x` | [Build a prototype in this session](../skills/100x/SKILL.md); requires 100x CLI 0.1.1 on PATH. Kit does not install it. |
 | `/impeccable` | `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
 | `/unslop` | `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
 | `/ui-taste` | `/ui_taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |
+| `/forever-components` | `/forever_components` | Search the Forever index and retrieve only selected pinned components |
 | `/genjutsu` | `/genjutsu` | Design motion for an interface's interactions |
 | `/motion-graphics` | `/motion_graphics` | Build and verify a seekable timeline |
 | `/brand-identity` | `/brand_identity` | Compare brand directions and export the selected kit |
@@ -572,11 +574,17 @@ keeps published issues undispatched.
 
 | Command | Example | Result |
 | --- | --- | --- |
+| [`/forever-components`](../skills/forever-components/SKILL.md) | `/forever-components Find a lightweight CSS loader and adapt it to our tokens` | Shortlist up to three matches; retrieve selected sources with their provenance and notices |
 | [`/tastemaker`](../skills/tastemaker/SKILL.md) | `/tastemaker study screenshot.png` | Composition and measured palette from a supplied reference |
 | `/tastemaker` | `/tastemaker audit src/page.html` | Ranked findings without edits, issue publication or taste-memory changes |
 | `/tastemaker` | `/tastemaker compositions two hero directions` | Inline briefs, not generated images |
 | [`/dembrandt`](../skills/dembrandt/SKILL.md) | `/dembrandt review this form against DESIGN.md` | Advice from the relevant entries in the [45-topic index](../skills/dembrandt/references/corpus.md) |
 | `/dembrandt` | `/dembrandt extract https://example.com` | Measured tokens from an authorized page, without installing tools or applying exports |
+
+For Forever, use `/kit:forever-components` in Claude Code and
+`$kit:forever-components` in Codex. Search uses the local index and Python 3.9+
+without a network connection. Retrieval needs access to the pinned GitHub source;
+adaptation uses the project's browser checks, not the catalog's accessibility labels.
 
 Use `/kit:tastemaker` and `/kit:dembrandt` in Claude Code, `$kit:tastemaker`
 and `$kit:dembrandt` in Codex, and bare slash commands in Pi and Hermes. The
@@ -607,6 +615,16 @@ For timeline rendering and optional export, see [capture prerequisites and
 commands](../skills/motion-graphics/references/capture.md). Kit does not install
 missing dependencies, change project design constraints or qualify model behavior
 or device performance.
+
+## Procedural browser 3D
+
+Use [`/open-3d`](../skills/open-3d/SKILL.md) explicitly for a procedural scene,
+exploded view, scroll film or scene capture. Use `/kit:open-3d` in Claude Code,
+`$kit:open-3d` in Codex and `/open_3d` in Telegram. The eight upstream protocols
+are references, not separate commands. Keep the project's own stack and design
+constraints. [Preflight and capture](../skills/open-3d/references/runtime.md)
+explain the read-only requirements, viewport checks and time-zero MP4 workflow.
+Encoded fps describes the file, not device performance.
 
 ## Responsive screenshots
 

@@ -402,6 +402,7 @@ states its own boundaries and what "done" means.
 
 **Execute and deliver**
 
+- [`/100x`](skills/100x/SKILL.md) — build and review a prototype in this session with the separately installed 100x CLI (0.1.1).
 - `/goal` — keep one objective alive until evidence proves it done.
 - `/lgtm` — say yes to the latest recommendation and continue.
 - `/split-folder` — reorganize one folder without changing behavior.
@@ -429,10 +430,12 @@ states its own boundaries and what "done" means.
 **Design, capture and write**
 
 - `/impeccable`, `/ui-taste` — [publish actionable UI findings](docs/workflows.md#ui-findings); explicit design/edit requests keep their playbooks. `/ui-taste` is the default for unnamed UI work.
+- [`/forever-components`](skills/forever-components/SKILL.md) — explicitly shortlist Forever components and adapt selected pinned sources to your project's design constraints.
 - [`/tastemaker`](skills/tastemaker/SKILL.md) — study visual references, audit without edits or write composition briefs.
 - [`/dembrandt`](skills/dembrandt/SKILL.md) — work within an existing design language or explicitly measure site tokens. See [reference workflows and prerequisites](docs/workflows.md#visual-reference-workflows).
 - [`/genjutsu`](skills/genjutsu/SKILL.md) — design interaction motion with the project's existing stack.
 - [`/motion-graphics`](skills/motion-graphics/SKILL.md) — build timelines and [verify rendered frames by seeking](docs/workflows.md#motion-workflows).
+- [`/open-3d`](skills/open-3d/SKILL.md) — build procedural browser 3D scenes, check viewports and capture verified video.
 - `/brand-identity` — compare brand directions and export the selected brand kit.
 - `/styleseed` — create and maintain a project design system. See [design workflows and runtime checks](docs/workflows.md#brand-identity-and-design-systems).
 - [`/procedural-drawing`](skills/procedural-drawing/SKILL.md) — draw CPU-rendered illustrations from a selected style.

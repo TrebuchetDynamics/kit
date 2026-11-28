@@ -42,6 +42,7 @@ not ask for.
 
 | Situation | Skill |
 | --- | --- |
+| Build a prototype in this session with the preinstalled 100x CLI | `/100x` |
 | Map lifecycle rules and publish warranted unsafe-transition issues | `/state-machine` (Pi: `/skill:state-machine`) |
 | Something is broken and you cannot yet reproduce it | `/bug-harvest` |
 | The suite is bloated, slow or full of low-value tests | `/test-optimizer` |
@@ -67,6 +68,8 @@ not ask for.
 | Interface design, polish or frontend audit | `/impeccable` |
 | Turn generic UI patterns into specific GitHub issues for Orbi | `/unslop` |
 | Unnamed UI work or Uizze's UI playbooks | `/ui-taste` |
+| Explicit request to find or adapt a component from the Forever catalog | `/forever-components` |
+| Procedural browser 3D, exploded views, scroll films or scene capture | `/open-3d` |
 | Study a visual reference, critique UI without edits or draft composition briefs | `/tastemaker` |
 | Work within an existing design language or measure a site's design tokens | `/dembrandt` |
 | Design motion for interactions in an interface | `/genjutsu` |
