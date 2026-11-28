@@ -39,6 +39,8 @@ def orbi_uv(head=ORBI_HEAD):
 
 
 ORBI_UV = orbi_uv()
+# The fixture's root account is uid 0 (a system account) unless the suite itself runs as root.
+ROOT_ACCOUNT = '1 system account' if os.getuid() else 'root'
 
 # A fake Pi-Bolt: `pi-bolt list` reads installed sources from a file; install, update and remove edit it,
 # and install and update materialise the skill folders the checkout under test ships.
@@ -1820,7 +1822,7 @@ Path.iterdir = iterdir
         result = self.install(env={'KIT_INSTALL_REPORT': str(receipt), **self.unreadable_root_fixture()})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         summary = result.stdout.split('Summary:', 1)[1]
-        self.assertIn('not checked: root (home unreadable, no running manager, no linger)', summary)
+        self.assertIn(f'not checked: {ROOT_ACCOUNT} (home unreadable, no running manager, no linger)', summary)
         fleet = next(r['orbi_fleet'] for r in map(json.loads, receipt.read_text().splitlines()) if r['item'] == 'orbi')
         self.assertEqual(fleet['status'], 'completed')
         self.assertEqual(fleet['not_checked'], ['root'])
@@ -1994,7 +1996,7 @@ Path.stat = stat
         self.assertNotIn('orbi.toml', summary)
         self.assertNotIn('verify_scheduling', summary)
         self.assertRegex(summary, r'(?m)^  orbi\s+installed\s+Orbi fleet completed: 4 started, 3 updated, 1 up to date; '
-                         r'not checked: backup, root \(home unreadable, no running manager, no linger\).*$')
+                         r'not checked: backup, ' + re.escape(ROOT_ACCOUNT) + r' \(home unreadable, no running manager, no linger\).*$')
 
     def test_orbi_explicit_verbose_prints_steps_only_before_summary(self):
         self.orbi_fleet_fixture()
@@ -2072,7 +2074,7 @@ Path.stat = stat
                       progress)
         self.assertIn('./install.sh --skip orbi', progress)
         self.assertRegex(summary, r'(?m)^  orbi\s+failed\s+Orbi fleet held$')
-        self.assertNotIn('not checked: root', result.stdout)
+        self.assertNotIn('not checked:', result.stdout)
         self.assertNotIn('private definition error', result.stdout + result.stderr + receipt.read_text())
         self.assertNotIn('private-root-home', result.stdout + result.stderr + receipt.read_text())
         self.assertEqual(state.read_bytes(), original)
@@ -2082,7 +2084,7 @@ Path.stat = stat
         result = self.install('--only', 'orbi', '--quiet', env=self.unreadable_root_fixture())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         summary = result.stdout.split('Summary:', 1)[1]
-        self.assertIn('not checked: root (home unreadable, no running manager, no linger)', summary)
+        self.assertIn(f'not checked: {ROOT_ACCOUNT} (home unreadable, no running manager, no linger)', summary)
         self.assertIn('CLI only, no deployment configured or started', summary)
 
     def test_orbi_holds_the_whole_fleet_for_an_inaccessible_other_local_account(self):
@@ -2119,6 +2121,46 @@ Path.stat = stat
         self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
                              for verb in ('stop', 'disable', 'cancel', 'start', 'enable')))
 
+    def test_orbi_hold_counts_untouched_deployments_instead_of_repeating_recovery(self):
+        self.orbi_fleet_fixture(extra_deployments=(('checkout-a', 'mobile-app', 1), ('checkout-b', 'web-app', 1)))
+        config = str(self.home / 'working/orbi.toml')
+        result = self.install('--only', 'orbi', env={'FAIL_PREFLIGHT': config})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        progress = result.stdout.split('\nSummary:', 1)[0]
+        self.assertIn('3 other deployments were not touched (left as they were; --verbose lists them)', progress)
+        self.assertEqual(progress.count('before deliberate repair'), 1)
+        for slug in ('checkout-a', 'checkout-b', 'paused'):
+            self.assertNotIn(str(self.home / slug / 'orbi.toml'), progress)
+        verbose = self.install('--only', 'orbi', '--verbose', env={'FAIL_PREFLIGHT': config})
+        for slug in ('checkout-a', 'checkout-b', 'paused'):
+            self.assertIn(str(self.home / slug / 'orbi.toml'), verbose.stdout)
+
+    def test_orbi_resumes_a_deployment_an_interrupted_refresh_left_on_the_release_tag(self):
+        receipt, _, head = self.orbi_fleet_fixture()
+        config = self.home / 'paused/orbi.toml'
+        stranded = config.read_text().replace('engine_source_track = "sha:' + 'b' * 40 + '"',
+                                              'engine_source_track = "tag:v1.2.3"')
+        for track, code in (('tag:v1.2.2', 1), ('tag:v1.2.3', 0)):
+            with self.subTest(track=track):
+                config.write_text(stranded.replace('tag:v1.2.3', track))
+                result = self.install('--only', 'orbi', env={'KIT_INSTALL_REPORT': str(receipt)})
+                self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+                if code:  # only the exact release this refresh applies is resumable
+                    self.assertIn('current engine is not pinned to its exact checkout commit', result.stdout)
+                else:
+                    self.assertIn(f'engine_source_track = "sha:{head}"', config.read_text())
+
+    def test_orbi_repairs_a_group_writable_cli_instead_of_holding(self):
+        receipt, _, _ = self.orbi_fleet_fixture()
+        bootstrap = self.home / '.local/bin/orbi'
+        bootstrap.chmod(0o775)  # what uv writes under a 002 umask
+        result = self.install('--only', 'orbi', env={'KIT_INSTALL_REPORT': str(receipt)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(bootstrap.stat().st_mode & 0o777, 0o755)
+        fleet = next(r['orbi_fleet'] for r in map(json.loads, receipt.read_text().splitlines()) if r['item'] == 'orbi')
+        self.assertEqual(fleet['status'], 'completed')
+        self.assertIn(str(bootstrap), fleet['repaired_unit_fragments'])
+
     def test_orbi_holds_before_downtime_for_unverified_user_enablement_path(self):
         _, state, _ = self.orbi_fleet_fixture()
         original = state.read_bytes()
@@ -2143,6 +2185,23 @@ Path.stat = stat
         self.assertEqual(state.read_bytes(), original)
         self.assertEqual(config.read_text(), text)
         self.assertEqual(self.calls('orbi sync-engine-source'), [])
+
+    def test_orbi_ignores_an_unbound_orbi_toml_in_the_working_directory(self):
+        draft = self.project / 'orbi.toml'
+        draft.write_text('source_repos = ["OWNER/PILOT-REPO"]\nrepo_dir = "."\n')
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f'ignored {draft} (no installed Orbi service uses it)', result.stdout)
+        self.assertIn('CLI only, no deployment configured or started', result.stdout)
+        self.assertEqual(self.calls('uv'), [ORBI_UV])
+        self.assertEqual(draft.read_text(), 'source_repos = ["OWNER/PILOT-REPO"]\nrepo_dir = "."\n')
+
+    def test_orbi_names_unchecked_people_and_counts_system_accounts(self):
+        result = self.install('--only', 'orbi', '--quiet', env=self.unreadable_root_fixture(extra_account=True))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = result.stdout.split('Summary:', 1)[1]
+        listed = 'backup, 1 system account' if os.getuid() else 'backup, root'
+        self.assertIn(f'not checked: {listed} (home unreadable', summary)
 
     def test_orbi_holds_for_configured_deployment_without_a_verified_unit(self):
         config = self.home / '.local/share/orphan/orbi.toml'

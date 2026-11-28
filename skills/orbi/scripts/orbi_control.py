@@ -4444,7 +4444,7 @@ def host_plist(data):
             'command': bool(data.get('ProgramArguments') or data.get('Program'))}
 
 
-def host_config_paths(ctx, coverage):
+def host_config_paths(ctx, coverage, *, include_cwd=True):
     paths = set()
     for folder in (data_home(ctx), config_home(ctx) / 'orbi'):
         try:
@@ -4461,7 +4461,7 @@ def host_config_paths(ctx, coverage):
                         host_problem(coverage, None, 'deployment config discovery unreadable: ' + str(child))
         except OSError:
             host_problem(coverage, None, 'deployment config discovery unreadable: ' + str(folder))
-    for path in (ctx.cwd / 'orbi.toml', config_home(ctx) / 'orbi/orbi.toml'):
+    for path in ((ctx.cwd / 'orbi.toml',) if include_cwd else ()) + (config_home(ctx) / 'orbi/orbi.toml',):
         try:
             if path.is_file():
                 paths.add(path)
@@ -4919,7 +4919,7 @@ def fleet_managers(ctx):
                     except (OSError, ValueError) as error:
                         fleet_refuse(f'{manager.name}: cannot verify linger state ({type(error).__name__})')
                 if name not in lingering:
-                    not_checked.append(name)
+                    not_checked.append((name, other_uid < login_uid_min()))
                     continue
             fleet_refuse(f'{manager.name}: cannot verify installed definitions (PermissionError)')
         if live or evidence:
@@ -4927,6 +4927,18 @@ def fleet_managers(ctx):
     if active - known:
         fleet_refuse('unidentified local user managers: ' + ', '.join(map(str, sorted(active - known))))
     return tuple(managers), tuple(sorted(not_checked))
+
+
+def login_uid_min():
+    """The first login UID (login.defs UID_MIN); accounts below it are system accounts."""
+    try:
+        for line in Path('/etc/login.defs').read_text().splitlines():
+            fields = line.split()
+            if fields[:1] == ['UID_MIN'] and len(fields) > 1 and fields[1].isdecimal():
+                return int(fields[1])
+    except OSError:
+        pass
+    return 1000
 
 
 def fleet_offline_user_evidence(ctx, manager, *, live):
@@ -5527,7 +5539,8 @@ def require_engine_checkout(ctx, target, *, source_repo):
     file_identity(git_dir)
 
 
-def fleet_preflight_target(ctx, target):
+def fleet_preflight_target(ctx, target, *, resume_track=None):
+    """resume_track: the release track an interrupted refresh left in the config."""
     validate_deployment_paths(target)
     identities = setup_file_identities(target)
     if len(target.source_repos) != 1 or not target.deploy_home.is_dir():
@@ -5543,8 +5556,16 @@ def fleet_preflight_target(ctx, target):
         fleet_refuse(f'{target.config_path}: deployment files are not writable')
     # Test the exact rewrite without touching the config.
     engine_track_replacement(target.config_path, 'tag:installer-preflight')
-    source = require_source(ctx, target)
-    if source['state'] != 'verified' or not re.fullmatch(r'[0-9a-f]{40}', source['head']):
+    if resume_track is not None and target.pin == resume_track:
+        # A previous refresh set this exact release track, then stopped before
+        # pinning the synced commit (for example a transient fetch failure). This
+        # refresh re-syncs to that release and pins its commit, so resume it.
+        source = {'head': checkout_head(ctx, target)}
+    else:
+        source = require_source(ctx, target)
+        if source['state'] != 'verified':
+            fleet_refuse(f'{target.config_path}: current engine is not pinned to its exact checkout commit')
+    if not re.fullmatch(r'[0-9a-f]{40}', source['head'] or ''):
         fleet_refuse(f'{target.config_path}: current engine is not pinned to its exact checkout commit')
     require_clean_checkout(ctx, target)
     require_harness(ctx, target)
@@ -5609,7 +5630,9 @@ def installer_fleet(ctx, *, report_progress=None):
         manager_coverage = fleet_managers(ctx)
         managers, not_checked = manager_coverage
         if not_checked:
-            receipt['not_checked'] = list(not_checked)
+            receipt['not_checked'] = [name for name, _ in not_checked]
+            if system := [name for name, is_system in not_checked if is_system]:
+                receipt['not_checked_system'] = system
         repaired = []
         try:
             units, targets, jobs = fleet_inventory(ctx, managers, repaired=repaired)
@@ -5619,13 +5642,27 @@ def installer_fleet(ctx, *, report_progress=None):
                 receipt['repaired_unit_fragments'] = repaired
         coverage = {'state': 'ok', 'problems': []}
         configs = host_config_paths(ctx, coverage)
+        installed = host_config_paths(ctx, coverage, include_cwd=False)
         if coverage['problems']:
             fleet_refuse(coverage['problems'][0]['reason'])
         for config in sorted(configs):
             if checked_path(config, 'deployment config').resolve() not in targets:
+                if config not in installed:
+                    # An orbi.toml in the caller's directory with no unit is a draft or
+                    # template, not an installed deployment; report it instead of holding.
+                    receipt.setdefault('ignored_configs', []).append(str(config))
+                    continue
                 fleet_refuse(f'{config}: configured deployment has no verified service binding')
         if not targets:
             return receipt
+        bootstrap = home_dir(ctx) / '.local/bin/orbi'
+        if bootstrap.is_file():
+            # uv writes the CLI with the caller's umask; under a common 002 umask the
+            # executable every unit runs is group-writable. Repair the caller's own
+            # file the same way as its unit templates instead of holding the fleet.
+            fleet_owned_fragment(bootstrap.resolve(strict=True), os.getuid(), repaired=repaired)
+            if repaired:
+                receipt['repaired_unit_fragments'] = repaired
         for config, target in sorted(targets.items()):
             owned = tuple(unit for unit in units if unit.config == config)
             row = {'config': str(config), 'repo': target.source_repos[0], 'slots': target.max_concurrency,
@@ -5672,7 +5709,7 @@ def installer_fleet(ctx, *, report_progress=None):
             before = {}
             for config, target in sorted(targets.items()):
                 current = {'step': 'preflight_deployment', 'config': str(config)}
-                before[config] = fleet_preflight_target(ctx, target)
+                before[config] = fleet_preflight_target(ctx, target, resume_track=f'tag:{tag}')
             current = {}
             if (fleet_managers(ctx) != manager_coverage
                     or fleet_recheck_key(*fleet_inventory(ctx, managers)) != fleet_recheck_key(units, targets, jobs)):
