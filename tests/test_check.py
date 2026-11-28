@@ -31,7 +31,6 @@ class CheckWorkflowTests(unittest.TestCase):
         steps = jobs['shard']['steps']
         commands = [step['run'] for step in steps if 'run' in step]
         self.assertEqual(commands[1:], [
-            'python -m py_compile __init__.py',
             'node --test tests/portable_pi.test.mjs',
             f'python scripts/check.py --shard ${{{{ matrix.shard }}}}/{len(shards)}',
         ])
