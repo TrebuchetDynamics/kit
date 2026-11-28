@@ -382,11 +382,22 @@ steps as well. A hold or failure always shows the available completed steps and
 failure location. The final Orbi line reports counts and unchecked accounts,
 without repeating the deployment rows.
 
+Only installed deployment configs (under Orbi's data and config folders, or
+`ORBI_CONFIG`) can hold the fleet. An `orbi.toml` in the directory you run the
+installer from that no installed service uses, such as a copied template, is
+reported as ignored. The refresh removes group and other write permission from
+your own unit templates and from your own `~/.local/bin/orbi` executable (uv
+creates it group-writable under the common `002` umask) instead of holding.
+Unchecked system accounts below the login UID range are counted, not named.
+
 On a partial failure, the installer exits nonzero but continues independent
 components. Inspect the named config and manager-qualified units in the Orbi
 receipt, repair the failed step and deliberately re-evaluate the fleet with
 `./install.sh --only orbi`. A failed refresh may leave deployments stopped or
-partly updated. It is not a rollback. On macOS, the installer never mutates launchd
+partly updated. It is not a rollback. A deployment that a failed refresh left on
+the release tag it was applying (for example after a transient fetch failure)
+is resumed by the next run rather than held. Deployments the refresh never
+touched are counted in one line; `--verbose` lists them. On macOS, the installer never mutates launchd
 or claims a deployment update; existing deployments or unverifiable coverage are
 reported as held. Offline verification does not qualify this behavior on a live host.
 

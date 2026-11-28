@@ -1200,7 +1200,12 @@ def orbi_fleet_summary(receipt):
         if counts:
             summary += ': ' + ', '.join(f"{count} {label.replace('_', ' ')}" for label, count in counts.items())
     if names := receipt.get('not_checked'):
-        summary += f"; not checked: {', '.join(names)} (home unreadable, no running manager, no linger)"
+        system = receipt.get('not_checked_system', [])
+        people = [name for name in names if name not in system]
+        listed = people + ([f"{len(system)} system account{'s' if len(system) > 1 else ''}"] if system else [])
+        summary += f"; not checked: {', '.join(listed)} (home unreadable, no running manager, no linger)"
+    for path in receipt.get('ignored_configs', []):
+        summary += f'; ignored {path} (no installed Orbi service uses it)'
     return summary
 
 
@@ -1216,7 +1221,11 @@ def orbi_fleet_details(receipt, *, verbose=False):
         lines.append(f'Removed group/other write permission: {path}')
     deployments = receipt['deployments']
     names = Counter(row['repo'].rsplit('/', 1)[-1] for row in deployments)
+    # A deployment the refresh never touched needs no repair of its own: count it once.
+    untouched = [row for row in deployments if failed and row['status'] == 'untouched' and not row['steps']]
     for row in deployments:
+        if row in untouched and not verbose:
+            continue
         result = f"{row['status']} ({row.get('engine_update', 'not_applied').replace('_', ' ')})"
         needs_repair = failed and row['status'] != 'started'
         if needs_repair:
@@ -1237,6 +1246,10 @@ def orbi_fleet_details(receipt, *, verbose=False):
             if needs_repair:
                 line += f"; {row['recovery']}"
         lines.append(line)
+    if untouched and not verbose:
+        count = len(untouched)
+        lines.append(f"{count} other deployment{'s were' if count > 1 else ' was'} not touched "
+                     '(left as they were; --verbose lists them)')
     if 'recovery' in receipt:
         lines.append(receipt['recovery'])
     return '\n  '.join(lines)
@@ -2171,7 +2184,7 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                         if item.key == 'orbi':
                             fleet = message
                             if fleet['status'] == 'no_deployments':
-                                if fleet.get('not_checked'):
+                                if fleet.get('not_checked') or fleet.get('ignored_configs'):
                                     detail.append(orbi_fleet_summary(fleet))
                                 message = install_orbi(output) + '; CLI only, no deployment configured or started'
                             else:

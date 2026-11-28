@@ -4011,7 +4011,7 @@ class InstallerFleetTests(unittest.TestCase):
         with self.other_account() as (ctx, home):
             managers, not_checked = helper.fleet_managers(ctx)
             self.assertEqual([manager.name for manager in managers], ['system', 'user'])
-            self.assertEqual(not_checked, ('other',))
+            self.assertEqual([name for name, _ in not_checked], ['other'])
             with mock.patch.object(helper, 'fleet_inventory', return_value=([], {}, {})):
                 receipt = helper.installer_fleet(ctx)
         self.assertEqual(receipt['status'], 'no_deployments')
