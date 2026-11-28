@@ -42,6 +42,7 @@ not ask for.
 
 | Situation | Skill |
 | --- | --- |
+| Build a prototype in this session with the preinstalled 100x CLI | `/100x` |
 | Map lifecycle rules and publish warranted unsafe-transition issues | `/state-machine` (Pi: `/skill:state-machine`) |
 | Something is broken and you cannot yet reproduce it | `/bug-harvest` |
 | The suite is bloated, slow or full of low-value tests | `/test-optimizer` |

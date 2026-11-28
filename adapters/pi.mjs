@@ -6,6 +6,7 @@ const protocols = JSON.parse(await readFile(new URL('../skills/autoresearch/UPST
 const workflows = {
   'plan-with-me': ['plan-with-me', 'Ask questions and plan together'],
   'plan-for-me': ['plan-for-me', 'Investigate, decide and save the plan'],
+  '100x': ['100x', 'Build a prototype with checks and review in one session'],
   unslop: ['unslop', 'Turn a UI design audit into GitHub issues for Orbi'],
   'docs-sync': ['docs-sync', 'Maintain documentation and GitHub issue handoffs'],
   orbi: ['orbi', 'Prepare, update, start, inspect or stop one Orbi deployment'],

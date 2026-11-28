@@ -402,6 +402,7 @@ states its own boundaries and what "done" means.
 
 **Execute and deliver**
 
+- [`/100x`](skills/100x/SKILL.md) — build and review a prototype in this session with the separately installed 100x CLI (0.1.1).
 - `/goal` — keep one objective alive until evidence proves it done.
 - `/lgtm` — say yes to the latest recommendation and continue.
 - `/split-folder` — reorganize one folder without changing behavior.

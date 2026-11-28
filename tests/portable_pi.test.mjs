@@ -7,7 +7,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 60);
+  assert.equal(commands.size, 61);
   assert.equal(messages.length, 0, 'registration does not activate any workflow');
   assert.equal(commands.has('orbi'), true);
   assert.equal(commands.has('push'), true);
@@ -39,6 +39,14 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
       assert.equal(messages.at(-1)[0].endsWith(`User request (preserve scope and restrictions):\n${args}`), true);
       assert.deepEqual(messages.at(-1)[1], idle ? undefined : {deliverAs: 'followUp'});
     }
+  }
+  assert.deepEqual([...commands.keys()].filter(name => name.startsWith('100x')), ['100x']);
+  for (const args of ['a status page', 'mockup a tip splitter']) {
+    await commands.get('100x').handler(args, {isIdle: () => true});
+    await assertWorkflow('100x');
+    assert.match(messages.at(-1)[0], /skills\/100x\/SKILL\.md/);
+    assert.doesNotMatch(messages.at(-1)[0], /Selected mode:|upstream\//);
+    assert.equal(messages.at(-1)[0].endsWith(`User request (preserve scope and restrictions):\n${args}`), true);
   }
   const raw = 'read-only\n$(literal); --no-push';
   assert.equal(commands.get('ponytail-debt').description, 'Publish issues for triggered shortcut debt');
@@ -464,7 +472,7 @@ test('installed archive resolves portable references and commands without checko
         if (!match[1].includes('://')) await stat(fileURLToPath(new URL(match[1], pathToFileURL(path))));
       }
     }
-    assert.equal(skillCount, 47);
+    assert.equal(skillCount, 48);
     const sakurai = join(installed, 'skills/sakurai');
     assert.deepEqual((await readdir(sakurai)).sort(), ['SKILL.md', 'UPSTREAM.json']);
     assert.equal(await readFile(join(sakurai, 'SKILL.md'), 'utf8'),
@@ -548,7 +556,8 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 60);
+    assert.equal(commands.size, 61);
+    assert.equal(commands.has('100x'), true);
     assert.equal(commands.has('orbi'), true);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {

@@ -613,7 +613,7 @@ Local installs refer to this checkout; keep it in place. The extension registers
 ```
 
 All 13 `/autoresearch-<protocol>` commands are available. The other commands are
-`/autoresearch`, `/impeccable`, `/ui-taste`, `/forever-components`, `/tastemaker`,
+`/autoresearch`, `/100x`, `/impeccable`, `/ui-taste`, `/forever-components`, `/tastemaker`,
 `/dembrandt`, `/genjutsu`, `/motion-graphics`, `/open-3d`, `/brand-identity`, `/styleseed`,
 `/procedural-drawing`, `/genart`, `/unslop`, `/beautify-github-readme`,
 `/lgtm`, `/git-commit-push` (current branch and its upstream) and `/push` (deliver
