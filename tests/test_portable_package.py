@@ -375,6 +375,38 @@ class PortablePackageTests(unittest.TestCase):
         self.assertEqual(search(*css_loader, '--text', 'no-matching-widget'), [])
         self.assertEqual(set(foreign.iterdir()), before)
 
+    def test_forever_does_not_follow_redirects_from_the_pinned_url(self):
+        from contextlib import redirect_stderr
+        from email.message import Message
+        import io
+        import runpy
+        import tempfile
+        from unittest.mock import patch
+        from urllib import request, response
+
+        main = runpy.run_path(str(ROOT / 'skills/forever-components/scripts/catalog.py'))['main']
+        calls = []
+
+        def redirected_source(handler, req):
+            calls.append(req.full_url)
+            headers = Message()
+            headers['Location'] = 'https://example.com/other.html'
+            redirected = response.addinfourl(io.BytesIO(), headers, req.full_url,
+                                            302 if len(calls) == 1 else 200)
+            redirected.msg = 'Found' if len(calls) == 1 else 'OK'
+            return redirected
+
+        with (tempfile.TemporaryDirectory() as temp,
+              patch.object(request.HTTPSHandler, 'https_open', redirected_source)):
+            dest = Path(temp) / 'tile'
+            error = io.StringIO()
+            with redirect_stderr(error):
+                self.assertEqual(main(['fetch', 'loaders/08-equalizer-bars.html', str(dest)]), 1)
+            self.assertEqual(len(calls), 1, calls)
+            self.assertIn(calls[0], error.getvalue())
+            self.assertIn('302', error.getvalue())
+            self.assertFalse(dest.exists())
+
     def test_forever_fetches_one_indexed_tile_with_provenance_and_attribution(self):
         from contextlib import redirect_stderr, redirect_stdout
         from http.client import IncompleteRead
@@ -389,7 +421,7 @@ class PortablePackageTests(unittest.TestCase):
         url = ('https://raw.githubusercontent.com/isas1/forever-ai-components/'
                'ae685e51644be5a793cce5b4becfd31009593f00/infinite/loaders/08-equalizer-bars.html')
         raw = b'<!doctype html><title>Equalizer Bars</title>\n'
-        with tempfile.TemporaryDirectory() as temp, patch('urllib.request.urlopen') as fetch:
+        with tempfile.TemporaryDirectory() as temp, patch('urllib.request.OpenerDirector.open') as fetch:
             dest = Path(temp) / 'tile'
             error = io.StringIO()
             with redirect_stderr(error), self.assertRaises(SystemExit) as rejected:
@@ -411,22 +443,23 @@ class PortablePackageTests(unittest.TestCase):
 
             fetch.reset_mock(side_effect=True)
             response = fetch.return_value.__enter__.return_value
-            response.geturl.return_value = url
             response.headers = {'Content-Length': str(len(raw))}
-            for failure in ('short body', 'broken chunk'):
+            for failure in ('short body', 'broken chunk', 'partial content'):
                 with self.subTest(failure=failure):
-                    response.read.return_value = raw[:-1]
+                    response.status = 206 if failure == 'partial content' else 200
+                    response.read.return_value = raw if failure == 'partial content' else raw[:-1]
                     response.read.side_effect = IncompleteRead(raw[:-1]) if failure == 'broken chunk' else None
                     failed_dest = Path(temp) / failure
                     error = io.StringIO()
                     with redirect_stderr(error), redirect_stdout(io.StringIO()):
                         self.assertEqual(main([*args[:-1], str(failed_dest)]), 1)
                     self.assertIn(url, error.getvalue())
-                    self.assertIn('incomplete', error.getvalue().lower())
+                    self.assertIn('206' if failure == 'partial content' else 'incomplete', error.getvalue().lower())
                     self.assertIn('retry', error.getvalue())
                     self.assertFalse(failed_dest.exists())
 
             fetch.reset_mock()
+            response.status = 200
             response.read.side_effect = None
             response.read.return_value = raw
             with redirect_stdout(io.StringIO()):

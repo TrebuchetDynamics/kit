@@ -13,6 +13,11 @@ from urllib import request
 SKILL = Path(__file__).resolve().parents[1]
 
 
+class PinnedSourceOnly(request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def pinned_bytes(pin, name):
     data = (SKILL / 'upstream' / name).read_bytes()
     if sha256(data).hexdigest() != pin['files'][name]:
@@ -58,9 +63,9 @@ def fetch(pin, tile, destination):
         raise ValueError('Choose a new output directory under an existing parent.')
     notices = {name: pinned_bytes(pin, name) for name in ('LICENSE', 'NOTICE.md')}
     try:
-        with request.urlopen(url, timeout=15) as response:
-            if response.geturl() != url:
-                raise ValueError('response redirected away from the pinned URL')
+        with request.build_opener(PinnedSourceOnly()).open(url, timeout=15) as response:
+            if response.status != 200:
+                raise ValueError(f'expected a complete component response, got HTTP {response.status}')
             # At this pin all indexed HTML files are under 16 KiB.
             limit = 64 * 1024
             data = response.read(limit + 1)
