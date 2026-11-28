@@ -5,52 +5,193 @@
   "license": "MIT",
   "transform": "Byte-for-byte publisher directory edition (generated upstream by scripts/build-directory.mjs to strip install commands and discovery metadata). Drop directory/ from skill paths and rename SKILL.md to PROTOCOL.md so the 45 entries are not registered. Both LICENSE and directory/LICENSE retain their repository-relative paths. The Kit-owned corpus index is not upstream runtime.",
   "files": {
-    "LICENSE": "498d5bfc94b2d889febe77e0f42da406229db2fe5af7734645e64e55b6720c17",
-    "directory/LICENSE": "498d5bfc94b2d889febe77e0f42da406229db2fe5af7734645e64e55b6720c17",
-    "skills/algorithmic-color-palette/PROTOCOL.md": "724f65235f2288489d26c53f873be6e436d7f762894be2569cb402f514599e50",
-    "skills/app-shell/PROTOCOL.md": "6a0a6e728cedc336a64da6cdf6c9e2a5483e8b7c1591ffcbe1b0b57119d9a2dc",
-    "skills/authentic-product-representation/PROTOCOL.md": "8124b7db8098b818ff43767d51a8ccfbe35688d1492c1a4d131afe845ef62122",
-    "skills/brand-visual-language/PROTOCOL.md": "6043f2ada23694effba3f935b81794a3b4516418b25b3794a87bcc75b6d91313",
-    "skills/button-states/PROTOCOL.md": "62124d8ec383fe3f14a9c0bca5e0657752592cacc2cc96757c36741843dfbaf3",
-    "skills/clone-website/PROTOCOL.md": "e36941cb000ea8835fd86a2c5e05663dd6136e50d22e165b18d9b659315c17f9",
-    "skills/color-mode-and-theme/PROTOCOL.md": "44f069c9cd7537e78e3596eff30ecefd43b05731fe3845839c051ca3f1628f56",
-    "skills/component-family-consistency/PROTOCOL.md": "465d08a10e7e0e03a86768e38dfde6f7a0925e02736219c8755832be90eac3f5",
-    "skills/coordinated-data-views/PROTOCOL.md": "af171ea2da558a6e359dc21b90650ed3b388fbfa430851c2a306deabe6b800ea",
-    "skills/data-display-and-selection/PROTOCOL.md": "f572f48c1f1f5cff32949fe60bd7c8bdba43f54f1273159caba8ba7d28f93f52",
-    "skills/dembrandt/PROTOCOL.md": "c1f03d3d0f40b8119d967438b7b8b05d206d45c60b23df97680316d03b1f4864",
-    "skills/domain-expert-configuration/PROTOCOL.md": "10022e3ddc0ded1d05c7a8ae7873ca731cf334d238d832dbcdf308f90133108c",
-    "skills/elevation-and-depth/PROTOCOL.md": "715bc1654f7497c6db501ed45d399772a0029098fb775a694e99d09e51001f0f",
-    "skills/extract-design/PROTOCOL.md": "e4d5008ea8e796934caa0a8ba396ce9c6d7ebce8701d3a2f9932a71e944a9f37",
-    "skills/form-design/PROTOCOL.md": "35af09a3cb14473b71f0a3858d62bdbb7e25522caaef0a67e587cdb44b76ed25",
-    "skills/generate-ui-from-brand/PROTOCOL.md": "438f5dd4d44de52c9c825777720f2fb40068c888eec30b375d0acdd67c7dcda9",
-    "skills/gestalt-ui-organisation/PROTOCOL.md": "5cd291d9d2f43f49458505cf7ba579900133e3300c8dd0659272d7628784bcf6",
-    "skills/global-toolbar-controls/PROTOCOL.md": "7142bf04db57f976f2d0559eaae63df6b9863c71c5583af9cb01e80955eff4d8",
-    "skills/information-architecture/PROTOCOL.md": "6c41089fd5a7a9e4f7e6041193eefaa5fb6fd471ab87a879f4d3854b02f8df00",
-    "skills/layout-paradigms-and-consistency/PROTOCOL.md": "efc5d948f62f44aedce66073a89299b889b6e5efed6eb743b3dc3cf18e7e06df",
-    "skills/loading-states-and-perceived-performance/PROTOCOL.md": "2a50cdd99b37600e061b22d4d97497d5880490ee00ecfe70c07a89ab10aba769",
-    "skills/marketing-vs-product-system/PROTOCOL.md": "969fe4919e45a7866d70883ec2b95aaf76ca99d34f87829b129dabc64c80dd64",
-    "skills/micro-interactions/PROTOCOL.md": "85b036d3be0dc1b9ff1a8309c2666bfe7c096c88232697d25ab196e9f0808a91",
-    "skills/modal-and-overlay-patterns/PROTOCOL.md": "594c90aefdc35b6d07ef15d5f3f4351f7bee305f4e2a389f4aeb14fa1b755968",
-    "skills/modular-scale-typography/PROTOCOL.md": "519e43381bdf55d2122f08d178127d0df7d3253e877e8c3ab3690eaee22f332a",
-    "skills/motion-and-storytelling/PROTOCOL.md": "20011404f43b1adfc8feaf083137d8c76106fe23ba253b53bb23869bb62defd2",
-    "skills/nielsen-usability-heuristics/PROTOCOL.md": "c8dbf6a641cd8461608562addc1ec81bced74d5672e462611adfcccebdee6160",
-    "skills/notifications-and-recovery/PROTOCOL.md": "f50bb86a29c0a29ac3752f1076db3bb5fc95b5eb2c97b08b35cab8588b5ccaae",
-    "skills/operational-expert-tool-ui/PROTOCOL.md": "e67f103d2928373954cfd549ae3aefa2344aa6d91fb3e1c3078ae632db400dc6",
-    "skills/performance-and-web-vitals/PROTOCOL.md": "2a1417fbebce7c3deb8b079368ff4ef526fb04e7e73d46a4f9ff40d5232badc6",
-    "skills/real-world-metaphors/PROTOCOL.md": "70e140be9a51234d78dee7ecf7a2ecd3cf81ba98ab07bd841194aec927205aa3",
-    "skills/repeated-component-alignment/PROTOCOL.md": "9069d253904e79305c95d2c94c348cbd7ce8e2d860a0404493cb3ff5a00ffb06",
-    "skills/responsive-paradigms/PROTOCOL.md": "89bfbe1ef6d2a263b82c901bf1d3dde195ba7f46aa8f5555868c8f95e62f477c",
-    "skills/scroll-areas/PROTOCOL.md": "926a51b477e243e2e5ef4fee76ce8367313f14a23bbac439b13be075848d17e9",
-    "skills/semantic-html-and-seo/PROTOCOL.md": "6b7756ec78dc52c11ac2ab97d13c196bfb62ba0c679042cb8a3d1b0f9713fb71",
-    "skills/sizing-units/PROTOCOL.md": "15104ba2ba6d8e03029513746e8dfc392e63297551db0953ac03494b4e322f81",
-    "skills/status-colors-and-errors/PROTOCOL.md": "7990e86ae400eca5fd03b469d975d5ea48751099d98b90adbaa0715702a43212",
-    "skills/sticky-and-fixed-elements/PROTOCOL.md": "7824261a242d196f6a18b8d1c26f5df1cc8d7ffbe8fefd690c8942537a8a60ac",
-    "skills/surface-separation/PROTOCOL.md": "91162c18e63762ccb62ff157dcd1fd21c1c967fe81ed311e270f9c86a36ed777",
-    "skills/tab-navigation/PROTOCOL.md": "c4eeb69e0a05f46f0f5fb3e57d2d2f63e0f0acb8a4ea601ba0e72b0e1b6b6ece",
-    "skills/ui-context-and-scope/PROTOCOL.md": "8f406602750f19e5aa4c95a5e3cbef71723a50edc864c8b4958e5a80b3a9da6b",
-    "skills/ui-density/PROTOCOL.md": "2a424665b158bdec377f52de5367921d0d2e762a82e5483370409b368ba9e902",
-    "skills/user-flows-and-guided-paths/PROTOCOL.md": "1f556101c879cfa4641b0209b32c28734e04b2441ea4c2744be8720d1aafbca1",
-    "skills/visual-emphasis-and-hierarchy/PROTOCOL.md": "e99912a4ed7927d128da788913d924aa1d43a6ebe0943eb50e888976cb471e9d",
-    "skills/wcag-accessibility/PROTOCOL.md": "d28b2f4b385746a3fd2256fd3834b5c2ce186533a9d1cd1da47bea8696ffa713"
+    "LICENSE": {
+      "path": "upstream/LICENSE",
+      "sha256": "498d5bfc94b2d889febe77e0f42da406229db2fe5af7734645e64e55b6720c17"
+    },
+    "directory/LICENSE": {
+      "path": "upstream/directory/LICENSE",
+      "sha256": "498d5bfc94b2d889febe77e0f42da406229db2fe5af7734645e64e55b6720c17"
+    },
+    "directory/skills/algorithmic-color-palette/SKILL.md": {
+      "path": "upstream/skills/algorithmic-color-palette/PROTOCOL.md",
+      "sha256": "724f65235f2288489d26c53f873be6e436d7f762894be2569cb402f514599e50"
+    },
+    "directory/skills/app-shell/SKILL.md": {
+      "path": "upstream/skills/app-shell/PROTOCOL.md",
+      "sha256": "6a0a6e728cedc336a64da6cdf6c9e2a5483e8b7c1591ffcbe1b0b57119d9a2dc"
+    },
+    "directory/skills/authentic-product-representation/SKILL.md": {
+      "path": "upstream/skills/authentic-product-representation/PROTOCOL.md",
+      "sha256": "8124b7db8098b818ff43767d51a8ccfbe35688d1492c1a4d131afe845ef62122"
+    },
+    "directory/skills/brand-visual-language/SKILL.md": {
+      "path": "upstream/skills/brand-visual-language/PROTOCOL.md",
+      "sha256": "6043f2ada23694effba3f935b81794a3b4516418b25b3794a87bcc75b6d91313"
+    },
+    "directory/skills/button-states/SKILL.md": {
+      "path": "upstream/skills/button-states/PROTOCOL.md",
+      "sha256": "62124d8ec383fe3f14a9c0bca5e0657752592cacc2cc96757c36741843dfbaf3"
+    },
+    "directory/skills/clone-website/SKILL.md": {
+      "path": "upstream/skills/clone-website/PROTOCOL.md",
+      "sha256": "e36941cb000ea8835fd86a2c5e05663dd6136e50d22e165b18d9b659315c17f9"
+    },
+    "directory/skills/color-mode-and-theme/SKILL.md": {
+      "path": "upstream/skills/color-mode-and-theme/PROTOCOL.md",
+      "sha256": "44f069c9cd7537e78e3596eff30ecefd43b05731fe3845839c051ca3f1628f56"
+    },
+    "directory/skills/component-family-consistency/SKILL.md": {
+      "path": "upstream/skills/component-family-consistency/PROTOCOL.md",
+      "sha256": "465d08a10e7e0e03a86768e38dfde6f7a0925e02736219c8755832be90eac3f5"
+    },
+    "directory/skills/coordinated-data-views/SKILL.md": {
+      "path": "upstream/skills/coordinated-data-views/PROTOCOL.md",
+      "sha256": "af171ea2da558a6e359dc21b90650ed3b388fbfa430851c2a306deabe6b800ea"
+    },
+    "directory/skills/data-display-and-selection/SKILL.md": {
+      "path": "upstream/skills/data-display-and-selection/PROTOCOL.md",
+      "sha256": "f572f48c1f1f5cff32949fe60bd7c8bdba43f54f1273159caba8ba7d28f93f52"
+    },
+    "directory/skills/dembrandt/SKILL.md": {
+      "path": "upstream/skills/dembrandt/PROTOCOL.md",
+      "sha256": "c1f03d3d0f40b8119d967438b7b8b05d206d45c60b23df97680316d03b1f4864"
+    },
+    "directory/skills/domain-expert-configuration/SKILL.md": {
+      "path": "upstream/skills/domain-expert-configuration/PROTOCOL.md",
+      "sha256": "10022e3ddc0ded1d05c7a8ae7873ca731cf334d238d832dbcdf308f90133108c"
+    },
+    "directory/skills/elevation-and-depth/SKILL.md": {
+      "path": "upstream/skills/elevation-and-depth/PROTOCOL.md",
+      "sha256": "715bc1654f7497c6db501ed45d399772a0029098fb775a694e99d09e51001f0f"
+    },
+    "directory/skills/extract-design/SKILL.md": {
+      "path": "upstream/skills/extract-design/PROTOCOL.md",
+      "sha256": "e4d5008ea8e796934caa0a8ba396ce9c6d7ebce8701d3a2f9932a71e944a9f37"
+    },
+    "directory/skills/form-design/SKILL.md": {
+      "path": "upstream/skills/form-design/PROTOCOL.md",
+      "sha256": "35af09a3cb14473b71f0a3858d62bdbb7e25522caaef0a67e587cdb44b76ed25"
+    },
+    "directory/skills/generate-ui-from-brand/SKILL.md": {
+      "path": "upstream/skills/generate-ui-from-brand/PROTOCOL.md",
+      "sha256": "438f5dd4d44de52c9c825777720f2fb40068c888eec30b375d0acdd67c7dcda9"
+    },
+    "directory/skills/gestalt-ui-organisation/SKILL.md": {
+      "path": "upstream/skills/gestalt-ui-organisation/PROTOCOL.md",
+      "sha256": "5cd291d9d2f43f49458505cf7ba579900133e3300c8dd0659272d7628784bcf6"
+    },
+    "directory/skills/global-toolbar-controls/SKILL.md": {
+      "path": "upstream/skills/global-toolbar-controls/PROTOCOL.md",
+      "sha256": "7142bf04db57f976f2d0559eaae63df6b9863c71c5583af9cb01e80955eff4d8"
+    },
+    "directory/skills/information-architecture/SKILL.md": {
+      "path": "upstream/skills/information-architecture/PROTOCOL.md",
+      "sha256": "6c41089fd5a7a9e4f7e6041193eefaa5fb6fd471ab87a879f4d3854b02f8df00"
+    },
+    "directory/skills/layout-paradigms-and-consistency/SKILL.md": {
+      "path": "upstream/skills/layout-paradigms-and-consistency/PROTOCOL.md",
+      "sha256": "efc5d948f62f44aedce66073a89299b889b6e5efed6eb743b3dc3cf18e7e06df"
+    },
+    "directory/skills/loading-states-and-perceived-performance/SKILL.md": {
+      "path": "upstream/skills/loading-states-and-perceived-performance/PROTOCOL.md",
+      "sha256": "2a50cdd99b37600e061b22d4d97497d5880490ee00ecfe70c07a89ab10aba769"
+    },
+    "directory/skills/marketing-vs-product-system/SKILL.md": {
+      "path": "upstream/skills/marketing-vs-product-system/PROTOCOL.md",
+      "sha256": "969fe4919e45a7866d70883ec2b95aaf76ca99d34f87829b129dabc64c80dd64"
+    },
+    "directory/skills/micro-interactions/SKILL.md": {
+      "path": "upstream/skills/micro-interactions/PROTOCOL.md",
+      "sha256": "85b036d3be0dc1b9ff1a8309c2666bfe7c096c88232697d25ab196e9f0808a91"
+    },
+    "directory/skills/modal-and-overlay-patterns/SKILL.md": {
+      "path": "upstream/skills/modal-and-overlay-patterns/PROTOCOL.md",
+      "sha256": "594c90aefdc35b6d07ef15d5f3f4351f7bee305f4e2a389f4aeb14fa1b755968"
+    },
+    "directory/skills/modular-scale-typography/SKILL.md": {
+      "path": "upstream/skills/modular-scale-typography/PROTOCOL.md",
+      "sha256": "519e43381bdf55d2122f08d178127d0df7d3253e877e8c3ab3690eaee22f332a"
+    },
+    "directory/skills/motion-and-storytelling/SKILL.md": {
+      "path": "upstream/skills/motion-and-storytelling/PROTOCOL.md",
+      "sha256": "20011404f43b1adfc8feaf083137d8c76106fe23ba253b53bb23869bb62defd2"
+    },
+    "directory/skills/nielsen-usability-heuristics/SKILL.md": {
+      "path": "upstream/skills/nielsen-usability-heuristics/PROTOCOL.md",
+      "sha256": "c8dbf6a641cd8461608562addc1ec81bced74d5672e462611adfcccebdee6160"
+    },
+    "directory/skills/notifications-and-recovery/SKILL.md": {
+      "path": "upstream/skills/notifications-and-recovery/PROTOCOL.md",
+      "sha256": "f50bb86a29c0a29ac3752f1076db3bb5fc95b5eb2c97b08b35cab8588b5ccaae"
+    },
+    "directory/skills/operational-expert-tool-ui/SKILL.md": {
+      "path": "upstream/skills/operational-expert-tool-ui/PROTOCOL.md",
+      "sha256": "e67f103d2928373954cfd549ae3aefa2344aa6d91fb3e1c3078ae632db400dc6"
+    },
+    "directory/skills/performance-and-web-vitals/SKILL.md": {
+      "path": "upstream/skills/performance-and-web-vitals/PROTOCOL.md",
+      "sha256": "2a1417fbebce7c3deb8b079368ff4ef526fb04e7e73d46a4f9ff40d5232badc6"
+    },
+    "directory/skills/real-world-metaphors/SKILL.md": {
+      "path": "upstream/skills/real-world-metaphors/PROTOCOL.md",
+      "sha256": "70e140be9a51234d78dee7ecf7a2ecd3cf81ba98ab07bd841194aec927205aa3"
+    },
+    "directory/skills/repeated-component-alignment/SKILL.md": {
+      "path": "upstream/skills/repeated-component-alignment/PROTOCOL.md",
+      "sha256": "9069d253904e79305c95d2c94c348cbd7ce8e2d860a0404493cb3ff5a00ffb06"
+    },
+    "directory/skills/responsive-paradigms/SKILL.md": {
+      "path": "upstream/skills/responsive-paradigms/PROTOCOL.md",
+      "sha256": "89bfbe1ef6d2a263b82c901bf1d3dde195ba7f46aa8f5555868c8f95e62f477c"
+    },
+    "directory/skills/scroll-areas/SKILL.md": {
+      "path": "upstream/skills/scroll-areas/PROTOCOL.md",
+      "sha256": "926a51b477e243e2e5ef4fee76ce8367313f14a23bbac439b13be075848d17e9"
+    },
+    "directory/skills/semantic-html-and-seo/SKILL.md": {
+      "path": "upstream/skills/semantic-html-and-seo/PROTOCOL.md",
+      "sha256": "6b7756ec78dc52c11ac2ab97d13c196bfb62ba0c679042cb8a3d1b0f9713fb71"
+    },
+    "directory/skills/sizing-units/SKILL.md": {
+      "path": "upstream/skills/sizing-units/PROTOCOL.md",
+      "sha256": "15104ba2ba6d8e03029513746e8dfc392e63297551db0953ac03494b4e322f81"
+    },
+    "directory/skills/status-colors-and-errors/SKILL.md": {
+      "path": "upstream/skills/status-colors-and-errors/PROTOCOL.md",
+      "sha256": "7990e86ae400eca5fd03b469d975d5ea48751099d98b90adbaa0715702a43212"
+    },
+    "directory/skills/sticky-and-fixed-elements/SKILL.md": {
+      "path": "upstream/skills/sticky-and-fixed-elements/PROTOCOL.md",
+      "sha256": "7824261a242d196f6a18b8d1c26f5df1cc8d7ffbe8fefd690c8942537a8a60ac"
+    },
+    "directory/skills/surface-separation/SKILL.md": {
+      "path": "upstream/skills/surface-separation/PROTOCOL.md",
+      "sha256": "91162c18e63762ccb62ff157dcd1fd21c1c967fe81ed311e270f9c86a36ed777"
+    },
+    "directory/skills/tab-navigation/SKILL.md": {
+      "path": "upstream/skills/tab-navigation/PROTOCOL.md",
+      "sha256": "c4eeb69e0a05f46f0f5fb3e57d2d2f63e0f0acb8a4ea601ba0e72b0e1b6b6ece"
+    },
+    "directory/skills/ui-context-and-scope/SKILL.md": {
+      "path": "upstream/skills/ui-context-and-scope/PROTOCOL.md",
+      "sha256": "8f406602750f19e5aa4c95a5e3cbef71723a50edc864c8b4958e5a80b3a9da6b"
+    },
+    "directory/skills/ui-density/SKILL.md": {
+      "path": "upstream/skills/ui-density/PROTOCOL.md",
+      "sha256": "2a424665b158bdec377f52de5367921d0d2e762a82e5483370409b368ba9e902"
+    },
+    "directory/skills/user-flows-and-guided-paths/SKILL.md": {
+      "path": "upstream/skills/user-flows-and-guided-paths/PROTOCOL.md",
+      "sha256": "1f556101c879cfa4641b0209b32c28734e04b2441ea4c2744be8720d1aafbca1"
+    },
+    "directory/skills/visual-emphasis-and-hierarchy/SKILL.md": {
+      "path": "upstream/skills/visual-emphasis-and-hierarchy/PROTOCOL.md",
+      "sha256": "e99912a4ed7927d128da788913d924aa1d43a6ebe0943eb50e888976cb471e9d"
+    },
+    "directory/skills/wcag-accessibility/SKILL.md": {
+      "path": "upstream/skills/wcag-accessibility/PROTOCOL.md",
+      "sha256": "d28b2f4b385746a3fd2256fd3834b5c2ce186533a9d1cd1da47bea8696ffa713"
+    }
   }
 }

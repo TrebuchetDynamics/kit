@@ -249,7 +249,11 @@ class PortablePackageTests(unittest.TestCase):
                 upstream = skill / 'upstream'
                 files = {p.relative_to(upstream).as_posix(): sha256(p.read_bytes()).hexdigest()
                          for p in upstream.rglob('*') if p.is_file()}
-                self.assertEqual(files, pin['files'])
+                # A relocated entry maps the original upstream path to {path, sha256}.
+                recorded = {(entry['path'].removeprefix('upstream/') if isinstance(entry, dict) else stored):
+                            (entry['sha256'] if isinstance(entry, dict) else entry)
+                            for stored, entry in pin['files'].items()}
+                self.assertEqual(files, recorded)
                 self.assertFalse(list(upstream.rglob('SKILL.md')), 'upstream is not discoverable')
                 for relative in required:
                     path = installed / relative
