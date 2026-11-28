@@ -376,6 +376,7 @@ class PortablePackageTests(unittest.TestCase):
 
     def test_forever_fetches_one_indexed_tile_with_provenance_and_attribution(self):
         from contextlib import redirect_stderr, redirect_stdout
+        from http.client import IncompleteRead
         import io
         import runpy
         import tempfile
@@ -410,6 +411,22 @@ class PortablePackageTests(unittest.TestCase):
             fetch.reset_mock(side_effect=True)
             response = fetch.return_value.__enter__.return_value
             response.geturl.return_value = url
+            response.headers = {'Content-Length': str(len(raw))}
+            for failure in ('short body', 'broken chunk'):
+                with self.subTest(failure=failure):
+                    response.read.return_value = raw[:-1]
+                    response.read.side_effect = IncompleteRead(raw[:-1]) if failure == 'broken chunk' else None
+                    failed_dest = Path(temp) / failure
+                    error = io.StringIO()
+                    with redirect_stderr(error), redirect_stdout(io.StringIO()):
+                        self.assertEqual(main([*args[:-1], str(failed_dest)]), 1)
+                    self.assertIn(url, error.getvalue())
+                    self.assertIn('incomplete', error.getvalue().lower())
+                    self.assertIn('retry', error.getvalue())
+                    self.assertFalse(failed_dest.exists())
+
+            fetch.reset_mock()
+            response.read.side_effect = None
             response.read.return_value = raw
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(main(args), 0)

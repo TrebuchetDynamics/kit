@@ -3,6 +3,7 @@
 
 import argparse
 from hashlib import sha256
+from http.client import HTTPException
 import json
 from pathlib import Path
 import re
@@ -65,7 +66,11 @@ def fetch(pin, tile, destination):
             data = response.read(limit + 1)
             if not data or len(data) > limit:
                 raise ValueError('empty or oversized component response')
-    except (OSError, ValueError) as exc:
+            # A bounded read can return short data rather than raising on early EOF.
+            length = response.headers.get('Content-Length')
+            if length is not None and len(data) != int(length):
+                raise ValueError('incomplete component response')
+    except (OSError, ValueError, HTTPException) as exc:
         raise ValueError(f'Fetch failed for {url}: {exc}. Restore access to the pinned URL and retry.') from exc
 
     receipt = {
