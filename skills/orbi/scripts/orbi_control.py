@@ -5237,6 +5237,17 @@ class FleetUnit:
 def fleet_bound_unit(manager, name, target, values, fragments, *, triggers='', runner=False,
                      repair_path=None, repaired=None):
     label = f'{manager.name}:{name}'
+    if values.get('NeedDaemonReload') == 'yes' and values['Id'] == name and values['LoadState'] == 'loaded':
+        # The manager runs an older definition than the unit files on disk. Reloading is
+        # the owner's decision: another session may be editing these units right now.
+        reload = shlex.join(['systemctl', *manager.flags, 'daemon-reload'])
+        if manager.name == 'system':
+            reload = 'sudo ' + reload
+        raise ControlError('installer_fleet_hold',
+                           f'{label}: unit files changed on disk since systemd last loaded them '
+                           '(NeedDaemonReload=yes)',
+                           fix=f'When no other session is editing Orbi units, run {reload}, '
+                               'then rerun ./install.sh --only orbi')
     if (values['Id'] != name or values['LoadState'] != 'loaded' or values.get('NeedDaemonReload') != 'no'
             or values.get('ActiveState') not in DRAIN_STATES | INACTIVE_STATES
             or values.get('CanStart') != 'yes' or values.get('CanStop') != 'yes'):
@@ -5876,7 +5887,7 @@ def installer_fleet(ctx, *, report_progress=None):
             if (current.get('config') == row['config'] or current.get('unit') in row['units']):
                 row['failed_step'] = current.get('step', 'preflight')
                 row['status'] = 'failed'
-        receipt['recovery'] = ('Restore complete manager and deployment ownership/control evidence; '
+        receipt['recovery'] = ('No deployment was stopped. Fix the cause above and rerun ./install.sh --only orbi, '
                                'or use ./install.sh --skip orbi to leave the fleet untouched.' if receipt['status'] == 'held'
                                else 'Inspect the named manager, unit and config states before deliberate repair. No rollback attempted.')
     return receipt

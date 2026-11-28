@@ -1914,6 +1914,24 @@ Path.stat = stat
                 else:
                     self.assertIn(f'engine_source_track = "sha:{head}"', config.read_text())
 
+    def test_orbi_hold_for_a_pending_daemon_reload_names_the_command(self):
+        _, state, _ = self.orbi_fleet_fixture()
+        states = json.loads(state.read_text())
+        unit = next(name for name in states['--user'] if name.endswith('.timer'))
+        states['--user'][unit]['NeedDaemonReload'] = 'yes'
+        state.write_text(json.dumps(states))
+        original = state.read_bytes()
+        result = self.install('--only', 'orbi')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f'user:{unit}: unit files changed on disk since systemd last loaded them '
+                      '(NeedDaemonReload=yes)', result.stdout)
+        self.assertIn('When no other session is editing Orbi units, run systemctl --user daemon-reload, '
+                      'then rerun ./install.sh --only orbi', result.stdout)
+        self.assertIn('No deployment was stopped.', result.stdout)
+        self.assertEqual(state.read_bytes(), original)
+        self.assertFalse(any(f'--no-ask-password {verb} ' in call for call in self.calls('systemctl')
+                             for verb in ('stop', 'disable', 'cancel', 'start', 'enable', 'daemon-reload')))
+
     def test_orbi_repairs_a_group_writable_cli_instead_of_holding(self):
         receipt, _, _ = self.orbi_fleet_fixture()
         bootstrap = self.home / '.local/bin/orbi'
