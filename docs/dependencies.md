@@ -1,15 +1,11 @@
 # Dependencies, reproducibility and licensing
 
-The command bridge and the full setup are different layers. The bridge registers
-bundled skills; individual workflows need execution tools and may use other skills.
-The Hermes manifest declares Hermes Speech as a stack dependency.
-[Portable packages](cross-host.md) do not install those integrations. Ponytail is
-now pinned and bundled for every host, not an external plugin prerequisite.
-`--bundle-only` skips the external-source setup stage; it is not a separately
-packaged minimal plugin and does not disable runtime policy writes.
+Host packages register the bundled skills; individual workflows need execution
+tools and may use other skills. [Portable packages](cross-host.md) install no
+external integrations. Ponytail is pinned and bundled for every host, not an
+external plugin prerequisite.
 
-Sources: [plugin manifest](../plugin.yaml), [installation inventory](../plugins/PLUGINS.md),
-[defaults](../plugins/defaults.json), [installer](../install-plugins.sh).
+Sources: [suite installer](../install.sh), [package inventory](../package.json).
 
 ## Current source policy
 
@@ -36,45 +32,26 @@ default and fail on explicit selection. See [Pi-Bolt installation](installation.
 | 100x 0.1.1 | [Pinned protocol, modes and hashes](../skills/100x/UPSTREAM.json); [MIT license](../skills/100x/upstream/LICENSE) and [pstack notice](../skills/100x/upstream/NOTICE.md) retained | `/100x` needs the matching CLI on PATH. Kit bundles neither the CLI nor its installer. |
 | Forever AI Components | MIT, [pin and hashes](../skills/forever-components/UPSTREAM.json) | Discovery index, facets, agent instructions and upstream notices are bundled; selected HTML is fetched from the pin. Retrieval keeps the [license](../skills/forever-components/upstream/LICENSE) and [notice](../skills/forever-components/upstream/NOTICE.md) with the source. |
 | UI Taste 0.2.0 (Uizze) | Vendored from a pinned Uizze commit, [pin and hashes](../skills/ui-taste/UPSTREAM.json) | Plain Markdown playbooks copied unchanged under `upstream/`; the toolset adapter sets host rules; works offline. Its optional paid Uizze MCP is never configured by Toolset. |
-| Impeccable 4.8.0 | Vendored official Hermes package, [pin and hashes](../skills/impeccable/UPSTREAM.json) | All references and scripts ship with the plugin; Apache-2.0 license and notices retained. |
+| Impeccable 4.8.0 | Vendored official package, [pin and hashes](../skills/impeccable/UPSTREAM.json) | All references and scripts ship with the plugin; Apache-2.0 license and notices retained. |
 | Beautify GitHub README | Vendored revision and file hashes in [UPSTREAM.json](../skills/beautify-github-readme/UPSTREAM.json) | Upstream skill byte-exact under `upstream/`; the toolset adapter sets host rules and adds a README audit that reuses the upstream SVG checks; MIT license retained. |
 | Agents MD Generator | Full skill tree from thienanblog/awesome-ai-agent-skills at [pin, mappings, modes and hashes](../skills/agents-md-generator/UPSTREAM.json) | Apache-2.0; byte-exact protocol, four references, five detector launchers and inert upstream metadata; local wrapper owns Kit effects. |
 | Grill Me 2.1.1 | Bundled [SKILL.md](../skills/grill-me/SKILL.md) | Its checked-in bytes are fixed by this repository revision. |
-| Hermes Speech | Native Hermes installs from declared sources | No unified bundle lockfile pins their installed revisions. |
 | Toolset engineering protocols (`skills/engineering/local/`) | Written and versioned in this repository; no upstream pin | `test-suite-optimization` adapts two criteria from Matt Pocock's MIT `tdd` skill in its own words; no text is copied. |
 | Addy agent-skills (25 protocols) | Vendored commit and hashes in [UPSTREAM.json](../skills/engineering/UPSTREAM.json) | Updated only through a reviewed Toolset change; shared references included. Two defensive examples are paraphrased, with original and adapted hashes recorded; a refresh restores upstream bytes, so re-apply them by hand. |
-| Graphify | Dedicated setup helper | Not covered by a unified bundle lockfile. |
+| Graphify | Not bundled; the [adapter](../adapters/skills/graphify/SKILL.md) uses an installed CLI | Kit does not install or pin Graphify. |
 | Pi-Bolt | Official [installer](https://pi-bolt.opensec.in/install.sh) from [opensec-git/Pi-Bolt](https://github.com/opensec-git/Pi-Bolt), run unmodified in binary mode | Mutable upstream stable channel, not a Kit version pin; upstream verifies release identity, signatures and checksums. Kit reports the linked executable version and installs no optional extensions. |
 
-Ordinary installation preserves existing resources, adding only missing Markdown
-files in the bundled `shared/` support directory (without overwriting local edits).
-`hermes kit update` synchronizes
-bundled content, including the pinned engineering pack, to the release bytes.
-Edited native copies are reset or removed when their release file is removed;
-their original bytes remain in the update backup and the action is reported.
-External imports are not upgraded by that command. A checkout revision alone does
-not prove that native profile copies match it. Exact historical copies can avoid a
-repeated drift notice, but they are still synchronized. The separate guarded
-managed-checkout recovery path uses three-way reconciliation and refuses unresolved
-conflicts rather than discarding local changes. Historical byte equality does not
-prove an older copy was unintentional or compatible with an active worker. Review
-intentional pins and quiesce/reconcile active runs before updating; see the
-[update boundary and recovery](installation.md#update-all-profiles). Two
-machines with the same Toolset checkout can therefore have different external
-versions. Native scans remain enabled; blocked imports mean incomplete setup.
-`--yes-deps` permits declared dependency installation, not a scanner bypass.
-
-## Removed executor dependencies
+Each host refresh installs the bundled content of this repository revision,
+including the pinned engineering pack. A checkout revision alone does not prove
+that an installed host package matches it; refresh with `./install.sh update`.
+Two machines with the same checkout can still have different external versions.
 
 ## Updating
 
-Review changes to the source inventory, defaults, manifest and vendored hashes.
-Record the actual external versions/revisions installed in each target profile,
-preview setup, and validate in a separate isolated Hermes root without live sibling
-profiles before applying to the fleet. A named test profile is insufficient: setup
-resolves its home to the containing fleet root.
-Review scan failures rather than silently substituting another source or disabling
-scanning. Updating this repository alone does not update every existing import.
+Review changes to the package inventory and vendored hashes. Record the actual
+external versions installed on each machine and preview with
+`./install.sh --dry-run` before applying. Updating this repository alone does not
+update installed host packages.
 
 A suite-wide dependency lockfile, license inventory and automated update procedure
 remain unimplemented. The retired Rust candidate's lockfile is historical evidence,
@@ -88,7 +65,7 @@ Kit is licensed under the [MIT License](../LICENSE), copyright
 and copyright notices.
 
 - Vendored Ponytail retains its [MIT license and attribution](../skills/ponytail/upstream/LICENSE); pinned protocol bytes are unchanged behind local adapters, and its optional map helper is renamed `.cjs` for Kit's ESM package with a documented bounded-read safety fix.
-- Vendored Impeccable retains its [Apache-2.0 license](../skills/impeccable/LICENSE) and [notices](../skills/impeccable/NOTICE.md). Its official Hermes files are copied unchanged, with upstream SKILL.md stored as PROTOCOL.md behind the local Ponytail-aware adapter, and supplemental [modern-screenshot](../skills/impeccable/licenses/modern-screenshot-MIT.txt) and [platform-design-skills](../skills/impeccable/licenses/platform-design-skills-MIT.txt) MIT notices.
+- Vendored Impeccable retains its [Apache-2.0 license](../skills/impeccable/LICENSE) and [notices](../skills/impeccable/NOTICE.md). Its official files are copied unchanged, with upstream SKILL.md stored as PROTOCOL.md behind the local Ponytail-aware adapter, and supplemental [modern-screenshot](../skills/impeccable/licenses/modern-screenshot-MIT.txt) and [platform-design-skills](../skills/impeccable/licenses/platform-design-skills-MIT.txt) MIT notices.
 - [Kit's Unslop workflow](../skills/unslop/SKILL.md) adapts [unslop by Damir Sokolovsky](https://github.com/heydamir/unslop/tree/620163eedb3529d9cd23a3994ed8d287d06f760d) under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Kit publishes design work as issues instead of applying UI edits. No upstream tool is installed.
 - Vendored UI Taste retains its [Apache-2.0 license](../skills/ui-taste/upstream/LICENSE), [notice](../skills/ui-taste/upstream/NOTICE) (Impeccable 4.4.0 by Paul Bakaus and ehmo's MIT platform-design-skills) and Uizze's [modifications notice](../skills/ui-taste/upstream/MODIFICATIONS.md). Its SKILL.md is stored as PROTOCOL.md so only the toolset adapter registers; it is otherwise an unmodified copy, not an endorsement by Uizze or the Impeccable author.
 - [Genjutsu](../skills/genjutsu/UPSTREAM.json) retains its [MIT license](../skills/genjutsu/upstream/LICENSE) and the bundled UI/UX Pro Max [MIT license](../skills/genjutsu/upstream/skills/_jutsu/ui-ux-pro-max/LICENSE-upstream.txt). [Motion Graphics Skills](../skills/motion-graphics/UPSTREAM.json) retains its [MIT license](../skills/motion-graphics/upstream/LICENSE). Pinned reference bytes remain unchanged with `SKILL.md` stored as `PROTOCOL.md`. Kit does not install upstream automation; the [timeline capture procedure](../skills/motion-graphics/references/capture.md) lists the local runtime needs.
@@ -148,7 +125,7 @@ No upstream source or installer is fetched during normal installation.
 [UPSTREAM.json](../skills/ponytail/UPSTREAM.json) pins commit
 `09c434ab73ca43761c5d8b0c5d341926c2fba710` (declared version 5.3.2), the MIT license
 and SHA-256 of every imported file. Six upstream SKILL.md files are stored as
-PROTOCOL.md to avoid recursive skill discovery. Local native and portable entry
+PROTOCOL.md to avoid recursive skill discovery. Local entry
 skills apply [Kit's scope rules](../skills/shared/PONYTAIL.md); the upstream
 help card is provenance only because it advertises unsupported global/plugin UI.
 
@@ -179,9 +156,9 @@ python3 scripts/affected_tests.py --run
 node --test tests/portable_pi.test.mjs
 ```
 
-The tests check hashes, all entry links, isolated native provisioning, literal Pi
+The tests check hashes, all entry links, literal Pi
 command dispatch and an unpacked npm archive including execution of the `.cjs` map.
-They do not prove live model adherence or installation into real host profiles.
+They do not prove live model adherence or installation into real host sessions.
 Normal installation/update uses these committed resources without fetching Ponytail.
 Existing separately installed Ponytail plugins are left unchanged; their commands
 may retain ownership, so resolve the bundled skill explicitly when needed.
@@ -203,12 +180,7 @@ writes upstream bytes unchanged: it reverts the two paraphrased defensive exampl
 (`browser-testing-with-devtools`, `source-driven-development`) and drops their
 `upstream_sha256` records. Re-apply both paraphrases and their hashes, then review
 the diff before committing; `test_engineering_vendor.py` does not catch their loss. Review newly introduced links and dependencies,
-run the full offline checks, then ship with the bundle. The former native-card
-registration-admission suite was retired with its unreachable engine. Native plugin
-registration remains a separate optional `tests/integration_plugin.py` check; see
-[its environment and limits](testing.md#verify).
-`hermes kit update` consumes that reviewed snapshot; it never fetches Addy latest.
-Existing profile-level Addy imports remain untouched as optional alternatives.
+run the full offline checks, then ship with the bundle. Installation ships that reviewed snapshot; it never fetches Addy latest.
 
 ## Refresh the vendored UI Taste skill
 

@@ -62,7 +62,7 @@ class AffectedTestsTests(unittest.TestCase):
     def test_code_selects_its_importers_and_the_tests_that_run_it(self):
         """Today's real breakages: each change's selection holds the tests that failed."""
         for change, failed in (('scripts/github_issues.py', ['tests/test_github_issues.py']),
-                               ('scripts/install_skills.py', ['tests/test_engineering_vendor.py'])):
+                               ('scripts/install_menu.py', ['tests/test_install_menu.py'])):
             with self.subTest(change=change):
                 tests, _, full = affected_tests.select([change])
                 self.assertFalse(full)
@@ -92,7 +92,7 @@ class AffectedTestsTests(unittest.TestCase):
             'tests/test_public.py': 'import kit_runtime.command\n',
             'tests/test_path.py': 'ENTRY = "src/kit_runtime/command.py"\n',
             'tests/test_other.py': 'import unrelated.owner\n',
-            'tests/native/test_public.py': 'import kit_runtime.command\n',
+            'skills/git-commit-push/scripts/test_public.py': 'import kit_runtime.command\n',
             'tests/support/store_fixture.py': 'import kit_runtime.command\n',
             'tests/test_support.py': 'import store_fixture\n',
         }
@@ -115,7 +115,7 @@ class AffectedTestsTests(unittest.TestCase):
                     patch.object(affected_tests, 'repository_files', return_value=list(files)):
                 owner = 'src/kit_runtime/engine/owner.py'
                 expected = {'tests/test_public.py', 'tests/test_path.py', 'tests/test_support.py',
-                            'tests/native/test_public.py'}
+                            'skills/git-commit-push/scripts/test_public.py'}
                 selected, _, full = affected_tests.select([owner], conservative=True)
                 self.assertFalse(full)
                 self.assertEqual(set(selected), expected)

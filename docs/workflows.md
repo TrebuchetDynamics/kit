@@ -103,38 +103,35 @@ These are instruction contracts; offline traces do not prove live model delivery
 ## Commands
 
 Use GitHub Issues/PRs and read-only `orbi status`/`orbi doctor` for current
-delivery status. For Hermes inventory and plugin setup diagnostics, use terminal
-`hermes kit doctor --json`; `--core` checks only bundled registration.
-`hermes kit update` and `hermes kit update --check` run synchronously
-and print their receipt. No chat-maintenance command is provided. Imported native
-commands keep their handlers; existing owners win collisions. Telegram menu capacity
-is limited, so some commands must be typed directly.
+delivery status. The table uses Pi spelling; Claude Code prefixes `/kit:` (for
+example `/kit:plan-with-me`) and Codex prefixes `$kit:`. Existing host commands
+keep their handlers; existing owners win collisions.
 
-| Hermes CLI chat | Telegram | Purpose |
-| --- | --- | --- |
-| `/orbi [status\|version\|setup\|start\|stop\|help]` | `/orbi` | [Lifecycle controls and host inventory](../skills/orbi/SKILL.md): `status all [--work] [--verbose\|--json]` summarizes observable local deployments and GitHub API budget without repo selectors (partial coverage is explicit); `--work` adds per-repo issue counts; `version` reads the selected deployment engine release/revision without full status or bootstrap probes; bare status is read-only, setup starts by default via the existing start path; setup --prepare-only prepares without activation; authorized setup/start prepares if absent then schedules, stop drains without killing workers; Linux controls, macOS read-only status/version; help prints the action reference read-only on any platform |
-| `/git-commit-push` | `/git_commit_push` | Commit the current branch, sync and push its verified upstream with scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
-| `/git-commit-push all` | `/git_commit_push all` | Also merge every finished worktree into the base branch: inventory first, merge only eligible clean unmerged ones, keep owned, unknown, dirty and locked worktrees |
-| `/push` | `/push` | Save eligible invoking-checkout changes only, pull verified `main`, then deliver to `main` through the repository's landing route; other worktrees uninspected, open Orbi work reported without takeover |
-| `/lgtm` | `/lgtm` | [Continue within inherited authority](../skills/lgtm/SKILL.md): accept unambiguous choices, clarify only ambiguous planning choices; standalone plan approval does not authorize implementation |
-| `/docs_sync` | `/docs_sync` | Maintain repository documentation |
-| `/update-kit` (also `/update_kit`) | `/update_kit` | [Refresh dedicated upstream source and reinstall the suite](../skills/update-kit/SKILL.md); explicit only, full-suite/restart effects, restricted Hermes cascades refused; [preview and ownership](installation.md#update-kit) |
-| `/plan_with_me` | `/plan_with_me` | Resolve missing intent, then publish complete GitHub Issues |
-| `/plan_for_me` | `/plan_for_me` | Investigate accepted scope and publish complete GitHub Issues without an interview |
-| `/grill-me` | `/grill_me` | Stress-test a plan through questions |
-| `/autoresearch` | `/autoresearch` | Route a research goal or run a bounded metric loop |
-| `/100x <brief>` | `/100x` | [Build a prototype in this session](../skills/100x/SKILL.md); requires 100x CLI 0.1.1 on PATH. Kit does not install it. |
-| `/impeccable` | `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
-| `/unslop` | `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
-| `/ui-taste` | `/ui_taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |
-| `/forever-components` | `/forever_components` | Search the Forever index and retrieve only selected pinned components |
-| `/genjutsu` | `/genjutsu` | Design motion for an interface's interactions |
-| `/motion-graphics` | `/motion_graphics` | Build and verify a seekable timeline |
-| `/brand-identity` | `/brand_identity` | Compare brand directions and export the selected kit |
-| `/styleseed` | `/styleseed` | Create or maintain a project design system |
-| `/procedural-drawing` | `/procedural_drawing` | Draw a CPU-rendered illustration from a selected style |
-| `/genart` | `/genart` | Create seeded art and check Canvas 2D output locally |
-| `/beautify-github-readme` | `/beautify_github_readme` | [Audit README reader paths and publish verified issues](../skills/beautify-github-readme/SKILL.md); explicit redesign/hero and audit-only requests keep their scope. Use `no-dispatch` to withhold readiness, or `read-only` for an inline report without writes. |
+| Command | Purpose |
+| --- | --- |
+| `/orbi [status\|version\|setup\|start\|stop\|help]` | [Lifecycle controls and host inventory](../skills/orbi/SKILL.md): `status all [--work] [--verbose\|--json]` summarizes observable local deployments and GitHub API budget without repo selectors (partial coverage is explicit); `--work` adds per-repo issue counts; `version` reads the selected deployment engine release/revision without full status or bootstrap probes; bare status is read-only, setup starts by default via the existing start path; setup --prepare-only prepares without activation; authorized setup/start prepares if absent then schedules, stop drains without killing workers; Linux controls, macOS read-only status/version; help prints the action reference read-only on any platform |
+| `/git-commit-push` | Commit the current branch, sync and push its verified upstream with scoped changes (`no pull` or `no push` narrows it); `pull`, `sync` or `merge <branch>` only integrates |
+| `/git-commit-push all` | Also merge every finished worktree into the base branch: inventory first, merge only eligible clean unmerged ones, keep owned, unknown, dirty and locked worktrees |
+| `/push` | Save eligible invoking-checkout changes only, pull verified `main`, then deliver to `main` through the repository's landing route; other worktrees uninspected, open Orbi work reported without takeover |
+| `/lgtm` | [Continue within inherited authority](../skills/lgtm/SKILL.md): accept unambiguous choices, clarify only ambiguous planning choices; standalone plan approval does not authorize implementation |
+| `/docs-sync` | Maintain repository documentation |
+| `/update-kit` | [Refresh dedicated upstream source and reinstall the suite](../skills/update-kit/SKILL.md); explicit only, full-suite/restart effects; [preview and ownership](installation.md#update-kit) |
+| `/plan-with-me` | Resolve missing intent, then publish complete GitHub Issues |
+| `/plan-for-me` | Investigate accepted scope and publish complete GitHub Issues without an interview |
+| `/grill-me` | Stress-test a plan through questions |
+| `/autoresearch` | Route a research goal or run a bounded metric loop |
+| `/100x <brief>` | [Build a prototype in this session](../skills/100x/SKILL.md); requires 100x CLI 0.1.1 on PATH. Kit does not install it. |
+| `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
+| `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
+| `/ui-taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |
+| `/forever-components` | Search the Forever index and retrieve only selected pinned components |
+| `/genjutsu` | Design motion for an interface's interactions |
+| `/motion-graphics` | Build and verify a seekable timeline |
+| `/brand-identity` | Compare brand directions and export the selected kit |
+| `/styleseed` | Create or maintain a project design system |
+| `/procedural-drawing` | Draw a CPU-rendered illustration from a selected style |
+| `/genart` | Create seeded art and check Canvas 2D output locally |
+| `/beautify-github-readme` | [Audit README reader paths and publish verified issues](../skills/beautify-github-readme/SKILL.md); explicit redesign/hero and audit-only requests keep their scope. Use `no-dispatch` to withhold readiness, or `read-only` for an inline report without writes. |
 
 For the Orbi first-deployment journey, `/orbi help` gives context-free examples and
 recovery. Use `/orbi setup --dry-run --pi-providers /path/to/models.json --pi-provider
@@ -161,10 +158,10 @@ builder check before publishing the full batch under
 [Plan Handoff](../skills/shared/PLAN-HANDOFF.md): native `blockedBy` dependencies,
 optional `ai-epic` coordination, readback and `ai-ready` last.
 
-`/plan_with_me` asks the highest-impact unresolved intent question, researches
+`/plan-with-me` asks the highest-impact unresolved intent question, researches
 repository facts itself and marks guesses. A bare "yes" or LGTM accepts the clear
 recommendations in the latest round, including a batch; only genuinely ambiguous
-choices need clarification. `/plan_for_me` investigates and chooses
+choices need clarification. `/plan-for-me` investigates and chooses
 within delegated scope without an interview. Both reuse accepted answers and
 existing issues. Questions-only/read-only/no-write/dry-run requests save nothing,
 locally or on GitHub. Explicit no-dispatch requests retain `ai-planning`; ordinary
@@ -172,7 +169,7 @@ writable planning can publish work an existing Orbi deployment consumes immediat
 Neither planner implements or starts a service.
 
 After a state-machine analysis, grill discussion, bug harvest or UI review, invoke
-`/plan_for_me` to turn the conversation's concrete findings into scoped GitHub
+`/plan-for-me` to turn the conversation's concrete findings into scoped GitHub
 Issues. You do not need to paste the report again. Both planners reuse accepted
 answers and current evidence, skip completed fixes, and keep unsupported proposals
 separate. Distinct buildable outcomes become separate issues, not one ticket per
@@ -182,11 +179,11 @@ Before publication, chat shows a **Plan preview**: each proposed issue's title,
 observable change, acceptance signal and dependencies, plus reused issues and held
 questions. After publication, the receipt replaces proposed keys with verified
 links and ready/waiting/held states. The preview is not another approval round.
-Use `/plan_for_me preview only, no writes: plan these findings` to inspect without
+Use `/plan-for-me preview only, no writes: plan these findings` to inspect without
 publishing. Planning never claims that a ready label proves Orbi pickup or delivery.
 See [conversation intake and preview](../skills/shared/PLAN-HANDOFF.md#conversation-findings-to-issues).
 
-`/plan_for_me` with no concrete objective in either the request or relevant
+`/plan-for-me` with no concrete objective in either the request or relevant
 conversation starts project discovery instead of asking you for a goal. It reads the
 repository's accepted intent, code, tests and task history, separates accepted and
 derived engineering goals from new product proposals, and saves only the highest
@@ -198,18 +195,16 @@ changed evidence, so unchanged inputs add no duplicate tasks or empty planning
 commit. The [discovery protocol](../skills/plan-for-me/references/discovery.md)
 defines the evidence labels, gap classes and report.
 
-For example, type `/docs_sync update the architecture documentation` in Hermes
-CLI chat, or `/git_commit_push only src/; no push` in Telegram. Arguments are
-passed as text to the skill, never executed as a shell command by the plugin.
-These are conversational slash commands, not new `hermes <skill>` shell
-subcommands. The agent loads the skill through `skill_view` and performs its
-instructions using the current conversation and tools.
+For example, type `/docs-sync update the architecture documentation` in Pi, or
+`/kit:git-commit-push only src/; no push` in Claude Code. Arguments are passed as
+text to the skill, never executed as a shell command by the plugin. These are
+conversational slash commands, not shell subcommands. The agent loads the skill and
+performs its instructions using the current conversation and tools.
 
 Bundled skills also remain available by their qualified names, such as
 `kit:docs-sync`. Supporting files stay next to their `SKILL.md`. Shared contracts live in
 [`skills/shared`](../skills/shared/COMMON-CONTRACT.md), alongside the skill folders;
-the legacy skill copier preserves that support directory too. Resolve helper
-commands from the loaded bundle rather than assuming `~/.hermes/shared-skills`.
+Resolve helper commands from the loaded skill rather than assuming a host home.
 An existing built-in or previously registered plugin command wins a name
 collision; the skipped alias produces a warning and the qualified skill remains
 available. Choose distinctive names to avoid collisions with other plugins,
@@ -219,27 +214,18 @@ Public skill names match the workflow names. Source directories stay stable for 
 
 | Primary command | Public skill ID | Compatibility command |
 | --- | --- | --- |
-| `/plan_with_me` | `plan-with-me` | None |
-| `/plan_for_me` | `plan-for-me` | `/autoresearch:plan` (CLI), `/autoresearch_plan` (Telegram); runs the Autoresearch skill's plan protocol with the same planning adaptations |
-| `/docs_sync` | `docs-sync` | None |
-| `/update_kit` | `update-kit` | `/update-kit` (same literal arguments) |
+| `/plan-with-me` | `plan-with-me` | None |
+| `/plan-for-me` | `plan-for-me` | `/autoresearch-plan`; runs the Autoresearch skill's plan protocol with the same planning adaptations |
+| `/docs-sync` | `docs-sync` | None |
+| `/update-kit` | `update-kit` | None |
 
 Grill Me is the challenge mode of Plan With Me; its old command still works but
-is not advertised as a separate plugin skill. Autoresearch protocols remain
-accessible through their commands and the Plan For Me adapter. Autoresearch compatibility command
-spellings remain typeable but are deliberately omitted from Telegram menu
-advertising, not merely displaced by capacity. Plan With Me and Docs Sync do not
-register the old repo-interview or repo-docs aliases. The Telegram menu prioritizes
-the three current planning/documentation workflow commands, then `/ui_taste`, `/beautify_github_readme`,
-`/impeccable`, `/lgtm` and `/git_commit_push`.
-Hermes' default menu holds 60 entries and its built-ins alone exceed that, so each
-prioritized command displaces the lowest-ranked built-in (currently `/yolo`,
-`/approvals`, `/fast`, `/voice`, `/busy`, `/memory` and `/bundles`), which stays
-typeable. Do not rename helper paths or saved receipt keys for presentation. Autogoal references in migration code preserve old state;
-they do not register a live command. Hindsight is not a bundle integration; its
-negative tests prevent accidental reintroduction. Updating source does not refresh
-an already-running gateway's command registry: use supported plugin reload and
-verify activation before claiming the new names work in messaging.
+is not advertised as a separate skill. Autoresearch protocols remain accessible
+through their commands and the Plan For Me adapter. Plan With Me and Docs Sync do
+not register the old repo-interview or repo-docs aliases. Do not rename helper
+paths or saved receipt keys for presentation. Updating source does not refresh a
+running host session's command registry: start a new session and verify the new
+names before claiming they work.
 
 Docs Sync and retained fix/apply modes decide routine engineering choices autonomously within the
 accepted scope. The executing session (or an optional authorized delegate) works
@@ -253,7 +239,7 @@ loading a skill alone is not proof of applying it.
 
 The [engineering cycle](../skills/shared/ENGINEERING-CYCLE.md) is an optional routing
 reference when method selection is unclear. A ready task needs no routing prepass.
-A documentation-only `/docs_sync` request does not launch workers. To continue
+A documentation-only `/docs-sync` request does not launch workers. To continue
 through a spec, publish complete issues for Orbi. Already-authorized fix/apply modes preserve
 their stated scope and actual ownership.
 Manual implementation includes authorized recovery and closeout. Review acceptance and
@@ -269,10 +255,10 @@ live acceptance, and no retired executor report schema is required.
 
 ## Autoresearch
 
-The bundle vendors [uditgoenka/autoresearch](https://github.com/uditgoenka/autoresearch)
+Kit vendors [uditgoenka/autoresearch](https://github.com/uditgoenka/autoresearch)
 v2.2.2 at the revision in [UPSTREAM.json](../skills/autoresearch/UPSTREAM.json), with
-its MIT license and runtime scripts. Installing the bundle makes it available in
-every configured profile; no separate Claude/Codex installation is required.
+its MIT license and runtime scripts. It ships in every host package; no separate
+installation is required.
 
 Use `/autoresearch` for goal routing or a metric-driven loop. All 13 upstream
 subcommands are available:
@@ -280,17 +266,12 @@ subcommands are available:
 `plan`, `debug`, `fix`, `security`, `ship`, `probe`, `scenario`, `predict`,
 `reason`, `learn`, `improve`, `evals`, `regression`.
 
-Use `/plan_for_me` in CLI or Telegram for planning. Legacy `/autoresearch:plan`
-and `/autoresearch_plan` remain available. Other subcommands retain their names:
-for example, `/autoresearch:debug` in CLI and `/autoresearch_debug` in Telegram.
-`/autoresearch plan ...` also works. Autoresearch compatibility commands, including
-the base and underscore spellings, are intentionally not advertised in Telegram's
-menu; type the desired command with its request text. This is separate from the
-menu capacity limit and does not remove the typed handlers. Existing command
-owners keep precedence.
+Use `/plan-for-me` for planning. Legacy `/autoresearch-plan` remains available.
+Other subcommands retain their names: for example, `/autoresearch-debug` in Pi.
+`/autoresearch plan ...` also works. Existing command owners keep precedence.
 
 ```text
-/plan_for_me reduce cache latency; document findings and schedule tasks; do not implement yet
+/plan-for-me reduce cache latency; document findings and schedule tasks; do not implement yet
 /autoresearch Goal: reduce parser time Scope: src/parser Metric: milliseconds Verify: python bench.py Iterations: 10
 ```
 
@@ -300,7 +281,7 @@ still permits that planning handoff, while explicit read-only/chat-only/no-write
 or dry-run writes nothing. Existing legacy records stay migration evidence.
 Retained authorized implementation never uses the removed executor.
 
-The [Hermes adapter](../skills/autoresearch/SKILL.md) connects research to docs-sync:
+The [Autoresearch adapter](../skills/autoresearch/SKILL.md) connects research to docs-sync:
 findings update existing documents, matching issues are reused, and accepted gaps
 become complete issues with outcome, scope, acceptance, verification and native
 dependencies. Publication does not create a timer or activate Orbi. Read-only
@@ -308,8 +289,6 @@ and planning-only requests remain scoped.
 Upstream flags and analytical methods are retained; host-specific tools, generic
 confirmation prompts, experimental Git handling and documentation handoffs follow
 the adapter. Claude-only hooks are not installed.
-
-Retained Hermes terminal maintenance names and private state identities do not restore the removed runner.
 
 ## State machine
 
@@ -324,7 +303,6 @@ The default route neither repairs code locally nor starts Orbi.
 
 | Host | Invocation |
 | --- | --- |
-| Hermes | `/state-machine` |
 | Claude Code | `/kit:state-machine` |
 | Codex | `$kit:state-machine` |
 | Pi | `/skill:state-machine` |
@@ -355,7 +333,7 @@ uses its findings as the bounded publication scope. In Pi:
 /skill:bug-harvest
 ```
 
-Hermes also accepts `/bug-harvest`, Claude Code uses `/kit:bug-harvest`, and Codex
+Pi accepts `/bug-harvest`, Claude Code uses `/kit:bug-harvest`, and Codex
 uses `$kit:bug-harvest`. No finding IDs, copied report or extra prompt are required:
 the [contextual handoff](../skills/bug-harvest/SKILL.md#findings-from-the-preceding-response)
 reuses the state map and evidence, then verifies each defect's reproducer,
@@ -425,8 +403,8 @@ remain binding. The default route does not implement findings or activate Orbi.
 Actual reductions and measured runtime stay separate from proposals and unknowns;
 neither mode silently skips tests or weakens CI.
 
-Examples (Hermes CLI; Pi uses `/test-optimizer`, Claude Code
-`/kit:test-optimizer`, Codex `$kit:test-optimizer`):
+Examples (Pi; Claude Code uses `/kit:test-optimizer`, Codex
+`$kit:test-optimizer`):
 
 ```text
 /test-optimizer tests/parser
@@ -441,10 +419,10 @@ establish a measured suite speedup or live host effectiveness.
 ## Graphify
 
 `/graphify` maps a project into a local knowledge graph, then answers questions
-against `graphify-out/graph.json` instead of long file reads. Hermes uses the
-official skill that its plugin installer adds from
-[Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify); Claude Code,
-Codex and Pi load the local [adapter](../adapters/skills/graphify/SKILL.md).
+against `graphify-out/graph.json` instead of long file reads. Claude Code, Codex
+and Pi load the local [adapter](../adapters/skills/graphify/SKILL.md), which uses an
+installed [Graphify](https://github.com/Graphify-Labs/graphify) CLI; Kit does not
+install it.
 
 The adapter requires the `graphify` command (PyPI `graphifyy`, Python 3.10+) and
 never installs it, adds hooks or asks a model for a semantic pass. It reuses a graph
@@ -469,8 +447,7 @@ Folder and Test Optimizer record that declared state; other skills do not need a
 graph and pay nothing for its absence. `graphify-out/` is a generated artifact and stays uncommitted.
 A read-only request builds nothing.
 
-Examples (Hermes CLI; Pi uses `/graphify`, Claude Code `/kit:graphify`, Codex
-`$kit:graphify`):
+Examples (Pi; Claude Code uses `/kit:graphify`, Codex `$kit:graphify`):
 
 ```text
 /graphify src/parser; explain parse_statement; read-only
@@ -511,7 +488,7 @@ conflicts with the precise question and continue independent accepted work.
 There is no fixed length quota. Verify referenced paths/commands and separate checks
 inspected, run and unrun. Report the actual diff and dispositions inline, not in a
 permanent audit log. [Host spellings and package boundaries](cross-host.md#repository-instruction-reconciliation)
-include Hermes and explicit external target use.
+include explicit external target use.
 
 During ordinary delivery, read the committed
 [same-PR maintenance procedure](../skills/shared/AGENT-INSTRUCTIONS.md) only when
@@ -553,7 +530,7 @@ work that names no design skill. Claude Code exposes `/kit:brand-identity` and
 - [`/styleseed`](../skills/styleseed/SKILL.md): start with the project design
   contract, compile effective rules and tokens, and inspect the selected artifact.
   The 22 workflows are internal to one skill. The bundled compiler uses `--agent pi`
-  or `--agent hermes` on those hosts. The preflight verifies the pinned runtime and
+  on Pi. The preflight verifies the pinned runtime and
   checks Playwright Chromium and its encoder only if the operation needs them.
 
 Prepare any missing prerequisite explicitly and rerun the reported check. A
@@ -587,7 +564,7 @@ without a network connection. Retrieval needs access to the pinned GitHub source
 adaptation uses the project's browser checks, not the catalog's accessibility labels.
 
 Use `/kit:tastemaker` and `/kit:dembrandt` in Claude Code, `$kit:tastemaker`
-and `$kit:dembrandt` in Codex, and bare slash commands in Pi and Hermes. The
+and `$kit:dembrandt` in Codex, and bare slash commands in Pi. The
 workflows load only after selection; `/ui-taste` remains the unnamed UI default.
 Project branding, tokens, frameworks and motion constraints take precedence.
 
@@ -605,7 +582,7 @@ commands, repair paths, source pins and MIT notices.
 | [`/genjutsu`](../skills/genjutsu/SKILL.md) | `/genjutsu specify enter and exit motion for this drawer; no edits` | A brief grounded in the existing stack, including the reduced-motion behavior |
 | [`/motion-graphics`](../skills/motion-graphics/SKILL.md) | `/motion-graphics check ./motion.html, a 640×360 two-second loop; sample 0.37s and 1.28s` | PNGs from direct seeks, with repeatability, matching loop endpoints and visible change checked |
 
-Use bare slash commands in Pi and Hermes, `/kit:genjutsu` and `/kit:motion-graphics`
+Use bare slash commands in Pi, `/kit:genjutsu` and `/kit:motion-graphics`
 in Claude Code, or `$kit:genjutsu` and `$kit:motion-graphics` in Codex.
 The commands load only on selection; `/ui-taste` is still the unnamed UI default.
 Genjutsu uses the current host's capabilities; team workflows need both user scope
@@ -619,8 +596,8 @@ or device performance.
 ## Procedural browser 3D
 
 Use [`/open-3d`](../skills/open-3d/SKILL.md) explicitly for a procedural scene,
-exploded view, scroll film or scene capture. Use `/kit:open-3d` in Claude Code,
-`$kit:open-3d` in Codex and `/open_3d` in Telegram. The eight upstream protocols
+exploded view, scroll film or scene capture. Use `/kit:open-3d` in Claude Code
+and `$kit:open-3d` in Codex. The eight upstream protocols
 are references, not separate commands. Keep the project's own stack and design
 constraints. [Preflight and capture](../skills/open-3d/references/runtime.md)
 explain the read-only requirements, viewport checks and time-zero MP4 workflow.
@@ -653,7 +630,7 @@ is correct.
 
 ## Ask Kit
 
-`/ask-kit` is the map over this bundle: one router that names the skill for a
+`/ask-kit` is the map over Kit: one router that names the skill for a
 situation and the next step it implies. It answers "which command do I want?", never
 "what does that command decide?". It reads the chosen skill before describing it, names
 one command, and sends you to that skill's `## Boundaries` when two look close.
@@ -705,8 +682,7 @@ with regression evidence, affected checks and Ponytail review in the existing re
 lane. Unresolved design or ADR choices still need a decision; no new
 commit, push or deployment authority is implied.
 
-Examples (Hermes CLI; Pi uses the same hyphen names, Claude Code prefixes
-`/kit:`, Codex prefixes `$kit:`):
+Examples (Pi; Claude Code prefixes `/kit:`, Codex prefixes `$kit:`):
 
 ```text
 /grilling the retry design; recommend answers; read-only
@@ -723,7 +699,7 @@ qualify a live interview or a rendered report.
 ## Pinned engineering reference
 
 The engineering pack is a **reference**, not a command: there is no `/engineering`
-entry in Hermes, Claude Code, Codex or Pi. Work, Docs Sync and Autoresearch read
+entry in Claude Code, Codex or Pi. Work, Docs Sync and Autoresearch read
 it on demand; ready tasks need no separate invocation. Select a technique when a
 method gap is concrete:
 
@@ -821,8 +797,8 @@ standalone planning, full batches, questions-only scope, prior unrelated authori
 later explicit implementation and return to the same execution coordinator.
 Inspect actual tool actions, writes, complete issue bodies and dependency readback,
 not just wording or wrapper registration. Earlier local-task fixtures are historical
-evidence, not qualification of the GitHub handoff. Installed host/model behavior,
-recommendation application and Telegram delivery still need their own live proof.
+evidence, not qualification of the GitHub handoff. Installed host/model behavior
+and recommendation application still need their own live proof.
 Preserve unresolved acceptance from the
 [original planning requirements](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/workflows.md#planning-only-bulk-handoff-and-skill-recommendations);
 they are not instructions to resume executor development.
@@ -835,7 +811,7 @@ Retired host-local worker snapshots are not installed, packaged or registered as
 
 Plan For Me lives in `skills/plan-for-me/` and is registered as its own skill.
 It applies the pinned planning protocol from `skills/autoresearch/`, which remains
-the separate Autoresearch skill and protocol suite. `/plan_for_me` selects planning;
+the separate Autoresearch skill and protocol suite. `/plan-for-me` selects planning;
 `/autoresearch` selects the research router. Non-planning protocols remain available.
 Legacy worker receipt fields remain preserved evidence, not current interfaces or
 additional commands.
@@ -845,18 +821,6 @@ additional commands.
 Use GitHub Issues/PRs and existing read-only Orbi status for backlog inspection. Legacy local
 records are preserved migration evidence. The [earlier task-query requirements](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/workflows.md#tasks-query-skill)
 retain unresolved obligations; their executor interfaces no longer ship.
-
-## Telegram reporting qualification
-
-Status: Accepted
-
-The existing reporting requirement and TOOLSET-011 retain the requested Telegram
-destination and separate setup confirmation, actual execution and scheduled
-message delivery. Verify one setup confirmation in the intended chat/topic and
-attributable scheduled execution/delivery on the original host/profile/job.
-Setup or command registration alone cannot close that qualification. Preserve the
-owner's stop-all instruction: this scope creates no replacement job, immediate run
-or permission to resume a schedule.
 
 ## Scheduling behavior
 

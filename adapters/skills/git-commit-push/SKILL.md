@@ -14,7 +14,7 @@ Read the [host-neutral Git Commit Push workflow](../../../skills/git-commit-push
 
 Read the [host contract](../COMMON.md).
 
-Use this host's native Git and file tools, not Hermes worker commit helpers.
+Use this host's native Git and file tools, not another host's commit helpers.
 The canonical workflow owns scope, mode-aware inspection, sync and publication;
 this adapter adds no fetch, commit or push default. For inbound requests, load its
 [pull and merge procedure](../../../skills/git-commit-push/references/pull-merge.md)

@@ -1054,7 +1054,7 @@ independent review, required CI and protected merge remain live acceptance.
 
 ## Host round trips and evidence
 
-The common path in `SKILL.md` is shared by Hermes and portable hosts. The host
+The common path in `SKILL.md` is shared by every portable host. The host
 LLM interprets intent/authority once; the ACTIONS-backed helper performs checks
 and returns the receipt. Additional reasoning needs a concrete ambiguity,
 missing prerequisite, unresolved gate or failed operation. A failed receipt is
@@ -1067,15 +1067,13 @@ an answer, not an instruction to retry or silently stop/repair/start.
   absolute source directories; no adapter executes or routes lifecycle commands.
 - Claude Code and Codex load the explicit portable adapter, then any missing host
   contract/workflow together. They use the same common path, not a second router.
-- Hermes registration still requests `skill_view` for the canonical skill. That
-  discovery/tool boundary is not removed by this change.
 - A host that requires a model request after instruction/tool results still owns
   those continuations. Relay the safe receipt minimally; do not add another
   interpretation, validation or prose-polishing pass. Direct tool-result return
   is conditional on host support, not a new API or a claimed tested capability.
 
 Real observed model-request counts and host-required continuation counts are
-**unknown** for Pi, Claude Code, Codex and Hermes: no live host traces were
+**unknown** for Pi, Claude Code and Codex: no live host traces were
 collected. One `sendUserMessage`, a fake response or one helper process is not
 one measured model call. Worker inference and independent review are unchanged,
 not exercised by these fixtures and must be counted separately in live traces.

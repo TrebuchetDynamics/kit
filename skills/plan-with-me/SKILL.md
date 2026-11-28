@@ -4,8 +4,6 @@ description: "Plan together through questions and research."
 license: MIT
 metadata:
   version: 0.5.0
-  hermes:
-    tags: [interview, requirements, documentation, planning]
 ---
 
 # Plan With Me

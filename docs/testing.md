@@ -11,9 +11,8 @@ live acceptance.
 ## Component inventory and source closure
 
 Use `python3 scripts/check.py --list` for the maintained offline inventory and
-`python3 scripts/check.py PATH ...` for focused modules. Native Hermes source
-lives in `src/kit_runtime/`; portable packages retain their host adapters.
-Source/layout checks do not qualify installed models or delivery.
+`python3 scripts/check.py PATH ...` for focused modules. Portable packages retain
+their host adapters. Source/layout checks do not qualify installed models or delivery.
 
 ## Skill task-persistence contracts
 
@@ -42,9 +41,7 @@ instead of relying on the host.
 ### Other offline checks
 
 `tests/test_project_status.py` checks current project contracts and preserved live
-qualification boundaries. Native plugin status/list/update remain
-maintenance operations; their registration tests do not qualify live Telegram
-routing, gateway activation or model execution.
+qualification boundaries; it does not qualify model execution.
 
 README-audit fixtures exclude Markdown/HTML image examples in
 single-line backtick spans, including mixed prose and literal shorter backtick runs.
@@ -55,13 +52,6 @@ regressions. Large unmatched-delimiter, backslash, bracket and angle-prefix fixt
 have five-second subprocess bounds; fixture bytes must remain unchanged. Multiline
 code spans and ambiguous markup retain conservative auditing; these offline checks
 do not establish full CommonMark/hosted GitHub rendering compatibility.
-
-`python3 -m unittest discover -s tests -p test_preflight.py -v` includes runtime
-installation-facts shape regressions. Malformed root, packages,
-venv and environment values return a generic safe error before any validator
-launch; valid facts retain interpreter selection, validation failure and missing
-parser fallback. Fixture metadata/configuration remain byte-identical. These are
-offline fixtures, not live setup or installed-profile qualification.
 
 `python3 -m unittest discover -s skills/docs-sync/scripts -p test_docs_manifest.py -v`
 checks malformed array/object role statuses through `validate`, `check` and `stale`. Each command must return exit 1 with a role-specific diagnostic,
@@ -79,28 +69,14 @@ checks. Commented headings do not consume visible duplicate suffixes;
 visible headings, explicit anchors and literal comment markers in code spans remain
 supported. CLI fixtures also verify that checking leaves source files unchanged.
 
-Collector response regressions also mask complete Cookie, Set-Cookie,
-Authorization and Proxy-Authorization lines, including comma/semicolon tails,
-case and indentation variants, through native and legacy response consumers. They preserve surrounding status/check lines and source bytes.
-This covers actual header lines, not comprehensive secret redaction; installed
-adoption and product recovery remain separate.
-
 Removed executor/profile-consult framing checks remain
 [immutable evidence](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/testing.md#other-offline-checks),
-not current test commands or live qualification. Retained collector behavior must
-be checked through its maintained tests.
-
-Fleet execution metadata is bounded to twelve recent records per existing job,
-not twelve across a profile: frequent sync occurrences must not hide paused
-or infrequent development jobs. Collector regressions cover cross-job starvation,
-removed/empty job sets, schema refusal and unchanged SQLite bytes. These metadata
-windows do not bind output files to executions or establish a no-progress streak;
-newest completed responses and original run identity still need separate verification.
+not current test commands or live qualification.
 
 ```sh
 uv run --python 3.12 --no-project --with-requirements requirements-test.txt python scripts/check.py
 python3 scripts/check.py --list
-python -m py_compile __init__.py scripts/bundle.py scripts/install-graphify.py
+python -m py_compile scripts/install_menu.py scripts/check.py
 node --test tests/portable_pi.test.mjs
 ```
 
@@ -124,53 +100,13 @@ inventory without importing tests. Symlinked test modules and maintained-directo
 components below the resolved checkout root are skipped, so a linked `skills` or
 workflow parent cannot redirect discovery into external tests. Checkout-root aliases
 remain supported. This static check is not protection against concurrent hostile
-filesystem replacement. Model, installed native backend and optional
-integration suites are explicitly excluded with reasons; live opt-in flags are
-removed from test subprocesses. Passing this gate does not qualify model/native
+filesystem replacement. Suites that need an unavailable environment are excluded
+with reasons; live opt-in flags are removed from test subprocesses. Passing this gate does not qualify model/native
 execution. Tests use temporary Git fixtures and may write offline scratch receipts.
 
 Historical suite inventories and timing reports belong in Git history, not a
-completed-task report. This cleanup migrates no installed profiles or schedules
-and supplies no live qualification.
-
-`tests/integration_plugin.py` additionally checks the actual Hermes manifest
-reader, native install security scan, loader, bundled skill reader, Telegram menu, CLI queue, gateway routing,
-and unload behavior. Run it using Hermes' Python environment with the Hermes
-source root on `PYTHONPATH`. It uses a temporary profile and a capture callback
-instead of sending Telegram messages or calling a model. Native command collisions,
-such as Hermes' `/goal`, require a registered namespaced Kit skill fallback; they do
-not replace the Hermes command or excuse a missing skill.
-
-The focused profile-policy fixtures in `tests/test_plugin.py`,
-`tests/test_preflight.py` and `tests/test_install_plugins.py` cover fresh interactive
-profiles, explicit autonomous selection, retained approval/turn values, canonical
-and legacy settings, opt-outs and read-only setup previews. The native loader check
-also verifies interactive values, explicit autonomy, opt-out and idempotent writes.
-It does not qualify a live profile or unattended model behavior.
-
-`tests/integration_bundle.py` checks an existing isolated `HERMES_HOME`: all
-loaded skill content, CLI queues and captured gateway routing for every generated
-alias, plus the expected-import inventory. Run it with the same Hermes Python
-environment and source `PYTHONPATH`. It exits nonzero for missing plugins, missing,
-blocked or ambiguous skills, and skill sources not yet set up. Native command registration is inspected; upstream actions, external
-services, and live Telegram delivery are not invoked.
-
-From this repository's root, use the installed Hermes interpreter and source
-checkout (adjust `HERMES_SOURCE` if Hermes is installed elsewhere):
-
-```sh
-HERMES_PYTHON="$(hermes --print-runtime-command --module runpy | python -c 'import json, sys; print(json.load(sys.stdin)[0])')"
-HERMES_SOURCE="$HOME/.hermes/hermes-agent"
-PYTHONPATH="$HERMES_SOURCE" "$HERMES_PYTHON" -c 'import hermes_bootstrap, runpy, sys; runpy.run_path(sys.argv[1], run_name="__main__")' tests/integration_plugin.py
-```
-
-For the full bundle check, first provide an existing isolated profile where the
-bundle and its declared imports have already been installed. Do not point this
-check at your live profile; plugin loading may write runtime records.
-
-```sh
-HERMES_HOME="/path/to/isolated-installed-profile" PYTHONPATH="$HERMES_SOURCE" "$HERMES_PYTHON" -c 'import hermes_bootstrap, runpy, sys; runpy.run_path(sys.argv[1], run_name="__main__")' tests/integration_bundle.py
-```
+completed-task report. This cleanup migrates no schedules and supplies no live
+qualification.
 
 By default the pre-push hook runs only the revision guards and core contracts.
 It does not select or run test modules. CI still runs the full suite.
@@ -214,8 +150,8 @@ before you treat the tree as broken; a second failure there is the tree's.
 `shard` jobs run the full offline Python suite with Python 3.12, each with
 `check.py --shard I/8`. The first shard also checks plugin syntax and runs the Pi
 adapter tests with Node 22. The `test` job passes only when every shard passed. Inspect
-[the workflow](../.github/workflows/test.yml) for its current inventory. Live
-Telegram delivery and model execution require separate qualification.
+[the workflow](../.github/workflows/test.yml) for its current inventory. Model
+execution requires separate qualification.
 
 ## Live qualification harness (A–E)
 
@@ -232,70 +168,9 @@ minimum-version guarantee:
 | Layer | Evidence / boundary |
 | --- | --- |
 | Host | Ubuntu 24.04.4, x86_64 |
-| Hermes | `v0.21.6+556.g6a2662a`, source `6a2662a4aaad68e1b75f6e7ac789409aa653abf7` |
-| Native integration interpreter | Hermes-managed Python 3.14.7 |
-| Offline tests | Python 3.12; the suite also requires PyYAML (profile audit, portable package and Telegram menu tests) and mypy 1.19.1 for the strict selection/authority typecheck |
+| Offline tests | Python 3.12; the suite also requires PyYAML (portable package tests) and mypy 1.19.1 for the strict selection/authority typecheck |
 | CI declaration | Ubuntu runner and Python 3.12 in [.github/workflows/test.yml](../.github/workflows/test.yml); a declaration is not a current passing CI result |
-| Required Hermes APIs | `register_skill`, `register_command`, origin-aware `inject_message`, profile-scoped loader and native gateway control socket |
-| Other Hermes revisions / macOS / Windows | Not qualified by these receipts; shell setup requires Bash |
-
-The manifest does not declare `requires_hermes`, although current Hermes loaders
-enforce it when present. Do not interpret
-“current Hermes” as compatibility evidence. Check `hermes --version`, then use the
-native integration tests against that interpreter. There is no supported claim
-that an earlier version has all required APIs.
-
-`tests/integration_autoresearch.py` checks all research aliases, CLI queues,
-the Telegram menu (current workflows advertised, Autoresearch compatibility aliases
-not advertised) and captured gateway origin routing. Like the main plugin
-integration test, it runs without a live model or message delivery.
-
-## Core versus full-stack diagnostics
-
-`python3 -m unittest discover -s tests -p test_doctor_modes.py` covers core success
-with external gaps, strict full-stack failure, command ownership, missing skill
-registration, plugin load failure and readable/JSON output. The native plugin
-integration fixture additionally loads a real bundle-only profile and requires
-core success plus full-stack failure from the same installed state.
-These checks do not call a model or send a Telegram message. Use the separate
-[operator-run onboarding checks](onboarding.md) for those outcomes.
-
-## Installer preflight
-
-`test_preflight.py` covers admission failure before any installer call, unchanged
-profile snapshots, incomplete destination conflicts, source timeouts and the core
-policy/memory preview. Run it with Hermes's managed Python as well to exercise
-strict YAML rejection, preservation of custom memory providers and secret-safe errors (those parser
-cases skip when ruamel.yaml is unavailable). `test_complete_setup.py` separately
-checks orchestration after admission, including no installation calls on dry-run,
-and rejects missing declared native source/bootstrap payloads before stages run.
-The setup/provisioning and Graphify fixtures copy the same-release Python
-closure and exercise real `src/kit_runtime` bodies through the `scripts/`
-entrypoints; external commands and gateway responses remain private fixtures.
-No passing preview is evidence of a live model or Telegram workflow.
-
-## Update self-healing and Telegram menu checks
-
-The implemented update/menu changes in `b021c54` have focused offline contracts:
-
-```sh
-python3 -m unittest discover -s tests -p test_telegram_menu_policy.py
-python3 -m unittest discover -s tests -p test_setup_runtime.py
-python3 -m unittest discover -s tests -p test_update_bundle.py
-```
-
-Menu fixtures check that only current workflow names receive priority, stale
-compatibility entries are removed without deleting user choices, reconciliation
-is idempotent, and typed compatibility registrations remain available with required
-text hints. Finalization fixtures reject settings that remain unhealed after load.
-Local-Git updater fixtures check `settings_healed`, one requested restart after
-change, `not_running` for an absent gateway, no restart on an unchanged retry, and
-`pending` with no second restart while a requested one is still draining.
-
-These use temporary profiles and mocked activation/restart calls. Passing them
-proves the local contracts, not that a real gateway drained, reconnected, refreshed
-Telegram menus, delivered a message or executed a model. Inspect the actual update
-receipt and activation/transport evidence before making those live claims.
+| macOS / Windows | Not qualified by these receipts; shell setup requires Bash |
 
 ## Task store checks
 
@@ -335,9 +210,8 @@ Removing completed-task records does not qualify the following current surfaces.
 Any still-required proof remains an open product obligation, under its original
 scope and owner/live gates, not a reason to recreate completed-task reports:
 
-- Installed-profile registration, legacy settings preservation, native security
-  admission, gateway activation and Telegram delivery require their actual host
-  checks. Source tests and installation-script fixtures are insufficient.
+- Installed host registration requires its actual host checks. Source tests and
+  installation-script fixtures are insufficient.
 - Real service stop/disable/failure-state cleanup, restart configuration, forced
   conversion, release/grant binding, interrupted-worker adoption and observation
   recovery need scoped live proof. Do not operate an unrelated service or infer

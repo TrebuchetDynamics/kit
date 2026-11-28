@@ -37,8 +37,8 @@ or cancel unresolved product acceptance.
 Kit keeps `/plan-with-me` and `/plan-for-me`: both publish issue-based plans under
 the same handoff contract. Orbi is the separate delivery project, not a renamed
 Kit executor. Retained fix/apply modes preserve their accepted scope and shared
-ownership/review/PR gates; planning stops after publication. Hermes terminal
-maintenance commands and marketplace names are not support for the removed runner.
+ownership/review/PR gates; planning stops after publication. Marketplace names
+are not support for the removed runner.
 Explicit commands authorize [activation](#kit-lifecycle-skill); live qualification
 requires separate evidence.
 
@@ -154,7 +154,7 @@ This is a one-time report for maintainers, not a step in every `/unblock` pass.
    registrations removed, while preserving recovery evidence. Do not reinstall the
    removed CLI to inspect state. Do not stop unrelated gateways.
 2. Report actual host inventory separately; source changes alone do not prove host
-   service removal. Ordinary Kit/Pi/Hermes/Claude/Codex functionality remains.
+   service removal. Ordinary Kit/Pi/Claude/Codex functionality remains.
    Removing the old executor neither activates Orbi nor qualifies its delivery.
 3. Reconcile unfinished local tasks against open/closed issues, PRs and merged
    evidence, following [Plan Handoff](../skills/shared/PLAN-HANDOFF.md).
@@ -175,7 +175,7 @@ prerequisites before installation: its documented baseline includes GitHub CLI
 provider and a user scheduler session. Install Orbi from its release channel in a
 separate deployment checkout, not inside Kit or a delivery worktree. Inspect the
 installer or follow upstream's editable `uv tool` installation instructions.
-Do not patch upstream Hermes or change agent credentials to make setup pass.
+Do not patch upstream Orbi or change agent credentials to make setup pass.
 
 The [suite installer](installation.md#orbi-cli) does not create repository
 deployments. Selecting Orbi explicitly authorizes a host-wide stop, stable release

@@ -32,7 +32,7 @@ Do not launch new work after pause/stop or promise progress after the session en
 ## Host and technique translation
 
 Use the current host's exposed file, shell, search and delegation capabilities;
-Hermes, Pi, Codex and Claude Code do not need another host installed. No pi-toolset
+Pi, Codex and Claude Code do not need another host installed. No pi-toolset
 package, extension, hooks, shell controller or scanner is installed by these skills.
 Upstream names describe capabilities, not tools granted by the protocol:
 

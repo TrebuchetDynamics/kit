@@ -31,7 +31,6 @@ class CheckWorkflowTests(unittest.TestCase):
         steps = jobs['shard']['steps']
         commands = [step['run'] for step in steps if 'run' in step]
         self.assertEqual(commands[1:], [
-            'python -m py_compile __init__.py',
             'node --test tests/portable_pi.test.mjs',
             f'python scripts/check.py --shard ${{{{ matrix.shard }}}}/{len(shards)}',
         ])
@@ -72,17 +71,15 @@ class OfflineCheckTests(unittest.TestCase):
     def test_listing_is_import_free_and_uses_owned_directories(self):
         sentinel = "raise RuntimeError('unsafe import must never run')\n"
         self.write('tests/test_unit.py', sentinel)
-        self.write('tests/native/test_runtime.py', sentinel)
+        self.write('skills/git-commit-push/scripts/test_runtime.py', sentinel)
         self.write('vendor/examples/test_external.py', sentinel)
         self.write('skills/docs-sync/references/vendor/test_external.py', sentinel)
-        self.write('tests/integration_bundle.py', sentinel)
-        self.write('tests/integration_plugin.py', sentinel)
+        self.write('tests/integration_live.py', sentinel)
         result = self.run_check('--list')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('RUN tests/test_unit.py', result.stdout)
-        self.assertIn('RUN tests/native/test_runtime.py', result.stdout)
-        self.assertIn('EXCLUDE tests/integration_bundle.py [integration]', result.stdout)
-        self.assertIn('EXCLUDE tests/integration_plugin.py [integration]', result.stdout)
+        self.assertIn('RUN skills/git-commit-push/scripts/test_runtime.py', result.stdout)
+        self.assertNotIn('integration_live.py', result.stdout)  # only test_*.py modules run
         self.assertNotIn('test_external.py', result.stdout)
         self.assertNotIn('unsafe import', result.stdout + result.stderr)
 
@@ -192,33 +189,13 @@ class OfflineCheckTests(unittest.TestCase):
                 self.assertTrue(selection['full'])
                 self.assertEqual(selection['tests'], ['tests/test_new.py', 'tests/test_old.py'])
 
-    def test_source_guard_inspects_owners_not_just_public_shims(self):
-        from src_fixture import copy_sources
-        copy_sources(self.root)
-        self.write('tests/test_one.py', 'import unittest\nclass One(unittest.TestCase):\n    def test_one(self): pass\n')
-        self.write('scripts/bundle.py', "bootstrap.execute(globals(), 'src/kit_runtime/bundle.py')\n")
-        owner = self.write('src/kit_runtime/bundle.py', 'def broken(:\n')
-        result = self.run_check('tests/test_one.py')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('src/kit_runtime/bundle.py', result.stdout)
-        owner.unlink()
-        result = self.run_check('tests/test_one.py')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('missing selected-release source', result.stdout)
-        self.write('src/kit_runtime/bundle.py', 'VALUE = 1\n')
-        result = self.run_check('tests/test_one.py')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
     def test_current_inventory_partitions(self):
         import runpy
         checker = runpy.run_path(str(SCRIPT))
         actual = {p.relative_to(ROOT).as_posix(): p for p in checker['discover_tests'](ROOT)}
-        self.assertEqual(checker['TEST_DIRS'], ('tests', 'tests/native',
-                         'skills/docs-sync/scripts', 'skills/git-commit-push/scripts'))
+        self.assertEqual(checker['TEST_DIRS'], ('tests', 'skills/docs-sync/scripts', 'skills/git-commit-push/scripts'))
         self.assertTrue(actual)
-        self.assertEqual(set(checker['EXCLUSIONS']), {
-            'tests/integration_plugin.py', 'tests/integration_autoresearch.py',
-            'tests/integration_bundle.py'})
+        self.assertEqual(checker['EXCLUSIONS'], {})
         partitions = [[(str(folder.relative_to(ROOT)), name)
                        for folder, names in checker['units'](ROOT, list(actual.values()), shard=(i, 3))
                        for name in names] for i in range(3)]
@@ -251,7 +228,7 @@ class OfflineCheckTests(unittest.TestCase):
     def test_symlinked_directory_components_never_import_external_tests(self):
         cases = (('tests', 'test_external.py'),
                  ('skills', 'docs-sync/scripts/test_external.py'),
-                 ('tests/native', 'test_external.py'))
+                 ('skills/git-commit-push/scripts', 'test_external.py'))
         base = self.root
         for index, (link_name, module_name) in enumerate(cases):
             with self.subTest(component=link_name):
@@ -288,16 +265,14 @@ class OfflineCheckTests(unittest.TestCase):
         self.write('tests/test_environment.py', '''import os, unittest
 class Check(unittest.TestCase):
     def test_environment(self):
-        for name in ('CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX', 'HERMES_NATIVE_HANDOFF_TEST', 'HERMES_NATIVE_REGISTRATION_TEST',
-                     'KIT_MAIN_CHECK', 'KIT_CACHE'):
+        for name in ('CONTAINMENT_LINUX_TESTS', 'RUN_CONTROLLER_BRIDGE_LINUX', 'KIT_MAIN_CHECK', 'KIT_CACHE'):
             self.assertFalse(name in os.environ, name + ' leaked into offline tests')
         self.assertNotIn('KIT_PORT_BASE', os.environ)
         self.assertTrue(os.path.isdir(os.environ['TMPDIR']), 'the offline check must supply TMPDIR')
 ''')
-        self.write('tests/integration_bundle.py',
+        self.write('tests/integration_live.py',
                    "raise RuntimeError('live integration imported')\n")
         env = dict(os.environ, CONTAINMENT_LINUX_TESTS='1', RUN_CONTROLLER_BRIDGE_LINUX='1',
-                   HERMES_NATIVE_HANDOFF_TEST='1', HERMES_NATIVE_REGISTRATION_TEST='1',
                    KIT_MAIN_CHECK='false', KIT_CACHE='/elsewhere', KIT_PORT_BASE='20300')
         result = self.run_check(env=env)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -307,8 +282,6 @@ class Check(unittest.TestCase):
 
     def test_a_broken_tree_fails_before_any_test_runs(self):
         """Conflict markers twice reached main in Python modules; the tree guard runs first."""
-        from src_fixture import copy_sources
-        copy_sources(self.root)
         guard = ROOT / 'scripts/tree_guard.py'
         self.assertTrue(guard.is_file(), 'missing tree guard')
         # Every helper check.py runs before the tests, not only the guard: a new one it named
@@ -425,7 +398,7 @@ class Check(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('Ran 1 test', result.stdout)
         self.assertNotIn('not selected', result.stdout)
-        for path in ('tests/missing.py', 'vendor', '../outside', 'tests/integration_bundle.py'):
+        for path in ('tests/missing.py', 'vendor', '../outside', 'tests/integration_live.py'):
             with self.subTest(invalid=path):
                 result = self.run_check('tests/test_selected.py', path)
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
@@ -533,14 +506,14 @@ class B(support.External):
         body = ''.join(f'''    def test_{n}(self):
         Path('ran-{n}').write_text(str(os.getpid()))
 ''' for n in range(24))
-        split = self.write('tests/native/test_runtime.py', 'import os, unittest\nfrom pathlib import Path\n'
+        split = self.write('skills/git-commit-push/scripts/test_runtime.py', 'import os, unittest\nfrom pathlib import Path\n'
                            'class Runner(unittest.TestCase):\n' + body)
-        self.write('tests/native/test_other.py', 'import unittest\nfrom pathlib import Path\n'
+        self.write('skills/git-commit-push/scripts/test_other.py', 'import unittest\nfrom pathlib import Path\n'
                    'class Other(unittest.TestCase):\n'
                    "    def test_a(self): Path('ran-other-a').write_text('')\n"
                    "    def test_b(self): Path('ran-other-b').write_text('')\n")
         # Tests the inventory cannot list without importing run whole, on the first shard only.
-        self.write('tests/native/test_dynamic.py', 'import unittest\nfrom pathlib import Path\n'
+        self.write('skills/git-commit-push/scripts/test_dynamic.py', 'import unittest\nfrom pathlib import Path\n'
                    'def load_tests(loader, tests, pattern):\n'
                    "    return unittest.TestSuite([unittest.FunctionTestCase(lambda: Path('ran-dynamic').write_text(''))])\n")
         folder = split.parent
@@ -548,7 +521,7 @@ class B(support.External):
         for shard in ('1/3', '2/3', '3/3'):
             for marker in folder.glob('ran-*'):
                 marker.unlink()
-            result = self.run_check('tests/native', '--shard', shard)
+            result = self.run_check('skills/git-commit-push/scripts', '--shard', shard)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn(f'Shard {shard[0]} of 3', result.stdout)
             seen[shard] = {p.name for p in folder.glob('ran-*')}
@@ -558,13 +531,13 @@ class B(support.External):
         self.assertEqual(sorted(len(names & {f'ran-{n}' for n in range(24)}) for names in seen.values()), [8, 8, 8])
         for marker in folder.glob('ran-*'):
             marker.unlink()
-        result = self.run_check('tests/native', '--exclude', 'tests/native/test_runtime.py', '--exclude', 'tests/native/test_dynamic.py')
+        result = self.run_check('skills/git-commit-push/scripts', '--exclude', 'skills/git-commit-push/scripts/test_runtime.py', '--exclude', 'skills/git-commit-push/scripts/test_dynamic.py')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual({p.name for p in folder.glob('ran-*')}, {'ran-other-a', 'ran-other-b'})
         self.assertIn('Offline inventory: 1 modules', result.stdout)
         for invalid in (('--exclude', 'tests/missing.py'), ('--exclude', '../outside'), ('--shard', '4/3'), ('--shard', 'x')):
             with self.subTest(invalid=invalid):
-                result = self.run_check('tests/native', *invalid)
+                result = self.run_check('skills/git-commit-push/scripts', *invalid)
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertNotIn('CHECK', result.stdout)
 

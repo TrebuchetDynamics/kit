@@ -12,7 +12,7 @@ Apply the [shared Ponytail method](../../../skills/shared/PONYTAIL.md) and
 Read the [host contract](../COMMON.md), then follow the
 [host-neutral APK Get workflow](../../../skills/apk-get/SKILL.md).
 Resolve its verification script from that workflow's directory.
-Use this host's native tools. No Hermes installation is required.
+Use this host's native tools. No other host installation is required.
 No app-path argument is required: discover the app in the current repository.
 Upload the verified release APK through the host's installed `s3upload`, then
 return its download URL. Preserve read-only/network limits and delivery exclusions.

@@ -2,9 +2,6 @@
 name: lgtm
 description: "Accept the latest recommendation and continue."
 version: 0.7.0
-metadata:
-  hermes:
-    tags: [approval, continuation, git, delivery]
 ---
 
 # LGTM — yes, continue

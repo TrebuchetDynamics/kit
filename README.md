@@ -6,8 +6,7 @@
 
 **Plan with Kit. Deliver through Orbi.**
 
-Kit supplies planning skills for **Pi**, **Claude Code** and **Codex**, with optional
-**Hermes** integration. Kit researches, decides and decomposes accepted intent into
+Kit supplies planning skills for **Pi**, **Claude Code** and **Codex**. Kit researches, decides and decomposes accepted intent into
 complete **GitHub Issues**, the executable backlog. **Orbi** is a separate delivery
 project, not Kit's bundled executor: it uses Pi to implement and test, opens PRs,
 obtains independent review and applies merge gates. Planning stops after publication.
@@ -28,15 +27,10 @@ qualify live delivery. Preserve existing work and recovery evidence.
 ## Install
 
 > **Before you install:** Give unattended agents no production credentials.
-> Hermes defaults to interactive approvals; autonomous policy requires explicit selection.
-> Full setup targets every live profile.
-> Review the [policy and opt-out](docs/installation.md#install) before enabling it,
-> plus the full [safety notes](#safety-before-installing).
+> Review the [safety notes](#safety-before-installing).
 
 Start with Pi, Claude Code or Codex and configure that host's model. These are the
-primary portable targets. Hermes is optional and adds a native fleet with its own
-policy defaults; review its safety notes before enabling it. Paseo hosts any of the
-three portable agents.
+supported targets. Paseo hosts any of the three portable agents.
 
 | Coding-agent host | Package | Example workflow |
 | --- | --- | --- |
@@ -44,7 +38,6 @@ three portable agents.
 | **Claude Code** | Marketplace plugin | `/kit:plan-with-me` |
 | **Codex** | Marketplace plugin | `$kit:plan-with-me` |
 | **OpenCode** | Optional planning commands | `/plan-with-me`, `/plan-for-me` |
-| **Hermes** | Optional native plugin | `/plan-with-me` |
 
 To use the skills inside Paseo, install
 Kit in the coding-agent host, then run that agent in a Paseo workspace.
@@ -94,43 +87,22 @@ for installation paths and removal.
 Use Kit skills inside a Paseo-hosted Pi, Claude Code or Codex session.
 Kit no longer ships a Paseo executor plugin or an Orbi dashboard.
 
-### Hermes (optional)
+<a id="hermes-optional"></a>
 
-Hermes adds a native fleet, profile setup and scheduling. Fresh profiles default to
-manual approvals, enabled confirmations and 90 turns. Autonomous policy requires
-explicit selection; existing approval/turn values stay when no policy is selected.
-Full setup targets every live profile. Read
-[Hermes installation and policy](docs/installation.md#install) before enabling it.
-
-Default-profile commands; add `-p work` after `hermes` for a named profile.
-**Keep all your custom runtime settings?** Before enabling, run
-`hermes config set plugins.entries.kit.settings.apply_runtime_defaults false`
-([policy selection and opt-out details](docs/installation.md#install)). Otherwise
-install with the interactive default:
-
-```sh
-hermes plugins install TrebuchetDynamics/kit
-hermes plugins enable kit
-hermes kit doctor --core
-```
-
-Fresh Hermes installs use `plugins/kit` and enable `kit`.
-[Duplicate/foreign registrations block setup](docs/installation.md#install).
-
-The opt-out does not undo prior changes or stop full setup from configuring
-external integrations. Existing memory providers and stores are preserved.
+Kit no longer supports Hermes. An earlier Hermes install is left unchanged; see
+[removal](docs/uninstall.md#earlier-hermes-installs).
 
 Restart your host session to discover the installed skills. See the
 [cross-host guide](docs/cross-host.md) for reload commands, updates and removal.
 
 ## First use in your project
 
-Start the host you installed (`pi-bolt`, `claude`, `codex` or `hermes`). Ask for the
+Start the host you installed (`pi-bolt`, `claude` or `codex`). Ask for the
 read-only Orbi action reference first. No repository or deployment is needed:
 
 | Host | Read-only help |
 | --- | --- |
-| Pi / Hermes | `/orbi help` |
+| Pi | `/orbi help` |
 | Claude Code | `/kit:orbi help` |
 | Codex | `$kit:orbi help` |
 
@@ -195,7 +167,7 @@ refresh and activation of verified local Linux deployments. Use `--skip orbi` to
 leave them untouched, including when paused. Activation requires verified unit and
 file ownership, a validated release pin and a passing `orbi check`.
 
-Use `/orbi [status|version|setup|start|update|stop|prune|help]` in Pi or Hermes, `/kit:orbi` in Claude
+Use `/orbi [status|version|setup|start|update|stop|prune|help]` in Pi, `/kit:orbi` in Claude
 Code, or `$kit:orbi` in Codex. The [Orbi skill](skills/orbi/SKILL.md) provides:
 
 | Action | Effect and boundary |
@@ -297,13 +269,13 @@ action, never a silent preparation-only success. Keep credentials out of Git and
 
 From a checkout, `install.sh` installs every available component with live progress:
 the Pi package, the Pi-Bolt native Pi executable, the Orbi CLI, the `tx` tmux
-launcher, and the Hermes, Claude Code and Codex plugins with their complete skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
+launcher, and the Claude Code and Codex plugins with their complete skill sets. A plugin host whose CLI is missing is skipped and explained; each plugin
 item runs that host's own install command. Pi-Bolt is installed first and its
 verified destination executable installs the Kit Pi package. `tx` keeps an existing `~/.tmux.conf`.
 
 ```sh
 git clone https://github.com/TrebuchetDynamics/kit && cd kit
-./install.sh                    # full suite, live output and exact commands
+./install.sh                    # full suite with live output
 ./install.sh --menu             # arrows, Space toggles, Enter installs
 ./install.sh --dry-run          # preview the full suite without installing
 ./install.sh --only pi,tx --dry-run
@@ -338,18 +310,17 @@ stash remains available for manual recovery. Unpacked non-Git releases still wor
 `--no-pull` or `KIT_INSTALL_NO_PULL=1` explicitly installs the checkout as-is without
 stashing or pulling. `--help`, `--list` and `--dry-run` never stash or pull.
 
-`--full` (`--all`) is the default. Hermes fleet setup shows skill counts, changes,
-profile status and timings; add `--verbose` (`-v`) for individual skips, full
-setup receipts and completed Orbi deployment steps. Missing hosts other than Pi
+`--full` (`--all`) is the default. Output shows each component's heading, the host
+tool's own output, the result and its time; add `--verbose` (`-v`) for step
+contracts, helper commands, every service decision and completed Orbi deployment steps. Missing hosts other than Pi
 are skipped, while an explicitly requested missing host, such as `--only codex`,
 fails. Preview mode installs nothing. Both entrypoints check for updates on every
 run under existing source/pin policies.
 Only complete changes to installed payloads or effective settings can restart a proven active consumer, once.
 Outside the explicit Orbi fleet refresh below, unchanged payloads request no service restarts and paused or stopped services stay untouched. Unrelated services are not restarted.
-Hermes owns its native gateway restart or deferral decision. Unknown input or ownership evidence holds with a manual next action.
+Unknown input or ownership evidence holds with a manual next action.
 See [restart scope and failure handling](docs/installation.md#full-suite-from-a-checkout).
-Hermes still runs its complete fleet setup and its own dependency and
-security prompts; use `--yes-deps` only when you intend to consent to them.
+Kit no longer supports Hermes; `--only hermes` fails and changes nothing.
 
 Orbi is included by default; use `./install.sh --only orbi` or `--skip orbi`.
 The `orbi` CLI is brought to the newest official stable release of
@@ -478,24 +449,20 @@ task-store admission step and no synchronization with `tasks/`.
 
 ## Safety before installing
 
-Portable hosts keep their own settings. Fresh Hermes profiles use interactive approvals
-and 90 turns. Existing approval and turn values stay unless you explicitly select a
-policy. Autonomous policy disables prompts and removes the turn cap. Full setup targets
-every live profile and adds external integrations, but preserves existing memory settings. Read
-[Hermes installation and policy](docs/installation.md) and
-[removal and recovery](docs/uninstall.md) before enabling it. Give unattended agents no
+Each host keeps its own approval and permission settings; Kit does not change them.
+Read [installation](docs/installation.md) and
+[removal and recovery](docs/uninstall.md) first. Give unattended agents no
 production credentials, and start with repositories where an automatic local commit is
 acceptable.
 
 ## Updating
 
 **Full suite:** explicitly invoke `/update-kit` (Claude Code: `/kit:update-kit`;
-Codex: `$kit:update-kit`; Hermes also accepts `/update_kit`). It keeps the complete
+Codex: `$kit:update-kit`). It keeps the complete
 upstream `main` checkout at `${XDG_DATA_HOME:-$HOME/.local/share}/kit/source` and
 reruns its installer, even at the same revision. Default scope may bootstrap
-Pi-Bolt (never stock Pi) and restart only proven affected active integrations. Unchanged reruns do not restart services. Restricted Hermes cascades
-and no-restarts requests are refused before mutation. `--no-reload` defers Hermes setup wiring,
-not other affected-host restarts. See [Update Kit safety, preview and recovery](docs/installation.md#update-kit).
+Pi-Bolt (never stock Pi) and restart only proven affected active integrations. Unchanged reruns do not restart services.
+No-restarts requests are refused before mutation. See [Update Kit safety, preview and recovery](docs/installation.md#update-kit).
 Reload the current agent session afterward; installation is not live qualification.
 
 **Pi-Bolt:** update the package with
@@ -505,13 +472,6 @@ stock Pi can use `pi update git:github.com/TrebuchetDynamics/kit` on the shared 
 **Claude Code and Codex:** update the marketplace and plugin through their CLI. See
 [cross-host updates](docs/cross-host.md) for the exact commands.
 
-**Hermes:** `hermes kit update` updates every live profile;
-`hermes kit update --check` previews it. See
-[update behavior and recovery](docs/installation.md#update-all-profiles). Files updated
-does not mean a gateway is running the new code; inspect the printed receipt for
-pending activation. Old profile skills require an authorized normal update and reload;
-source deletion or reinstall alone does not retire preserved native copies.
-
 ## What verification proves
 
 | Host | Evidence and limits |
@@ -519,14 +479,13 @@ source deletion or reinstall alone does not retire preserved native copies.
 | Pi | Earlier isolated installation and resource discovery, plus package/command tests; the current package still needs renewed native/live qualification. |
 | Claude Code | Plugin validation and an earlier isolated install are recorded; no live model workflow is demonstrated in that record. |
 | Codex | Earlier isolated installation and skill discovery, plus portable-package checks; the current package still needs renewed native/live qualification. |
-| Hermes | Offline tests, native registration/integration checks and gateway activation receipts. Live model behavior and Telegram delivery require separate live checks. |
 
 Package contents have changed since some isolated-install runs. The
 [cross-host verification record](docs/cross-host.md#behavior-and-verification) names the
 tested versions and gaps; [testing and compatibility](docs/testing.md) covers host-specific checks.
 Use GitHub issue/PR evidence and `orbi status`/`orbi doctor` for current delivery.
 Legacy fleet diagnostics remain recovery-only. No registration or package test
-proves model output quality, Git delivery or live messaging execution.
+proves model output quality or Git delivery.
 
 ## Project status
 
@@ -534,7 +493,7 @@ The offline evidence is broad and the design is ambitious, but **sustained live
 reliability is not yet proven**. An outside assessment (2026-10-21) rated the concept
 and potential value highly and proven reliability at 5/10. Its warnings: do not spend
 more effort improving the toolset than building products with it, and take
-explicit autonomous policy and retained permissive profile settings seriously.
+permissive host settings seriously.
 The next step is a 30-day evaluation on real repositories with controlled permissions — tasks completed without intervention,
 regressions, owner attention, cost per verified task, time to merge and crash recovery.
 Measure the new loop through GitHub history and Orbi diagnostics. The

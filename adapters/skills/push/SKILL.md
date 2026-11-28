@@ -12,4 +12,4 @@ Use the [ASD-STE100 and project language rules](../../../skills/shared/COMMUNICA
 
 Read the [host contract](../COMMON.md), then follow the
 [host-neutral Push workflow](../../../skills/push/SKILL.md).
-Use this host's Git and file tools; no Hermes runtime is required.
+Use this host's Git and file tools; no other host runtime is required.

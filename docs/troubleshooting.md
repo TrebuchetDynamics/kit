@@ -1,154 +1,53 @@
 # Troubleshooting
 
 Symptom-first fixes for installing and using Kit. Each entry links to
-the owning guide; procedures are not repeated here. Start with the diagnostics:
+the owning guide; procedures are not repeated here. Start with the installer:
 
 ```sh
-hermes kit doctor --core     # bundled skills and commands only
-hermes kit doctor --json     # full stack, machine-readable
+./install.sh --list       # which components are available on this machine
+./install.sh --dry-run    # what a refresh would do, without changing anything
 ```
 
+For a first check in a project, follow [first use](../README.md#first-use-in-your-project).
 Use GitHub Issues/PRs and read-only Orbi diagnostics for delivery status.
-`hermes kit doctor --json` reports command owners and registration/setup
-gaps; Hermes' `/commands` omits plugin commands. Diagnostics never prove that a
-model ran, a worker is available or a Telegram message was delivered.
+Installer output never proves that a model ran or a worker is available.
 
 ## Commands
 
 ### A workflow command is not recognized
 
-- **Check:** `hermes kit doctor --json` and `hermes kit doctor --core`.
-- **Plugin not loaded or not enabled in this profile:** plugins are enabled per
-  profile. Run `hermes -p PROFILE plugins enable kit`; see
-  [first use](onboarding.md).
-- **Name owned by another plugin:** an existing command keeps its name. The
-  bundle logs `Skipping /NAME: command already exists` (with a `skill_view` hint
-  for most skills) and the skill stays available as `kit:NAME`; see [workflows](workflows.md#commands).
-  Previously installed Ponytail commands are preserved. Setup/doctor report verified
-  bundled alternatives in `bundled_skill_fallbacks`; use those qualified skill names.
-  This exception requires each local skill registration and does not certify the
-  external plugin's command behavior.
-- **Running gateway predates the update:** updating source does not refresh a
-  running gateway's registry. Reload the plugin or restart the gateway, then
-  open a new conversation.
-
-### A command is missing from Telegram's picker but works when typed
-
-This is expected. Menu capacity is limited, and compatibility spellings such as
-`/autoresearch_plan` are deliberately not advertised. `hermes kit doctor --json` reports registration
-(Hermes' `/commands` omits plugin commands); see [workflow commands in the picker](onboarding.md#workflow-commands-in-telegrams-picker).
-
-### Telegram still shows retired or old commands
-
-Handlers refresh on plugin reload, but the bot menu refreshes only when the
-gateway reconnects. `hermes kit update` restarts the running root gateway once when it
-changed anything and every profile activated cleanly, but only while no chat turn is
-in flight (`gateway_restart: requested`); otherwise it reports `deferred` and a
-waiter restarts at the first quiet moment within 6 hours, never forcing
-(`deferred_expired` if none came; `pending` while an earlier restart is
-outstanding). Profile-dedicated gateways are not detected. Inspect the printed
-receipt and durable restart outcome, not a chat acknowledgement. The update also
-clears leftover per-chat lists that still contain retired commands for the owner and
-home chats configured in each profile's `.env` (`chat_menus_healed`). Otherwise
-restart the gateway through your normal service procedure. See [update all profiles](installation.md#update-all-profiles).
+- **Wrong spelling for this host:** Claude Code uses `/kit:NAME`, Codex `$kit:NAME`
+  and Pi `/NAME`; see [cross-host setup](cross-host.md).
+- **Package not installed or not current:** run `./install.sh --only HOST` (for
+  example `--only claude`) and read its result; see [installation](installation.md).
+- **Running session predates the update:** a host session keeps the skills it
+  discovered at start. Start a new session.
+- **Hermes:** Kit no longer supports Hermes. Use Claude Code, Codex or Pi.
 
 ### The agent follows old skill instructions after an update
 
 Existing conversations keep instructions they already loaded. Open a new
 conversation.
 
-## Setup and doctor
+## Installation
 
-### `doctor --core` passes but plain `doctor` fails
+### A component failed or was held
 
-Plain `doctor` also requires the external integrations (speech,
-imported skills). The `integration_gaps` field names them. Run full setup to add
-them, or keep using the core workflows; see [installation](installation.md#install).
+Read the component's line in the summary: it names the cause and the retry
+command. Successful components stay installed; there is no automatic rollback.
+Fix the reported cause and rerun only that component with
+`./install.sh --only ITEM`. Add `--verbose` to see each step and helper command.
+See [full suite from a checkout](installation.md#full-suite-from-a-checkout).
 
-### Setup or a profile reports `incomplete`
+### The Orbi refresh held or left deployments stopped
 
-- Read the setup output or the profile's `errors` (update receipts record
-  `enable_exit` and `finalize_exit` per profile; details are in `run.log`); later
-  stages can fail after earlier ones wrote, and there is no automatic rollback.
-- Missing dependency consent: rerun with `--yes-deps`.
-- Native security scans and blocked dependencies are reported, never bypassed.
-- Fix the reported cause and rerun the same command; see
-  [preflight](installation.md#preflight-before-fleet-writes).
-
-### The `gateway` field is not `commands_reloaded`
-
-| Value | Meaning |
-| --- | --- |
-| `not_running` | No live gateway; commands load when it starts. |
-| `deferred_by_request` | You passed `--no-reload`. |
-| `unreachable` / `reload_incomplete` | Wiring was not verified; restart the gateway and rerun setup. |
-
-### Approval prompts disappeared after installing
-
-Fresh profiles default to interactive approvals. Prompts are disabled only by an
-explicit `runtime_policy: autonomous` or retained profile values such as
-`approvals.mode: off`. To restore the interactive policy, select
-`plugins.entries.kit.settings.runtime_policy: interactive`. To keep custom values,
-set `plugins.entries.kit.settings.apply_runtime_defaults` to `false` first, then
-restore your values. See [reference](reference.md#plugin-settings) and
-[removal and recovery](uninstall.md#restore-configuration-deliberately).
-
-### Settings return after you changed them
-
-An explicit `runtime_policy` reapplies its approval and turn values on each load.
-Without a policy selection, existing approval and turn values stay unchanged.
-Other bundle policy settings still apply unless `apply_runtime_defaults` is `false`.
-Opt out first to keep custom values.
-
-### `--dry-run` still changed configuration
-
-CLI startup can apply runtime defaults before setup's preflight runs. From a
-source checkout, `bash install-plugins.sh --yes-deps --dry-run` previews without booting
-Hermes; see the [README](../README.md#first-use-in-your-project).
-
-## Updates
-
-### Check the update result
-
-`hermes kit update` waits and prints its receipt. Inspect its real exit code,
-`status`, `error` and `action`; `incomplete` can retain partial changes and backups.
-Repair the named cause before retrying. A pending/deferred restart is not activation.
-
-### The update refuses, or reports `local_edits`
-
-- **Uncommitted changes or local commits in a plugin checkout:** ordinary source
-  updates require a clean equal or fast-forward checkout. Qualifying managed
-  checkouts have a separate [guarded recovery path](installation.md#managed-checkout-recovery)
-  with preserved local work and explicit refusal conditions; this is not permission
-  to discard unproven commits. Otherwise commit, move or reconcile your changes;
-  the ordinary update does not stash, reset or force-pull the source checkout.
-- **`local_edits`:** a profile edited its installed skill copy. `reset` means the copy
-  was replaced by the release and the edited bytes are in the update's backup (the
-  receipt's `backup`); port lessons that should reach every profile into the bundle.
-  `removed` is an edited copy of a skill file the bundle no longer ships, deleted the
-  same way. A rerun lists a file again only if something edited it since.
-
-See [update all profiles](installation.md#update-all-profiles) for the full rules.
-
-### A restart rolled out changes no update released
-
-Profiles linked to a working checkout load its current files at every gateway
-restart. `hermes kit doctor --json` lists them; pin the ones that should change only
-through updates with `hermes kit pin NAME` (preview with `--dry-run`).
-See [linked profiles](installation.md#linked-profiles-and-pinned-clones).
-
-### The bundle broke after moving or deleting its checkout
-
-Source installs link each profile to the checkout. Restore it at the same path,
-or preserve and reconcile the exact dangling plugin slot reported by the diagnostic
-(`plugins/kit` for fresh installs). Remove
-only that verified dangling link before rerunning setup from the new location;
-setup and update refuse dangling links and duplicate registrations. See
-[update or remove](onboarding.md#update-or-remove).
+The summary names the deployment and step. Repair it, then rerun
+`./install.sh --only orbi`; a deployment that a failed refresh left on the release
+tag it was applying is resumed. See [Orbi CLI](installation.md#orbi-cli).
 
 ## Workflows
 
-### `/docs_sync` changed documents but nothing was implemented
+### `/docs-sync` changed documents but nothing was implemented
 
 By design: documentation and planning never start implementation. Publish complete issues for Orbi; retained fix/apply modes keep their own scope
 and PR/review gates; see [workflows](workflows.md#commands).
@@ -182,6 +81,6 @@ structure and local references, not content accuracy or runtime qualification.
 
 ## Still stuck
 
-Collect `hermes kit doctor --json`, the relevant receipt or log and the exact
-command you ran. Run `python3 scripts/check.py` from a source checkout to rule out
-a local bundle regression; see [testing](testing.md).
+Collect the installer output (rerun with `--verbose`), the relevant receipt or
+log and the exact command you ran. Run `python3 scripts/check.py` from a source
+checkout to rule out a local regression; see [testing](testing.md).

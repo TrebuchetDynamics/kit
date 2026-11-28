@@ -14,11 +14,10 @@ import tempfile
 
 SOURCE = 'https://github.com/TrebuchetDynamics/kit.git'
 TEMPORARY_ROOTS = ('/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp')
-COMPONENTS = {'pi', 'pi-bolt', 'tx', 'hermes', 'claude', 'codex', 'orbi'}
+COMPONENTS = {'pi', 'pi-bolt', 'tx', 'claude', 'codex', 'orbi'}
 NOTICE = ('Default scope: all available components; check for updates every run under source/pin policies. '
           'May bootstrap Pi-Bolt; restart only proven affected active integrations, never unchanged payloads. '
-          'Hermes owns native gateway deferrals/restarts. --no-reload does NOT suppress other affected-host restarts. Hermes may '
-          'perform a nested broader full-suite refresh, including another source advance. '
+          'Selecting Orbi stops, updates and restarts verified local deployments. '
           'Native prompts, missing-host rules and partial failures remain installer-owned.')
 
 
@@ -132,17 +131,14 @@ def parse(argv):
     verbosity.add_argument('--verbose', '-v', action='store_true')
     verbosity.add_argument('--quiet', '-q', action='store_true')
     parser.add_argument('--color', choices=('auto', 'always', 'never'))
-    for flag in ('--bundle-only', '--no-reload', '--yes-deps'):
-        parser.add_argument(flag, action='store_true')
-    parser.add_argument('--hermes-home')
     parser.add_argument('--no-pull', action='store_true', help='already supplied by this helper')
     # A menu cannot be scope-checked before source mutation. Use explicit selection.
     parser.add_argument('--menu', action='store_true', help='unsupported here; use --only/--skip')
     args = parser.parse_args(argv)
     if args.no_restarts:
-        raise Hold('No-restarts restriction cannot be honored: --no-reload does not suppress other affected-host restarts; no changes made')
+        raise Hold('No-restarts restriction cannot be honored: the installer restarts proven affected services; no changes made')
     if args.menu:
-        raise Hold('Menu scope cannot be checked before mutation; use --only/--skip excluding Hermes, or unrestricted full suite')
+        raise Hold('Menu scope cannot be checked before mutation; use --only/--skip, or the unrestricted full suite')
     selected = set(COMPONENTS)
     for value in (args.only, args.skip):
         if value and set(value.split(',')) - COMPONENTS - {''}:
@@ -151,13 +147,10 @@ def parse(argv):
         selected = set(filter(None, args.only.split(',')))
     if args.skip:
         selected -= set(args.skip.split(','))
-    if 'hermes' in selected and selected != COMPONENTS:
-        raise Hold('Restricted Hermes selection can launch a nested broader full-suite refresh; '
-                   'exclude Hermes (--skip hermes), or separately authorize an unrestricted native cascade; no changes made')
     # Keep literal caller tokens (including spaces) and order; strip only helper-owned flags.
     stripped = {'--dry-run', '--read-only', '--questions-only', '--list', '--no-pull'}
     forwarded = []
-    takes_value = {'--only', '--skip', '--color', '--hermes-home'}
+    takes_value = {'--only', '--skip', '--color'}
     value_next = False
     for arg in argv:
         if value_next:
@@ -210,7 +203,7 @@ def validate(source):
     return text(source, 'rev-parse', 'HEAD')
 
 
-def ensure_idle(source, hermes_home=None):
+def ensure_idle(source):
     """Updater flock is not a global/native ownership lock; uncertainty holds."""
     result = run(['lsof', '-nP', '-a', '-u', str(os.getuid()), '-t', '+D', str(source)])
     if result.stdout.strip() or result.stderr.strip() or result.returncode not in (0, 1):
@@ -231,28 +224,6 @@ def ensure_idle(source, hermes_home=None):
                 continue
             except PermissionError as error:
                 raise Hold('Unknown process ownership; resolve process visibility before retry') from error
-    root = Path(hermes_home or os.environ.get('HERMES_HOME') or Path(os.environ['HOME']) / '.hermes')
-    lock_homes = []
-    for home in [root, *root.glob('profiles/*')]:
-        linked = any(path.is_symlink() and path.resolve() == source
-                     for path in (home / 'plugins').glob('*'))
-        if not linked:
-            continue
-        if (home / 'gateway.pid').exists():
-            raise Hold(f'Live/unknown linked gateway at {home}; resolve native ownership before retry')
-        lock_homes.append(home)
-    # The Hermes updater locks at the root even if only a named profile links the source.
-    if lock_homes and root not in lock_homes:
-        lock_homes.append(root)
-    for home in lock_homes:
-        lock = home / 'maintenance/toolset-update/lock'
-        if lock.exists():
-            import fcntl
-            try:
-                with lock.open('r') as handle:
-                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except (OSError, BlockingIOError) as error:
-                raise Hold(f'Concurrent/unknown native updater at {home}; retry after native owner finishes') from error
 
 
 def update(source, flags, args):
@@ -262,9 +233,7 @@ def update(source, flags, args):
     location = Path(os.path.abspath(source))
     home = Path(os.environ['HOME'])
     forbidden = [*(Path(root) for root in TEMPORARY_ROOTS), home / '.cache',
-                 home / '.pi', home / '.claude/plugins', home / '.codex/plugins',
-                 home / '.hermes/plugins',
-                 Path(args.hermes_home or os.environ.get('HERMES_HOME') or home / '.hermes') / 'plugins']
+                 home / '.pi', home / '.claude/plugins', home / '.codex/plugins']
     cache = os.environ.get('XDG_CACHE_HOME')
     if cache and Path(cache).is_absolute():
         forbidden.append(Path(cache))
@@ -276,7 +245,7 @@ def update(source, flags, args):
         safe_path(path, owned=True)
     if source.exists():
         validate(source)
-        ensure_idle(source, args.hermes_home)
+        ensure_idle(source)
     source.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     lockpath = source.parent / '.update-kit.lock'
     safe_path(lockpath, owned=True)
@@ -288,7 +257,7 @@ def update(source, flags, args):
             raise Hold('Updater busy for this destination; retry after the current invocation finishes') from error
         if source.exists():
             old = validate(source)
-            ensure_idle(source, args.hermes_home)
+            ensure_idle(source)
             git(source, 'fetch', '--no-tags', '--no-recurse-submodules', _source_url(), 'refs/heads/main')
             target = text(source, 'rev-parse', 'FETCH_HEAD')
             ancestry = git(source, 'merge-base', '--is-ancestor', old, target, check=False)
@@ -296,7 +265,7 @@ def update(source, flags, args):
                 raise Hold(f'Local-ahead/diverged history {old} vs {target}; preserve history and reconcile before retry')
             if ancestry.returncode:
                 raise Hold('Git ancestry check failed; preserve source and repair Git history before retry')
-            ensure_idle(source, args.hermes_home)
+            ensure_idle(source)
             git(source, 'merge', '--ff-only', '--no-autostash', target)
         else:
             old = 'ABSENT'

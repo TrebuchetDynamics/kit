@@ -1,6 +1,7 @@
 # Adding and updating skills
 
-Source: [command discovery](../__init__.py) and [native provisioning](../scripts/install_skills.py).
+Source: [portable adapters](../adapters/skills/COMMON.md), [Pi commands](../adapters/pi.mjs) and the
+[Claude Code marketplace](../.claude-plugin/marketplace.json).
 
 ## Unsupported executor work
 
@@ -38,36 +39,17 @@ Every public skill entry must directly link to the
 [shared writing rules](../skills/shared/COMMUNICATION.md). Apply both within the
 skill's scope. Keep vendored protocols byte-exact behind local adapters, as in
 [Impeccable](../skills/impeccable/SKILL.md); do not rewrite upstream pins to add policy.
-`tests/test_ponytail_bundle.py` checks coverage, provenance and native provisioning.
+`tests/test_ponytail_bundle.py` checks coverage and provenance.
 
 Use a folder name of 1–32 lowercase letters, digits, hyphens, or underscores,
 starting with a letter or digit. The folder determines the command name; keep
-the skill's frontmatter `name` consistent with it (enforced only for portable
-adapters). Most folders are registered automatically; `scripts/workflow_commands.py`
-registers both spellings for Plan With Me, Plan For Me and Docs Sync, and
-`scripts/autoresearch_commands.py` registers the research selectors. Underscores become hyphens
-in CLI commands and Telegram uses underscores: `my_skill` becomes `/my-skill`
-in CLI chat and `/my_skill` in Telegram. `my-skill` and `my_skill` cannot coexist.
+the skill's frontmatter `name` consistent with it (enforced for portable adapters).
+A public skill reaches Claude Code, Codex and Pi through its
+[portable adapter](#portable-hosts). Folders without `SKILL.md` are ignored.
 
-Every immediate child containing `SKILL.md` is discovered at plugin startup, except
-the retired `repo-docs` and `repo-interview`; `grill-me` gets a command but no
-separate skill identity while `plan-with-me` exists. Folders without `SKILL.md` are
-ignored. Invalid names, ambiguous aliases inside the bundle, or skill paths pointing
-outside it cause an explicit plugin-load error. A clash with an existing Hermes or
-plugin command only logs a warning and skips that command.
-
-For a GitHub installation, publish your skill changes and run:
-
-```sh
-hermes plugins update kit
-hermes gateway restart
-```
-
-For a local symlink installation, edit this checkout and restart instead. New commands are
-discovered on startup, not watched live. A restart does not refresh a skill already
-copied into the profile's native skill directory; use `hermes kit update` for that.
-Telegram's menu has limited capacity; the bundle prioritizes only the five workflow
-commands in [`scripts/telegram_menu_policy.py`](../scripts/telegram_menu_policy.py).
+Publish your skill changes, then refresh the installed hosts with
+`./install.sh update` (see [installation](installation.md)). New commands are
+discovered when a host session starts, not watched live.
 
 
 ### Skill style
@@ -104,11 +86,11 @@ you ran.
 
 ## Portable hosts
 
-Claude Code, Codex and Pi load [portable adapters](../adapters/skills/COMMON.md), not
-the Hermes entry point. Add or update the corresponding adapter and its local
+Claude Code, Codex and Pi load [portable adapters](../adapters/skills/COMMON.md).
+Add or update the corresponding adapter and its local
 references; every adapter keeps `disable-model-invocation: true` and an explicit-only
 `agents/openai.yaml`. Pi commands are declared in [adapters/pi.mjs](../adapters/pi.mjs);
 the Claude Code marketplace entry in `.claude-plugin/marketplace.json` lists the
 adapters folder. Validate both
 package metadata and command dispatch using [the cross-host checks](cross-host.md#behavior-and-verification).
-Installing or updating Hermes does not install the Codex or Pi package.
+Installing one host's package does not install another host's package.

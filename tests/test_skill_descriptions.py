@@ -1,4 +1,4 @@
-"""Keep owned skill triggers readable in the truncated Hermes index."""
+"""Keep owned skill triggers readable in truncated host skill indexes."""
 from pathlib import Path
 import unittest
 

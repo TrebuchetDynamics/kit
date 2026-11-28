@@ -12,5 +12,5 @@ Use the [ASD-STE100 and project language rules](../../../skills/shared/COMMUNICA
 
 Read the [host contract](../COMMON.md), then follow the
 [host-neutral Unblock workflow](../../../skills/unblock/SKILL.md).
-Use this host's file, terminal and service tools. No Hermes runtime or Pi extension
-is required.
+Use this host's file, terminal and service tools. No Pi extension is
+required.

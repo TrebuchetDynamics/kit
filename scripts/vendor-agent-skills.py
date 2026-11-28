@@ -42,7 +42,7 @@ def package(source, revision, destination):
     manifest={'repository':'https://github.com/addyosmani/agent-skills','revision':revision,
               'license':'MIT','skills':sorted(skills),'files':files,
               'transform':'SKILL.md filenames become PROTOCOL.md; file bytes unchanged',
-              'included':sorted(TREES|ROOT_FILES),'excluded':'Host manifests/hooks, evals, root scripts and hidden integration directories; never activated by Hermes'}
+              'included':sorted(TREES|ROOT_FILES),'excluded':'Host manifests/hooks, evals, root scripts and hidden integration directories; never activated by a host'}
     (destination/'UPSTREAM.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     print(f'Packaged {len(skills)} skills and {len(files)} files from {revision}')
 

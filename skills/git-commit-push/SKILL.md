@@ -3,10 +3,6 @@ name: git-commit-push
 description: "Commit current branch, sync and push its upstream."
 version: 2.1.1
 license: MIT
-metadata:
-  hermes:
-    tags: [git, commit, push, pull, merge, sync, delivery, worktree, fleet]
-    related_skills: [lgtm, ponytail-review, systematic-debugging]
 ---
 
 # Git Commit Push
@@ -168,8 +164,8 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
    - Preserve scheduler state during shipping: inspect the latest explicit pause/resume decision and current run activity, but do not pause a recurring job merely to obtain a staging window or reapply an older stop superseded by a later resume. Shipping authority is not scheduling authority. Exclude actively owned paths and qualify an independent slice, or report the precise remaining conflict.
    - For a partial research/document delivery, qualify the selected slice against a complete index export without relying on held narrative, review receipts or ledger transitions. Source-preserving tables can ship independently when their original inputs and coverage verify; leave review-status upgrades or completion claims local when their supporting evidence is still being written. Report a partial shipment, not a clean tree or completed parent task.
    - Check current ownership/continuation evidence and actual writer activity. Query
-     Kanban only when this repository still uses it (`hermes kanban --board <board> list
-     --status running --assignee <profile>`); an empty board or missing historical card
+     a work board only when this repository still uses one (list its running cards for the
+     assignee); an empty board or missing historical card
      does not prove writer release and is never a delivery prerequisite.
    - Path age: `now=$(date +%s); for f in <paths>; do echo "$(( (now - $(stat -c %Y "$f")) / 60 ))m $f"; done`.
      A path written in the last few minutes, while a card owning that area is running, is
@@ -179,7 +175,7 @@ when explicitly authorized. Never change another writer's HEAD, index or dirty w
      authorization, compare its bytes with the target and include completed unshipped work
      after the same scope and verification checks; a card-branch commit is not proof it
      already reached the requested target.
-   - A *running* card's own files: read its body (`hermes kanban show <id>`) and its latest run
+   - A *running* card's own files: read its body on the work board and its latest run
      summary. A live ownership contract or lease means leave its actively-owned hunks
      to its branch commit; an "authored by" label alone does not — check
      `git log agent/<p>/<card>` for the commit that already carries them instead of shipping

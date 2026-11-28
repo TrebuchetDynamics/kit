@@ -85,7 +85,7 @@ inside `upstream/`, except its README audit: run this skill's
   If a newly invented mark is rejected, remove it and its embed rather than making
   another unsolicited logo; remove only attributable assets and reconcile task notes
   that still describe the discarded asset as delivered.
-- **Pure SVG by default.** Hermes has no bundled image-generation skill. Offer hybrid
+- **Pure SVG by default.** Kit bundles no image-generation skill. Offer hybrid
   composition only when an image-generation tool is actually available in this
   session and the subject needs raster material; otherwise build deterministic SVG.
   GIF output stays opt-in, as in the protocol, and needs Pillow and `rsvg-convert`.

@@ -98,14 +98,14 @@ class UpdateKitTests(unittest.TestCase):
 
     def test_fresh_equal_and_fast_forward_reinstall_literal_argv(self):
         old = git(self.upstream, 'rev-parse', 'HEAD')
-        flags = ['--only', 'pi,tx', '--hermes-home', str(self.root / 'space $(literal); home')]
+        flags = ['--only', 'pi,tx', '--color', 'never']
         out = self.success(*flags)
         self.assertTrue((self.source / 'scripts/install_menu.py').is_file())
         self.assertEqual(git(self.source, 'remote', 'get-url', 'origin'), updater.SOURCE)
         self.assertIn(old, out)
         self.assertIn('check for updates every run', out)
         self.assertIn('restart only proven affected active integrations', out)
-        self.assertIn('Hermes owns native gateway deferrals/restarts', out)
+        self.assertIn('Selecting Orbi stops, updates and restarts verified local deployments', out)
         self.success(*flags)
         new = self.advance()
         out = self.success(*flags)
@@ -117,7 +117,7 @@ class UpdateKitTests(unittest.TestCase):
 
     def test_absolute_xdg_override(self):
         os.environ['XDG_DATA_HOME'] = str(self.root / 'data with spaces')
-        self.success('--skip', 'hermes')
+        self.success('--skip', 'orbi')
         self.assertTrue((self.root / 'data with spaces/kit/source/install.sh').is_file())
         self.assertFalse(self.source.exists())
 
@@ -139,12 +139,12 @@ class UpdateKitTests(unittest.TestCase):
 
     def test_installer_partial_failure_is_not_rolled_back(self):
         os.environ['INSTALL_EXIT'] = '7'
-        code, out = self.invoke('--skip', 'hermes')
+        code, out = self.invoke('--skip', 'orbi')
         self.assertEqual(code, 7, out)
         self.assertTrue(self.source.exists())
         self.assertIn('final_sha=', out)
         self.assertIn('not rolled back', out)
-        self.assertEqual(self.argv(), [b'update', b'--no-pull', b'--skip', b'hermes'])
+        self.assertEqual(self.argv(), [b'update', b'--no-pull', b'--skip', b'orbi'])
 
     def test_unavailable_final_readback_does_not_claim_a_secondary_change(self):
         original = updater.run.side_effect
@@ -159,7 +159,7 @@ class UpdateKitTests(unittest.TestCase):
             return result
         os.environ['INSTALL_EXIT'] = '7'
         with patch.object(updater, 'run', side_effect=unavailable):
-            code, out = self.invoke('--skip', 'hermes')
+            code, out = self.invoke('--skip', 'orbi')
         self.assertEqual(code, 7, out)
         self.assertIn('final_sha=NOT_CHECKED', out)
         self.assertIn('fixture readback failed', out)
@@ -176,21 +176,19 @@ class UpdateKitTests(unittest.TestCase):
         self.assertEqual(list(self.home.iterdir()), [])
 
     def test_incompatible_restrictions_refuse_before_mutation(self):
-        cases = [('--no-restarts',), ('--only', 'hermes'), ('--skip', 'pi'),
-                 ('--only', 'pi,hermes', '--no-reload'), ('--menu',), ('--sudo',)]
+        cases = [('--no-restarts',), ('--only', 'hermes'), ('--only', 'pi,hermes'), ('--menu',), ('--sudo',)]
         for args in cases:
             with self.subTest(args=args), patch.object(updater, 'run', side_effect=AssertionError('probe')):
                 code, out = self.invoke(*args)
                 self.assertNotEqual(code, 0, out)
         self.assertEqual(list(self.home.iterdir()), [])
         self.assertIn('restart', self.invoke('--no-restarts')[1])
-        self.assertIn('nested', self.invoke('--only', 'hermes')[1])
+        self.assertIn('Unknown component', self.invoke('--only', 'hermes')[1])
 
     def test_temporary_and_host_cache_subtrees_hold_without_writes(self):
         candidates = [*(Path(root) / 'update-kit-review-data' for root in self.temporary_roots),
                       self.home / '.cache/data', self.home / '.pi/agent/packages/data',
-                      self.home / '.claude/plugins/cache/data', self.home / '.codex/plugins/cache/data',
-                      self.home / '.hermes/plugins/data']
+                      self.home / '.claude/plugins/cache/data', self.home / '.codex/plugins/cache/data']
         for data in candidates:
             with self.subTest(data=data), patch.object(updater, 'run', side_effect=AssertionError('probe')), \
                     patch.object(updater.Path, 'mkdir', side_effect=AssertionError('write')):
@@ -198,7 +196,7 @@ class UpdateKitTests(unittest.TestCase):
                 # The home fixtures themselves live under /tmp; isolate the cache rule.
                 roots = () if data.is_relative_to(self.home) else self.temporary_roots
                 with patch.object(updater, 'TEMPORARY_ROOTS', roots):
-                    code, out = self.invoke('--skip', 'hermes')
+                    code, out = self.invoke('--skip', 'orbi')
                 self.assertNotEqual(code, 0, out)
                 self.assertIn('dedicated persistent data directory', out)
         self.assertEqual(list(self.home.iterdir()), [])
@@ -243,11 +241,11 @@ class UpdateKitTests(unittest.TestCase):
                     os.environ['HOME'] = home
                     self.home = Path(home)
                     self.source = self.home / '.local/share/kit/source'
-                    self.success('--skip', 'hermes')
+                    self.success('--skip', 'orbi')
                     mutate()
                     before = git(self.source, 'rev-parse', 'HEAD')
                     argv = self.argv()
-                    code, out = self.invoke('--skip', 'hermes')
+                    code, out = self.invoke('--skip', 'orbi')
                     self.assertNotEqual(code, 0, out)
                     self.assertEqual(git(self.source, 'rev-parse', 'HEAD'), before)
                     self.assertEqual(self.argv(), argv)
@@ -278,7 +276,7 @@ class UpdateKitTests(unittest.TestCase):
         self.assertTrue(stages)
         self.assertIn('failed', (stages[0] / 'update-kit-failure.txt').read_text())
         self.assertIn('retained', out)
-        self.success('--skip', 'hermes')
+        self.success('--skip', 'orbi')
         before = git(self.source, 'rev-parse', 'HEAD')
         argv = self.argv()
         with patch.object(updater, '_source_url', return_value=str(self.root / 'absent')):
@@ -305,16 +303,15 @@ class UpdateKitTests(unittest.TestCase):
                         fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
             return original(argv, **kwargs)
         with patch.object(updater, 'run', side_effect=checking):
-            self.success('--skip', 'hermes')
+            self.success('--skip', 'orbi')
 
-    def test_live_unknown_and_native_consumers_hold_before_fetch(self):
-        import fcntl
-        self.success('--skip', 'hermes')
+    def test_live_and_unknown_consumers_hold_before_fetch(self):
+        self.success('--skip', 'orbi')
         argv = self.argv()
         with patch.object(updater, 'ensure_idle', side_effect=updater.Hold('Live/unknown source consumer; retry')):
             self.advance()
             head = git(self.source, 'rev-parse', 'HEAD')
-            code, out = self.invoke('--skip', 'hermes')
+            code, out = self.invoke('--skip', 'orbi')
         self.assertNotEqual(code, 0)
         self.assertIn('consumer', out)
         self.assertEqual(git(self.source, 'rev-parse', 'HEAD'), head)
@@ -326,78 +323,11 @@ class UpdateKitTests(unittest.TestCase):
             with patch.object(updater, 'run', return_value=result):
                 with self.assertRaises(updater.Hold):
                     self.real_idle(self.source)
-        clear = subprocess.CompletedProcess([], 1, '', '')
-        native = self.home / '.hermes'
-        (native / 'plugins').mkdir(parents=True)
-        (native / 'plugins/kit').symlink_to(self.source, target_is_directory=True)
-        (native / 'gateway.pid').write_text('{"pid": "unknown"}')
-        with patch.object(updater, 'run', return_value=clear):
-            with self.assertRaisesRegex(updater.Hold, 'gateway'):
-                self.real_idle(self.source)
-        (native / 'gateway.pid').unlink()
-        lock = native / 'maintenance/toolset-update/lock'
-        lock.parent.mkdir(parents=True)
-        with lock.open('w') as owner, patch.object(updater, 'run', return_value=clear):
-            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            with self.assertRaisesRegex(updater.Hold, 'native updater'):
-                self.real_idle(self.source)
-
-    def test_root_updater_lock_holds_before_fetch_when_only_named_profile_links(self):
-        native = self.home / '.hermes'
-        flags = ('--skip', 'hermes', '--hermes-home', str(native))
-        self.success(*flags)
-        head = git(self.source, 'rev-parse', 'HEAD')
-        argv = self.argv()
-        target = self.advance()
-        plugins = native / 'profiles/work/plugins'
-        plugins.mkdir(parents=True)
-        (plugins / 'kit').symlink_to(self.source, target_is_directory=True)
-        # The unlinked root's gateway receipt must not block the retry.
-        (native / 'gateway.pid').touch()
-        lock = native / 'maintenance/toolset-update/lock'
-        lock.parent.mkdir(parents=True)
-        holder = '''
-import fcntl, select, sys
-with open(sys.argv[1], 'w') as lock:
-    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    print('locked', flush=True)
-    # Release even if the caller regresses to a blocking flock.
-    if not select.select([sys.stdin], [], [], 15)[0]:
-        sys.exit('fixture timed out waiting for lock release')
-'''
-        with patch.object(updater, 'ensure_idle', self.real_idle):
-            with subprocess.Popen([sys.executable, '-B', '-c', holder, str(lock)],
-                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as owner:
-                try:
-                    with selectors.DefaultSelector() as selector:
-                        selector.register(owner.stdout, selectors.EVENT_READ)
-                        self.assertTrue(selector.select(timeout=5), 'fixture did not acquire the root lock')
-                    self.assertEqual(owner.stdout.readline(), 'locked\n')
-                    with patch.object(updater, 'git', wraps=updater.git) as commands:
-                        code, out = self.invoke(*flags)
-                finally:
-                    owner.stdin.close()
-                    try:
-                        owner.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        owner.kill()
-                        raise
-            self.assertEqual(owner.returncode, 0, 'fixture released the lock before the invocation returned')
-            self.assertEqual(code, 1, out)
-            self.assertIn(f'Concurrent/unknown native updater at {native}; retry after native owner finishes', out)
-            self.assertNotIn('fetch', [call.args[1] for call in commands.call_args_list])
-            self.assertEqual(git(self.source, 'rev-parse', 'HEAD'), head)
-            self.assertEqual(self.argv(), argv)
-
-            out = self.success(*flags)
-        self.assertIn('installer_exit=0', out)
-        self.assertEqual(git(self.source, 'rev-parse', 'HEAD'), target)
-        self.assertEqual(self.argv(), argv * 2)
 
     def test_real_open_source_consumer_is_detected(self):
         if not updater.shutil.which('lsof'):
             self.skipTest('lsof unavailable for real open-file fixture')
-        self.success('--skip', 'hermes')
+        self.success('--skip', 'orbi')
         # The test itself holds an open source file; real lsof must see it.
         with (self.source / 'install.sh').open(), self.assertRaisesRegex(updater.Hold, 'consumer'):
             self.real_idle(self.source)
@@ -441,7 +371,7 @@ m.run = local_transport
 raise SystemExit(m.main(sys.argv[3:]))
 '''
         command = [sys.executable, '-B', '-c', program, str(HELPER), str(self.upstream)]
-        for flags in (['--skip', 'hermes'], ['--only', 'pi,tx']):
+        for flags in (['--skip', 'orbi'], ['--only', 'pi,tx']):
             result = subprocess.run([*command, *flags], cwd=self.root, capture_output=True,
                                     text=True, timeout=30, env=dict(os.environ))
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -453,7 +383,7 @@ raise SystemExit(m.main(sys.argv[3:]))
         result = subprocess.run([*command, '--only', 'hermes'], cwd=self.root,
                                 capture_output=True, text=True, timeout=30, env=dict(os.environ))
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('exclude Hermes', result.stderr)
+        self.assertIn('Unknown component', result.stderr)
         self.assertEqual(self.argv(), argv)
 
     def test_native_prompts_keep_the_controlling_terminal(self):
@@ -508,13 +438,12 @@ raise SystemExit(result.returncode)
             os.close(master)
 
     def test_forwarded_flags_match_documented_installer_contract(self):
-        flags = ['--full', '--no-reload', '--bundle-only', '--yes-deps', '--quiet',
-                 '--color=never', '--hermes-home=space ; $(literal)', '--no-pull']
+        flags = ['--full', '--quiet', '--color=never', '--no-pull']
         self.success(*flags)
         self.assertEqual(self.argv(), [b'update', b'--no-pull', *(a.encode() for a in flags[:-1])])
-        # Values that look like helper flags are literal values, not stripped tokens.
-        self.success('--only=pi', '--hermes-home=--dry-run')
-        self.assertEqual(self.argv()[-2:], [b'--only=pi', b'--hermes-home=--dry-run'])
+        # Values in --flag=value form are forwarded literally, not split or stripped.
+        self.success('--only=pi', '--color=never')
+        self.assertEqual(self.argv()[-2:], [b'--only=pi', b'--color=never'])
 
 
 if __name__ == '__main__':

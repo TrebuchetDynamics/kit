@@ -144,8 +144,7 @@ the documented tool wrappers, are refused for:
 - `src/**`, `scripts/**`, `tests/**`, `adapters/**`, `skills/**` (including executable
   `SKILL.md` and shared instructions), and `.github/**` (CI).
 - `.claude-plugin/**`, `.codex-plugin/**`, `.agents/plugins/**`, `plugins/**`.
-- Root `__init__.py`, `install.sh`, `install-plugins.sh`, `install-skills.sh`,
-  `AGENTS.md`, `CLAUDE.md`, `package.json`, `plugin.yaml`, `requirements-test.txt`.
+- Root `install.sh`, `AGENTS.md`, `CLAUDE.md`, `package.json`, `requirements-test.txt`.
 - Named lockfiles `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`,
   `yarn.lock`, `uv.lock`.
 

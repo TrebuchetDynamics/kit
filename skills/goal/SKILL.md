@@ -4,8 +4,6 @@ description: "Keep one objective alive until evidence proves it done."
 license: MIT
 metadata:
   version: 0.1.0
-  hermes:
-    tags: [goal, continuation, verification, evidence]
 ---
 
 # Goal
@@ -16,7 +14,7 @@ Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for 
 
 `/goal <objective>` keeps one objective in view, turns it into a completion
 contract, works in verified slices, and completes only when the contract's evidence
-proves the outcome. This is the Codex and Hermes goal pattern without a hook,
+proves the outcome. This is the Codex goal pattern without a hook,
 database or project file.
 
 ## Host and state
@@ -29,10 +27,7 @@ in the conversation and restate it after a resume, compression or handoff.
 This skill cannot force a new turn after the host stops. On a host with native goal
 continuation, use the native command. Do not install a hook from this skill.
 
-On Hermes, the native `/goal` command owns this name and already provides
-contracts, quality gates and a judge. Do not replace or reconfigure it. Use
-`kit:goal` only when that native loop is unavailable. On Claude Code use
-`/kit:goal`, on Codex `$kit:goal`, and on Pi `/goal`.
+On Claude Code use `/kit:goal`, on Codex `$kit:goal`, and on Pi `/goal`.
 
 ## 1. Read the command
 
@@ -149,8 +144,6 @@ does not replace a missing criterion unless the contract explicitly allows it.
   `/autonomous-codebase-improver`.
 - Not a task status report; inspect GitHub issue/PR evidence and read-only Orbi status.
 - Not delivery or publication; use `/git-commit-push` with its existing authority.
-- Not the Hermes native goal loop; use the native `/goal` there and `kit:goal` only
-  when the native loop is unavailable.
 - No hidden goal state. Use `/plan-for-me` for a requested durable issue handoff, not for thread-local goal tracking.
 
 **Done when:** every contract criterion maps to fresh evidence and the audit passes,

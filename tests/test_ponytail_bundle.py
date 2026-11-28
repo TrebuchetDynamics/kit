@@ -1,6 +1,5 @@
 """Offline Ponytail provenance, universal routing and installed resource checks."""
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
 import re
@@ -221,71 +220,6 @@ class PonytailBundleTests(unittest.TestCase):
         self.assertNotIn('Standalone review/audit/debt commands report only', shared)
         self.assertIn('../ponytail-audit/SKILL.md', shared)
 
-    def test_hermes_setup_no_longer_requires_an_external_ponytail_plugin(self):
-        manifest = yaml.safe_load((ROOT / 'plugin.yaml').read_text())
-        defaults = json.loads((ROOT / 'plugins/defaults.json').read_text())
-        self.assertNotIn('ponytail', manifest['requires_plugins'])
-        self.assertNotIn('ponytail', defaults['imported_plugins'])
-        self.assertNotIn('dietrichgebert/ponytail', (ROOT / 'plugins/PLUGINS.md').read_text().lower())
-
-    def test_existing_profile_gets_missing_shared_resources_without_overwriting_edits(self):
-        spec = importlib.util.spec_from_file_location('ponytail_upgrade', ROOT / 'scripts/install_skills.py')
-        installer = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(installer)
-        with tempfile.TemporaryDirectory() as temporary:
-            home = Path(temporary)
-            shared = home / 'skills/shared'
-            shared.mkdir(parents=True)
-            for name in ('COMMON-CONTRACT.md', 'PLAN-HANDOFF.md', 'WORKTREE-ISOLATION.md'):
-                (shared / name).write_text('existing local edit\n')
-            selected = [ROOT / 'skills/shared', PACK]
-            for preview in (True, False, False):
-                self.assertEqual(installer.install(ROOT / 'skills', [('fixture', home)],
-                                                  skills=selected, dry_run=preview, report=lambda _: None), 0)
-                self.assertEqual((shared / 'COMMON-CONTRACT.md').read_text(), 'existing local edit\n')
-                for source in (METHOD, COMMUNICATION):
-                    if preview:
-                        self.assertFalse((shared / source.name).exists())
-                    else:
-                        self.assertTrue((shared / source.name).is_file(), 'missing shared support after upgrade')
-                        self.assertEqual((shared / source.name).read_bytes(), source.read_bytes())
-            # An existing shared directory alias is not a destination we own.
-            other = home / 'linked/skills'
-            other.mkdir(parents=True)
-            (other / 'shared').symlink_to(shared, target_is_directory=True)
-            self.assertEqual(installer.install(ROOT / 'skills', [('linked', home / 'linked')],
-                                              skills=[ROOT / 'skills/shared'], report=lambda _: None), 1)
-
-    def test_native_writing_guidance_works_with_only_the_skills_bundle(self):
-        spec = importlib.util.spec_from_file_location('writing_install', ROOT / 'scripts/install_skills.py')
-        installer = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(installer)
-        with tempfile.TemporaryDirectory() as temporary:
-            home = Path(temporary)
-            selected = [ROOT / 'skills' / name for name in
-                        ('writing-for-agents', 'agents-md-generator', 'shared')]
-            self.assertEqual(installer.install(ROOT / 'skills', [('fixture', home)],
-                                              skills=selected, report=lambda _: None), 0)
-            self.assertFalse((home / 'docs').exists())
-            entry = home / 'skills/writing-for-agents/SKILL.md'
-            text = entry.read_text()
-            self.assertEqual(text, (ROOT / 'skills/writing-for-agents/SKILL.md').read_text())
-            # The essential policy is inline, not dependent on an absent checkout doc.
-            for rule in ('explicit host command', 'disable-model-invocation: true',
-                         'allow_implicit_invocation: false', 'write nothing'):
-                self.assertIn(rule, text)
-            for link in ('upstream/PROTOCOL.md', 'upstream/SKILL-MECHANICS.md',
-                         '../shared/COMMUNICATION.md', '../shared/PONYTAIL.md'):
-                self.assertIn('](' + link + ')', text)
-                self.assertTrue((entry.parent / link).is_file())
-            generator = home / 'skills/agents-md-generator/SKILL.md'
-            for link in re.findall(r'\]\(([^)#]+)(?:#[^)]*)?\)', generator.read_text()):
-                if '://' not in link:
-                    self.assertTrue((generator.parent / link).is_file(), link)
-            helper = generator.parent / 'upstream/scripts/detect-agent-context'
-            self.assertTrue(helper.stat().st_mode & 0o111)
-            self.assertEqual(list((generator.parent / 'upstream').rglob('SKILL.md')), [])
-
     def test_map_limits_file_reads_not_only_the_parsed_string(self):
         script = PACK / 'upstream/scripts/ponytail-map.cjs'
         self.assertTrue(script.is_file())
@@ -318,38 +252,6 @@ assert.ok(read > 0 && read <= 65536, 'must read at most 64 KiB');
             result = subprocess.run(['node', '-e', probe, str(script), str(project)],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_native_install_carries_the_method_protocols_and_executable_map(self):
-        spec = importlib.util.spec_from_file_location('ponytail_install', ROOT / 'scripts/install_skills.py')
-        installer = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(installer)
-        with tempfile.TemporaryDirectory() as temporary:
-            home = Path(temporary)
-            selected = [ROOT / 'skills' / name for name in sorted(NAMES | {'shared'})]
-            self.assertTrue(all(path.is_dir() for path in selected), 'bundled suite is missing')
-            self.assertEqual(installer.install(ROOT / 'skills', [('fixture', home)],
-                                              skills=selected, report=lambda _: None), 0)
-            self.assertEqual((home / 'skills/shared/PONYTAIL.md').read_bytes(), METHOD.read_bytes())
-            debt = home / 'skills/ponytail-debt/SKILL.md'
-            self.assertEqual(debt.read_bytes(), (ROOT / 'skills/ponytail-debt/SKILL.md').read_bytes())
-            self.assertIn('supported configuration now permits 200', debt.read_text())
-            handoff = debt.parent / '../shared/PLAN-HANDOFF.md'
-            self.assertIn('## Single-invocation specialist handoff', handoff.read_text())
-            project = home / 'project with spaces'
-            project.mkdir()
-            subprocess.run(['git', 'init', '-q', str(project)], check=True)
-            (project / 'lib.py').write_text('def reuse_this():\n    return 1\n')
-            (project / '.gitignore').write_text('ignored.py\n')
-            (project / 'ignored.py').write_text('def do_not_read():\n    pass\n')
-            subprocess.run(['git', '-C', str(project), 'add', 'lib.py', '.gitignore'], check=True)
-            script = home / 'skills/ponytail/upstream/scripts/ponytail-map.cjs'
-            result = subprocess.run(['node', str(script), str(project)], capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn('reuse_this', result.stdout)
-            self.assertNotIn('do_not_read', result.stdout)
-            self.assertEqual(sorted(p.name for p in project.iterdir()),
-                             ['.git', '.gitignore', 'ignored.py', 'lib.py'])
-
 
 if __name__ == '__main__':
     unittest.main()

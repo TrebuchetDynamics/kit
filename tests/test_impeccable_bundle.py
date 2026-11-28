@@ -1,9 +1,7 @@
 """Every bundled skill is available offline, including Impeccable's support tree."""
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
-import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,28 +54,6 @@ class CompleteBundleTests(unittest.TestCase):
         for name in ('impeccable', 'ui-taste'):
             skill = (ROOT / f'skills/{name}/SKILL.md').read_text()
             self.assertIn('../shared/UI-FINDINGS.md', skill, name)
-
-    def test_clean_profiles_receive_every_skill_and_support_file_offline(self):
-        spec = importlib.util.spec_from_file_location('complete_bundle_installer', ROOT / 'scripts/install_skills.py')
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        with tempfile.TemporaryDirectory() as td:
-            homes = [('default', Path(td)/'default'), ('work', Path(td)/'work')]
-            self.assertEqual(module.install(ROOT/'skills', homes, report=lambda _: None), 0)
-            for _, home in homes:
-                self.assertTrue((home/'skills/impeccable/SKILL.md').is_file())
-                for folder in (ROOT/'skills').iterdir():
-                    if folder.name in {'repo-docs', 'repo-interview'}:
-                        self.assertFalse((home/'skills'/folder.name).exists())
-                        continue
-                    if not (folder/'SKILL.md').is_file() and folder.name != 'shared':
-                        continue
-                    for source in folder.rglob('*'):
-                        # The installer's ignore_patterns: local caches are never installed.
-                        if source.is_file() and not {'__pycache__', '.pytest_cache', '.git'} & set(source.parts) and source.name != '.DS_Store' and source.suffix not in ('.pyc', '.pyo'):
-                            target = home/'skills'/source.relative_to(ROOT/'skills')
-                            self.assertEqual(target.read_bytes(), source.read_bytes(), str(target))
-                            self.assertEqual(target.stat().st_mode & 0o111, source.stat().st_mode & 0o111)
 
 if __name__ == '__main__':
     unittest.main()

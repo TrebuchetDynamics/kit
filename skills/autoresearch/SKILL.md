@@ -14,7 +14,7 @@ Use the [ASD-STE100 and project language rules](../shared/COMMUNICATION.md) for 
 Without an explicit subcommand, use the upstream router to select a protocol
 from the user's goal. Explicit Autoresearch subcommands select their own protocol.
 
-Run the pinned Udit Goenka autoresearch protocols with Hermes tools and the existing
+Run the pinned Udit Goenka autoresearch protocols with this host's tools and the existing
 GitHub issue/PR handoff. Read this adapter first, then the
 selected upstream protocol. For `plan`, also apply the
 [planning adaptations](../shared/RESEARCH-PLAN.md) before following upstream phases.
@@ -73,10 +73,10 @@ Supported commands: `plan`, `debug`, `fix`, `security`, `ship`, `probe`, `scenar
    an error; never interpret them as arbitrary shell commands or skill paths.
 
 `$autoresearch`, `/autoresearch:*` and upstream “invoke” instructions mean load
-that protocol and perform it in the current Hermes conversation. Map upstream
+that protocol and perform it in the current host conversation. Map upstream
 `request_user_input`/`AskUserQuestion` to the available clarification tool or a
-direct chat question. Map execution, file operations and delegates to actual Hermes
-tools. No Claude hooks, Codex-only tools, plugin install or second harness is needed.
+direct chat question. Map execution, file operations and delegates to the host's
+actual tools. No Claude hooks, Codex-only tools, plugin install or second harness is needed.
 Personas are analytical viewpoints; call them independent agents only when separate
 agents actually ran. Record unavailable tools/checks honestly.
 

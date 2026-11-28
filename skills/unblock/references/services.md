@@ -17,6 +17,6 @@ For separately authorized operations on a supported deployment:
 5. Verify the operation and consumption separately. An active process does not
    prove issue pickup, successful checks, review, merge or failure recovery.
 
-Use [the cutover guide](../../../docs/github-native.md). Preserve unrelated Hermes
-gateways and ordinary Pi/Claude/Codex sessions. Never delete task data, worktrees
+Use [the cutover guide](../../../docs/github-native.md). Preserve unrelated
+Pi, Claude Code and Codex sessions. Never delete task data, worktrees
 or attempts/recovery state to make a service appear healthy.

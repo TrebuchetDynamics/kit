@@ -15,6 +15,6 @@ Read the [host contract](../COMMON.md), the
 [host-neutral Unused Code workflow](../../../skills/unused-code/SKILL.md).
 Its default route uses the
 [single-invocation specialist handoff](../../../skills/shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff).
-Use this host's native tools; no Hermes runtime or Pi extension is required.
+Use this host's native tools; no Pi extension is required.
 Preserve explicit limits, read-only/no-write requests, review gates and delivery
 restrictions. Load only this workflow's pinned protocol and relevant references.

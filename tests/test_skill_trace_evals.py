@@ -156,8 +156,7 @@ class SkillTraceEvalTests(unittest.TestCase):
             'skills/docs-sync/scripts/docs.py', '.github/workflows/test.yml',
             '.claude-plugin/plugin.json', '.codex-plugin/plugin.json',
             '.agents/plugins/marketplace.json', 'plugins/runtime.py',
-            '__init__.py', 'install.sh', 'install-plugins.sh', 'install-skills.sh',
-            'AGENTS.md', 'CLAUDE.md', 'package.json', 'plugin.yaml',
+            'install.sh', 'AGENTS.md', 'CLAUDE.md', 'package.json',
             'requirements-test.txt', 'package-lock.json', 'npm-shrinkwrap.json',
             'pnpm-lock.yaml', 'yarn.lock', 'uv.lock',
         )

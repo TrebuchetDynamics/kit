@@ -17,9 +17,9 @@ before code analysis; this is not a sync on skill loading.
 Every bundled workflow applies the [shared Ponytail method](../../skills/shared/PONYTAIL.md)
 within its own authority. The pinned suite is included on all hosts; no external
 Ponytail plugin or persistent activation is required.
-Do not require Hermes CLI, profiles, gateways, Kanban cards, native origin injection,
-worker manifests, cron jobs, speech or another agent runtime. Those integrations
-belong to the Hermes distribution, not portable prerequisites.
+Do not require another agent runtime, profiles, gateways, Kanban cards, native
+origin injection, worker manifests, cron jobs or speech. They are not portable
+prerequisites.
 
 Installation exposes skill metadata, not all instructions in every request. Load
 only the selected workflow and relevant references. Resolve links relative to the
@@ -32,9 +32,9 @@ public skill; Pi retains `/grill-me` as a compatibility command. In native skill
 invocation (`/kit:plan-with-me` in Claude Code), select `plan-with-me`
 and request challenge mode.
 Shared source files are reference material; this contract takes
-precedence over Hermes-specific execution procedures in linked upstream material.
+precedence over host-specific execution procedures in linked upstream material.
 Pi command aliases use hyphens, including `/autoresearch-<protocol>`; use these
-spellings even when linked Hermes references show Telegram's underscore aliases.
+spellings even when linked upstream references show underscore aliases.
 Never change host permissions, memory configuration, model credentials or approval
 policy to make a workflow run. A skill cannot promise unattended execution after
 the current host session ends.

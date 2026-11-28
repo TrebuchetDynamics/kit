@@ -1,62 +1,14 @@
-"""Autoresearch command dispatch and pinned distribution contracts."""
+"""Autoresearch instruction and pinned distribution contracts."""
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 import unittest
 
-import test_plugin as fixture
-
-ROOT = fixture.ROOT
+ROOT = Path(__file__).resolve().parents[1]
 
 COMMANDS = ('plan', 'debug', 'fix', 'security', 'ship', 'probe', 'scenario',
             'predict', 'reason', 'learn', 'improve', 'evals', 'regression')
-
-
-class AutoresearchCommands(unittest.TestCase):
-    setUp = fixture.PluginTests.setUp
-    skill = fixture.PluginTests.skill
-
-    def test_all_upstream_commands_route_to_one_skill_preserving_arguments(self):
-        self.skill('autoresearch')
-        self.plugin.register(self.ctx)
-        raw = 'Goal: cache latency\n--chain evals $(do-not-execute)'
-        for command in COMMANDS:
-            for alias in (f'autoresearch:{command}', f'autoresearch-{command}'):
-                self.assertIn(alias, self.ctx.commands)
-                self.ctx.commands[alias](raw)
-                prompt, _ = self.ctx.messages[-1]
-                self.assertIn('kit:autoresearch', prompt)
-                self.assertIn(f'Selected subcommand: {command}\n', prompt)
-                self.assertTrue(prompt.endswith(raw))
-
-    def test_github_default_reaches_router_and_aliases_without_losing_restrictions(self):
-        self.skill('autoresearch')
-        self.plugin.register(self.ctx)
-        for alias in ('autoresearch', 'autoresearch:plan', 'autoresearch-plan'):
-            for raw in ('Improve onboarding', 'read-only: inspect onboarding', '--dry-run plan onboarding'):
-                self.ctx.commands[alias](raw)
-                prompt, _ = self.ctx.messages[-1]
-                injected = prompt.split('User arguments:\n', 1)[0]
-                self.assertNotIn('TODO.md', injected)
-                self.assertNotIn('goals.json', injected)
-                self.assertIn('GitHub Issues are the executable backlog', injected)
-                self.assertIn('reuse existing issues and preserve dependencies and user ordering', injected)
-                self.assertIn('read-only, chat-only, no-write and --dry-run requests write nothing', injected)
-                self.assertIn('Planning alone does not authorize implementation or timed scheduling', injected)
-                self.assertTrue(prompt.endswith(raw))
-
-    def test_alias_collision_preserves_existing_owner(self):
-        self.skill('autoresearch')
-        self.existing['autoresearch:plan'] = {'plugin': 'other'}
-        self.plugin.register(self.ctx)
-        self.assertNotIn('autoresearch:plan', self.ctx.commands)
-        self.assertIn('autoresearch-plan', self.ctx.commands)
-
-    def test_absent_skill_does_not_register_commands(self):
-        self.skill('other')
-        self.plugin.register(self.ctx)
-        self.assertFalse(any(n.startswith('autoresearch') for n in self.ctx.commands))
 
 
 class AutoresearchInstructionContracts(unittest.TestCase):

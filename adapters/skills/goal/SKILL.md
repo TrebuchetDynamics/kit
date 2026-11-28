@@ -20,8 +20,6 @@ Host commands:
 - Pi: `/goal`
 - Claude Code: `/kit:goal`
 - Codex: `$kit:goal`
-- Hermes: the native `/goal` loop owns the name. Use `kit:goal` only when that native
-  loop is unavailable. Do not replace or reconfigure the native command.
 
 A goal is thread-scoped. Use the host's native goal store or tools when present.
 Otherwise restate the state after a resume or compression. This adapter adds no

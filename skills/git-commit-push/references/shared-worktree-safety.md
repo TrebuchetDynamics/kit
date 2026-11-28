@@ -40,7 +40,7 @@ Load when asked to commit or push a large or accumulated dirty tree, when `git s
 ## Procedure
 
 1. **Capture and group the tree before staging.** Parse `git status --porcelain=v1 -z --untracked-files=all` programmatically: keep both status columns and consume rename/copy path pairs. Save the raw inventory, full diffs and per-path classification as private receipts and summarize counts by component instead of flooding chat; count inventory entries and unique paths separately (a staged deletion plus an untracked replacement is one path, two entries). Require classification coverage of every captured entry, and never let deduplication hide an index/worktree disagreement. Compare large ledgers programmatically, printing only changed fields, missing evidence, reopened completions and conflict locations. Never stage blind — the count also tells you whether the tree is still growing.
-2. **Find who is still writing.** List the profile's running work cards (e.g. `hermes kanban list --profile <name>`, filtered for `running`), then order dirty paths by age:
+2. **Find who is still writing.** List the running work cards on the repository's work board, if it uses one, then order dirty paths by age:
    ```bash
    now=$(date +%s)
    # per path: echo "$(( (now - $(stat -c %Y "$f")) / 60 )) min  $f"

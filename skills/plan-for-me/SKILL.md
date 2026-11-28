@@ -4,8 +4,6 @@ description: "Turn goals and findings into GitHub issues."
 license: MIT
 metadata:
   version: 0.6.0
-  hermes:
-    tags: [research, requirements, documentation, planning]
 ---
 
 # Plan For Me

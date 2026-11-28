@@ -14,6 +14,6 @@ Read the [host contract](../COMMON.md), then the
 [host-neutral State Machine workflow](../../../skills/state-machine/SKILL.md).
 Follow its default [single-invocation specialist handoff](../../../skills/shared/PLAN-HANDOFF.md#single-invocation-specialist-handoff)
 and its separate explicit report-only and authorized fix/apply branches.
-Use this host's file, search and terminal tools; no Hermes runtime or Pi extension
-is required. Publication uses the GitHub access required by Plan Handoff.
+Use this host's file, search and terminal tools; no Pi extension is
+required. Publication uses the GitHub access required by Plan Handoff.
 In Pi, invoke this skill with `/skill:state-machine`.

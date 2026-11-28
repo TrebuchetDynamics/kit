@@ -6,7 +6,7 @@ This reference covers Kit’s [lifecycle client](skills/orbi/SKILL.md) and the s
 
 ## Inspect one repository with Kit
 
-Use `/orbi help` in Pi or Hermes, `/kit:orbi help` in Claude Code, or `$kit:orbi help` in Codex. Help requires no repository or deployment. For scripts, from the Kit checkout:
+Use `/orbi help` in Pi, `/kit:orbi help` in Claude Code, or `$kit:orbi help` in Codex. Help requires no repository or deployment. For scripts, from the Kit checkout:
 
 ```sh
 python3 -B skills/orbi/scripts/orbi_control.py help --json

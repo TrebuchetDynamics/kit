@@ -3,9 +3,8 @@
 > **GitHub-native delivery:** GitHub Issues own executable work; Orbi owns delivery.
 > See [setup and support](github-native.md).
 
-Kit supports Claude Code, Codex, Pi and optional Hermes integration.
-Claude Code, Codex and Pi use the portable adapters, not the Hermes plugin
-loader. None requires Hermes installed.
+Kit supports Claude Code, Codex and Pi through portable adapters. Kit no longer
+supports Hermes.
 These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Orbi, Update Kit,
 Autoresearch, Impeccable, UI Taste, [Tastemaker and Dembrandt](workflows.md#visual-reference-workflows), [Brand Identity and StyleSeed](workflows.md#brand-identity-and-design-systems), Beautify GitHub README,
 LGTM, Git Commit Push, the six bundled Ponytail skills,
@@ -19,9 +18,7 @@ in its frontmatter and Codex reads `agents/openai.yaml`, so the model never star
 workflow on its own.
 Plan For Me with no objective starts autonomous project discovery; an explicit
 outcome keeps focused planning, and `read-only` saves nothing.
-Supporting protocols are bundled and loaded only when needed. Hermes profile
-creation, Telegram routing,
-Kanban workers, fleet setup, memory and speech integrations remain Hermes-only.
+Supporting protocols are bundled and loaded only when needed.
 
 All hosts inherit the [shared mode-aware freshness and ownership contract](../skills/shared/COMMON-CONTRACT.md#source-freshness-and-delivery-ownership)
 through canonical Ponytail and the portable common entry point. No automatic
@@ -63,7 +60,7 @@ This opt-in installation covers the two planning commands.
 ## Orbi lifecycle controls
 
 Use `/kit:orbi [status|version|setup|start|update|stop|prune|help]` in Claude Code, `$kit:orbi` in Codex,
-or `/orbi` in Pi or Hermes. All hosts load the same
+or `/orbi` in Pi. All hosts load the same
 [Orbi workflow](../skills/orbi/SKILL.md); default status is read-only. `version [--repo-dir PATH] [--config PATH] [--json]`
 passes unchanged into one read-only helper invocation and identifies the selected
 deployment engine without full status, bootstrap, scheduler or network probes. `help` prints the action reference read-only and needs no repository.
@@ -73,14 +70,14 @@ deployment or qualify live delivery.
 
 ## Update Kit on every host
 
-Explicit `/update-kit` in Pi or Hermes (`/update_kit` also works in Hermes),
+Explicit `/update-kit` in Pi,
 `/kit:update-kit` in Claude Code and `$kit:update-kit` in Codex load the same
 [Update Kit workflow](../skills/update-kit/SKILL.md) and bundled helper. It refreshes
 the persistent `${XDG_DATA_HOME:-$HOME/.local/share}/kit/source` checkout and reruns
 that revision's installer. Default scope is the full suite, including possible
-Pi-Bolt bootstrap and active supported integration restarts. Restricted Hermes
-cascades/no-restarts requests hold before mutation; preview writes/probes nothing.
-See [source ownership, nested updates and recovery](installation.md#update-kit).
+Pi-Bolt bootstrap and active supported integration restarts. No-restarts requests
+hold before mutation; preview writes/probes nothing.
+See [source ownership and recovery](installation.md#update-kit).
 Refresh does not reload the current agent: reopen/reload its session and verify
 activation separately. Discovery/package tests are not installed-host/model or
 live qualification. No automatic schedule or Orbi activation is added.
@@ -100,7 +97,6 @@ Existing external Ponytail installations are left alone; check command collision
 
 | Host | Example review invocation |
 | --- | --- |
-| Hermes | `/ponytail-review` (or bundled `kit:ponytail-review` via skill tools if another plugin owns the command) |
 | Claude Code | `/kit:ponytail-review` |
 | Codex | `$kit:ponytail-review` |
 | Pi | `/ponytail-review` or `/skill:ponytail-review` |
@@ -152,7 +148,6 @@ executable helper or external dependency is installed.
 
 | Host | Example |
 | --- | --- |
-| Hermes | `/test-optimizer tests/parser; apply one batch; no push` |
 | Claude Code | `/kit:test-optimizer tests/parser; apply one batch; no push` |
 | Codex | `$kit:test-optimizer tests/parser; apply one batch; no push` |
 | Pi | `/test-optimizer tests/parser; apply one batch; no push` |
@@ -164,14 +159,12 @@ This skill is local Kit content, not an imported pi-toolset protocol.
 ## Graphify
 
 [Graphify](https://github.com/Graphify-Labs/graphify) turns a project into a local
-knowledge graph. Hermes installs the official skill and CLI through its plugin
-installer, so `/graphify` there is upstream content. Claude Code, Codex and Pi use
-the local [adapter](../adapters/skills/graphify/SKILL.md), which calls the same
-`graphify` command with Kit scope, evidence and limit rules.
+knowledge graph. Claude Code, Codex and Pi use the local
+[adapter](../adapters/skills/graphify/SKILL.md), which calls an installed `graphify`
+command with Kit scope, evidence and limit rules. Kit does not install Graphify.
 
 | Host | Example |
 | --- | --- |
-| Hermes | `/graphify src/parser; explain parse_statement; read-only` |
 | Claude Code | `/kit:graphify src/parser; explain parse_statement; read-only` |
 | Codex | `$kit:graphify src/parser; explain parse_statement; read-only` |
 | Pi | `/graphify src/parser; explain parse_statement; read-only` |
@@ -196,12 +189,9 @@ wording and structure, rather than replacing that reference.
 | Pi | `/agents-md-generator` | `/agents-md-generator audit` | `/agents-md-generator update only src/AGENTS.md` |
 | Claude Code | `/kit:agents-md-generator` | `/kit:agents-md-generator audit` | `/kit:agents-md-generator update only src/AGENTS.md` |
 | Codex | `$kit:agents-md-generator` | `$kit:agents-md-generator audit` | `$kit:agents-md-generator update only src/AGENTS.md` |
-| Hermes CLI | `/agents-md-generator` | `/agents-md-generator audit` | `/agents-md-generator update only src/AGENTS.md` |
 
-Hermes Telegram normalizes the generic command as `/agents_md_generator`; existing
-command collisions retain their owner. Hermes discovers immediate canonical skill
-children; Claude Code and Codex load portable adapters; Pi uses the existing generic
-dispatch route. The nested upstream `PROTOCOL.md` is not another public entry.
+Existing command collisions retain their owner. Claude Code and Codex load portable
+adapters; Pi uses the existing generic dispatch route. The nested upstream `PROTOCOL.md` is not another public entry.
 Upstream `agents/openai.yaml` is inert provenance; only the local portable policy
 controls implicit invocation (disabled). No new discovery roots, hooks or dependencies.
 
@@ -231,7 +221,6 @@ name, within their accepted scope.
 
 | Host | Example |
 | --- | --- |
-| Hermes | `/writing-for-agents skills/unblock; remove no-ops; read-only` |
 | Claude Code | `/kit:writing-for-agents skills/unblock; remove no-ops; read-only` |
 | Codex | `$kit:writing-for-agents skills/unblock; remove no-ops; read-only` |
 | Pi | `/writing-for-agents skills/unblock; remove no-ops; read-only` |
@@ -244,7 +233,7 @@ See [workflow and evidence requirements](workflows.md#writing-for-agents).
 
 ## Unslop
 
-Use `/unslop audit the checkout flow` in Pi or Hermes, `/kit:unslop` in Claude Code,
+Use `/unslop audit the checkout flow` in Pi, `/kit:unslop` in Claude Code,
 or `$kit:unslop` in Codex. The [same workflow](../skills/unslop/SKILL.md) publishes
 UI improvements as GitHub issues for Orbi. Add `read-only` for an inline preview.
 
@@ -259,7 +248,6 @@ a file as evidence of a render, not of a correct layout.
 
 | Host | Example |
 | --- | --- |
-| Hermes | `/responsive-screenshots https://localhost:3000; 375, 768, 1440; both schemes` |
 | Claude Code | `/kit:responsive-screenshots https://localhost:3000; 375, 768, 1440` |
 | Codex | `$kit:responsive-screenshots https://localhost:3000; 375, 768, 1440` |
 | Pi | `/responsive-screenshots https://localhost:3000; 375, 768, 1440` |
@@ -276,7 +264,6 @@ the command.
 
 | Host | Example |
 | --- | --- |
-| Hermes | `/ask-kit I need to stress-test a plan` |
 | Claude Code | `/kit:ask-kit I need to stress-test a plan` |
 | Codex | `$kit:ask-kit I need to stress-test a plan` |
 | Pi | `/ask-kit I need to stress-test a plan` |
@@ -295,7 +282,6 @@ scans for shallow modules and writes one HTML report to the temp directory.
 
 | Host | Example |
 | --- | --- |
-| Hermes | `/grilling the retry design; read-only` |
 | Claude Code | `/kit:grilling the retry design; read-only` |
 | Codex | `$kit:grilling the retry design; read-only` |
 | Pi | `/grilling the retry design; read-only` |
@@ -313,8 +299,7 @@ commits and delivery still need their own accepted scope. See
 [APK Get](../skills/apk-get/SKILL.md) builds an existing Flutter or React Native
 Android application as an ARM64-only release APK, then uploads it with the host's
 installed `s3upload`. Use `/apk-get` in Pi, `/kit:apk-get` in Claude Code,
-or `$kit:apk-get` in Codex. Hermes discovers the same named skill
-through its existing plugin registration. No host requires Hermes installation.
+or `$kit:apk-get` in Codex.
 
 No app-path argument is required. The skill finds apps in the current repository;
 one app is selected automatically. Multiple apps without a default require a choice.
@@ -343,7 +328,6 @@ Invoke with the existing host prefix:
 
 | Host | Example |
 | --- | --- |
-| Hermes | `/bug-harvest one bug in the parser; no push` |
 | Claude Code | `/kit:bug-harvest one bug in the parser; no push` |
 | Codex | `$kit:bug-harvest one bug in the parser; no push` |
 | Pi | `/bug-harvest one bug in the parser; no push` |
@@ -368,35 +352,17 @@ Offline packaging and decision probes do not prove live host/model behavior.
 ## Full-suite partial failures
 
 From a checkout, `./install.sh` reports each component independently. A failed
-Hermes update does not undo successful Pi, command/TUI, tx, Claude Code or Codex
-installation; the aggregate exit remains nonzero. Its summary extracts the updater's
-structured cause and next action, including per-profile recovery errors. Truncated
-or non-JSON output gets a bounded text fallback.
-
-If the installer's Python is missing PyYAML, the terminal warns that Kit left the
-Hermes plugin unchanged. Hermes still counts as failed in the summary and JSONL
-receipt, and the command exits nonzero. The installer evaluates service restarts
-in its separate restart phase.
+component does not undo successful Pi, tx, Claude Code, Codex or Orbi installation;
+the aggregate exit remains nonzero. Truncated or non-JSON output gets a bounded
+text fallback. The installer evaluates service restarts in its separate restart
+phase.
 
 Fix the reported cause, then retry only that component:
 
 ```sh
-./install.sh --only hermes --dry-run
-./install.sh --only hermes
+./install.sh --only codex --dry-run
+./install.sh --only codex
 ```
-
-Keep the original `--hermes-home` when using an alternate root. Verified clean
-managed Hermes checkouts can recover from rewritten upstream history through the
-[backed-up native transaction](installation.md#managed-checkout-recovery); unknown,
-dirty, locally advanced or active/shared-unsafe sources defer. Recovery preserves
-compatible native skill edits and requests no runtime restart. `--skip hermes`
-leaves Hermes out; preview runs no updater or recovery network operation. This
-Hermes-specific path does not replace portable hosts' own update commands below.
-Fresh Hermes installation/probes use `plugins/kit` and enable `kit`. Verified
-physical slots are discovery inputs only. Setup/update refuse duplicate registrations, including
-same-source aliases, before component mutation; preserve the paths and reconcile
-ownership rather than reinstalling over them. See [slot identity and setup](installation.md#install).
-Source delivery is not installed adoption, native loader qualification or live activation.
 
 
 <a id="legacy-marketplace-migration"></a>
@@ -491,7 +457,7 @@ namespaced skills:
 ```
 
 The marketplace entry lists `./adapters/skills/` as the plugin's only skills folder,
-so the Hermes-only skills in the repository's root `skills/` folder are never loaded;
+so the canonical skills in the repository's root `skills/` folder are not loaded directly;
 the plugin itself ships no hooks, agents, MCP servers or settings. Claude Code copies
 the whole repository into its plugin cache, so adapter links into `skills/` resolve
 there. Update with `claude plugin marketplace update kit` and then
@@ -533,12 +499,11 @@ $kit:docs-sync update the docs and tasks
 $kit:autoresearch debug the failing test
 ```
 
-Use `$kit:docs-sync` in Codex; the Hermes spelling `/docs_sync`
-is not a Codex slash command. Adding package files to a Git repository does not
+Use `$kit:docs-sync` in Codex; `/docs-sync` is not a Codex slash command. Adding package files to a Git repository does not
 install that plugin into your Codex configuration. After installation, use the
 next turn if the client refreshes skill discovery; otherwise start a new session.
 
-Codex uses skill invocation, not Hermes slash-command registration. The adapters
+Codex uses skill invocation, not slash-command registration. The adapters
 are explicit-only in Codex (`allow_implicit_invocation: false` in each
 `agents/openai.yaml`) so installation does not automatically invoke a workflow.
 Update a Git install with `codex plugin marketplace upgrade kit-marketplace`
@@ -623,7 +588,7 @@ The engineering pack is a reference, not a command; no
 invocation is available for the registered skills; both skill names and command
 aliases use hyphens. Underscore aliases
 are no longer registered in Pi; update saved prompts and shortcuts, then `/reload`
-after updating the package. Hermes Telegram aliases are unchanged.
+after updating the package.
 Command arguments remain literal prompt text.
 `/grill-me` loads Plan With Me with explicit challenge mode and preserves the
 request unchanged. The old standalone `grill-me` skill is no longer discoverable;
@@ -657,10 +622,9 @@ without a second install. See
 ### Nous Portal through the local proxy
 
 The executor's `setup-portal` command and TUI provider bridge are removed. Ordinary
-Pi model/provider configuration and Hermes subscription-proxy functionality remain
-upstream-owned; Kit does not copy credentials, start proxies or configure a runner.
-Consult [Hermes proxy documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/subscription-proxy)
-and [Pi compatible endpoints](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md#configure-a-compatible-endpoint)
+Pi model/provider configuration remains upstream-owned; Kit does not copy
+credentials, start proxies or configure a runner. Consult
+[Pi compatible endpoints](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md#configure-a-compatible-endpoint)
 for a separately authorized interactive setup. The
 [prior setup and qualification limits](https://github.com/TrebuchetDynamics/kit/blob/ecc6061d7768dbe9286c6ca09ab403744b93ec1e/docs/cross-host.md#nous-portal-through-the-local-proxy)
 remain evidence; no live login, inference or delivery is established by removal.
@@ -712,8 +676,8 @@ reasoning, and the explicit questions-only caching prompt above. Pi used
 Each returned one relevant question and left the initially empty target directory
 empty. Existing authentication was referenced through owner-local links, not copied
 into the package. This establishes one bounded installed model smoke per host,
-not full planning publication, response quality across tasks, Orbi delivery,
-Hermes/Telegram execution or production acceptance. Real host profiles were not
+not full planning publication, response quality across tasks, Orbi delivery
+or production acceptance. Real host profiles were not
 selected as install/update targets.
 
 Archive extraction tests separately check installed references, literal arguments
