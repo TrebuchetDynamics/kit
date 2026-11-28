@@ -33,7 +33,7 @@ class Open3DCaptureTests(unittest.TestCase):
         self.url = f'http://127.0.0.1:{server.server_port}/'
         self.output = self.root / 'capture.mp4'
 
-    def record(self, script, env=None):
+    def record(self, script, env=None, extra=()):
         # The fixture becomes ready only after rAF runs during pre-roll.
         (self.root / 'index.html').write_text('''<!doctype html>
 <link rel="icon" href="data:,">
@@ -54,7 +54,7 @@ window.__recordFrame = t => { hook.style.background = t === 0 ? 'red' : 'blue'; 
 ''' + script + '\n</script>')
         return subprocess.run([sys.executable, '-B', RECORD, self.url, self.output,
                                '--size', '96x64', '--fps', '4', '--seconds', '1',
-                               '--ready', 'window.ready', '--settle', '0.1', '--preset', 'ultrafast'],
+                               '--ready', 'window.ready', '--settle', '0.1', '--preset', 'ultrafast', *extra],
                               env=env, capture_output=True, text=True, timeout=30)
 
     def test_encoded_frame_zero_uses_initial_raf_hook_and_css_state(self):
@@ -73,10 +73,33 @@ window.__recordFrame = t => { hook.style.background = t === 0 ? 'red' : 'blue'; 
             self.assertGreater(b - max(g, r), 150, f'second frame at x={x}')
         self.assertIn('4 encoded fps', result.stdout)
 
+    def test_frame_zero_applies_scroll_key_even_with_css_smooth_scroll(self):
+        result = self.record('''
+document.documentElement.style.scrollBehavior = 'smooth';
+document.body.style.height = '320px';
+window.__recordFrame = t => {
+  if (t === 0 && scrollY !== 256) throw Error('initial scroll key was not applied');
+};
+''', extra=('--scroll', '0:100%'))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_missing_encoder_is_reported_before_capture(self):
         result = self.record('', dict(os.environ, PATH=str(self.root)))
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('missing ffmpeg; make an existing FFmpeg build available on PATH', result.stderr)
+        self.assertFalse(self.output.exists())
+        self.assertFalse(list(self.root.glob('.open-3d-*')))
+
+    def test_missing_verification_decoder_is_reported_before_capture(self):
+        probe_bin = self.root / 'probe-bin'
+        probe_bin.mkdir()
+        ffprobe = probe_bin / 'ffprobe'
+        ffprobe.write_text(f'#!{sys.executable}\nprint(" V..... hevc")\n')
+        ffprobe.chmod(0o755)
+        env = dict(os.environ, PATH=f'{probe_bin}{os.pathsep}{os.environ["PATH"]}')
+        result = self.record('throw Error("capture should not start");', env)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('ffprobe lacks h264', result.stderr)
         self.assertFalse(self.output.exists())
         self.assertFalse(list(self.root.glob('.open-3d-*')))
 
@@ -100,9 +123,14 @@ window.__recordFrame = t => { hook.style.background = t === 0 ? 'red' : 'blue'; 
         for script, env, message in (
             ('window.__recordFrame = async () => { throw Error("broken choreography"); };',
              None, '__recordFrame: broken choreography'),
+            ('window.__recordFrame = t => { if (t > 0) throw Error("second frame failed"); };',
+             None, '__recordFrame: second frame failed'),
             ('window.__recordFrame = () => requestAnimationFrame(() => { throw Error("broken rAF"); });',
              None, 'requestAnimationFrame: broken rAF'),
+            ('window.__recordFrame = () => requestAnimationFrame(async () => { throw Error("async rAF"); });',
+             None, 'page error: async rAF'),
             ('throw Error("broken page");', None, 'page error: broken page'),
+            ('window.__recordFrame = () => console.error("broken console");', None, 'console error: broken console'),
             ('', short_env, 'incomplete encoding: expected 4 frames, decoded 1'),
         ):
             with self.subTest(message=message):

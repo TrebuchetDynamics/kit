@@ -13,17 +13,21 @@ package download, browser download or provider configuration is implicit.
 | --- | --- | --- |
 | Serve a preview | standard library only | None |
 | Site/viewport check | `playwright`, `PIL` | Selected browser(s), project fonts |
-| Record MP4 | `playwright` | Selected browser, project fonts, `ffmpeg` with `libx264` and MP4 muxer, `ffprobe` |
+| Record MP4 | `playwright` | Selected browser, project fonts, `ffmpeg` with PNG decoder, `libx264` and MP4 muxer, `ffprobe` with H.264 decoder |
 | Compare videos | `PIL` | `ffmpeg` with `libx264` and MP4 muxer, `ffprobe`; readable `--font` file if specified, otherwise upstream system/bundled Pillow fallback |
 | Scroll film `frames` / `video` / `seams` | `PIL` for `frames`, `numpy` and `PIL` for `seams` | `ffmpeg` with PNG output for `frames`/`seams`, `libx264` and MP4 muxer for `video`; Pillow WebP support for `frames` |
 | Alpha key / plate | `cv2`, `numpy`, `PIL` for key; `numpy`, `PIL` for plate | For key, OpenCV input decoding; `ffmpeg` with `libx264`/MP4 for `--stacked` or `libvpx-vp9`/WebM for `--webm`; Pillow WebP support for `--frames` |
-| Build cursor rig | `cv2`, `numpy` | `ffmpeg` with PNG output |
+| Build cursor rig | `cv2`, `numpy` | `ffmpeg` with PNG output and OpenCV WebP output (also PNG/JPEG for `--debug`) |
 | Motion loop check / paste back | `cv2`, `numpy` | OpenCV video/image decoding for the inputs; `ffmpeg` with `libx264` and MP4 muxer only for loop `--fix` |
 
 - **Imports.** In the Python environment that will run the helper, import the
   modules in the row, for example `timeout 10 python3 -B -c 'import playwright, PIL'`
-  for site checks. `PIL` comes from Pillow and `cv2` from OpenCV. For WebP output
-  check `PIL.features.check('webp')`.
+  for site checks. `PIL` comes from Pillow and `cv2` from OpenCV. For Pillow
+  WebP output, `from PIL import features` and check `features.check('webp')`.
+  For OpenCV WebP output check `cv2.haveImageWriter('.webp')`. Require a true
+  result. For OpenCV inputs,
+  use the same reader as the helper to open and decode a frame or image without
+  writing an output.
 - **Browser.** Launch and close each requested engine without navigating. Use
   the same helper path and engine as the final command:
 
@@ -43,11 +47,14 @@ package download, browser download or provider configuration is implicit.
   required web face, call `document.fonts.load()` with its CSS font shorthand
   and representative text; require a matching loaded face and inspect the text
   for fallback. Check required local faces in the browser's rendered-font
-  inspector; generic system stacks need no named font. For a comparison with
-  `--font`, open that file with `PIL.ImageFont.truetype()` before encoding.
+  inspector; generic system stacks need no named font. For comparison, call
+  `font(path, size)` from the shipped `compare.py` with the chosen `--font`
+  (or an empty path for its fallback) to verify a readable font before encoding.
 - **Encoders.** Run `timeout 10 ffmpeg -hide_banner -encoders`,
   `timeout 10 ffmpeg -hide_banner -muxers` and `timeout 10 ffprobe -version` where
-  required. Match the requested output format and codec.
+  required. Use `timeout 10 ffmpeg -hide_banner -decoders` and
+  `timeout 10 ffprobe -hide_banner -decoders` for required input codecs. Match
+  the requested formats and codecs.
 
 If a probe fails, name the missing capability and ask for an existing working
 environment or asset. Leave that operation unverified until it passes.
@@ -57,8 +64,17 @@ environment or asset. Leave that operation unverified until it passes.
 Set `OPEN_3D` to the absolute path of this installed skill directory. Serve only
 an authorized project directory on loopback. The Range-aware
 [server](../upstream/skills/frame-capture/scripts/serve.py) allows clips to seek.
-Use a new output directory for checks, and run the recorder against the project's
-ready signal (the starter exposes `window.__ready`):
+Use a new output directory for checks. Run helper invocations, including those
+from pinned protocols, under a caller deadline (`timeout` below or the host's
+process timeout). Run the recorder against the project's ready signal.
+
+The pinned starter exposes `window.__ready`, but its preview loader fades out
+with a CSS transition. In the **project copy** of the starter, add
+`if (RECORD) document.getElementById('loader').style.display = 'none';`
+just before `window.__ready = true` in `main.js`. This hides the loader at time
+zero in record mode and leaves the normal preview transition intact.
+
+For example, with the project copy in `./scene`:
 
 ```sh
 # First terminal
@@ -90,6 +106,7 @@ The derived copy keeps the original CLI and carries two adaptations:
 1. **Time zero.** Readiness and settle passes pump callbacks with the animation
    clock held at its initial time. Frame `n` uses absolute virtual time `n / fps`;
    frame zero uses the initial rAF, CSS and video time and calls `__recordFrame(0)`.
+   Apply the requested scroll position immediately, not through CSS smooth scrolling.
 2. **Fail closed.** Callback, uncaught page and console errors fail the command.
    FFmpeg must finish successfully and ffprobe must decode exactly the requested
    number of frames without errors before the MP4 replaces the destination.

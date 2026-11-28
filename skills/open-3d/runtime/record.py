@@ -25,7 +25,8 @@ it is called with the virtual time in seconds before every frame.
 --kill-lenis stops Lenis (and similar smooth-scroll libraries that read window.Lenis) from
 loading, so the recorder owns the scroll position.
 
-Needs: Playwright with the selected browser; ffmpeg with libx264 and ffprobe on PATH.
+Needs: Playwright with the selected browser; FFmpeg with PNG decoding and libx264/MP4;
+ffprobe with H.264 decoding. Bound the full invocation with a caller deadline.
 """
 import argparse
 import glob
@@ -86,7 +87,8 @@ CLOCK = r"""
   window.__step = async (elapsedMs, y, recording) => {
     vt = t0 + elapsedMs;
     adopt();
-    if (y !== null) window.scrollTo(0, y);
+    // CSS smooth scrolling uses the browser clock, not the recording clock.
+    if (y !== null) window.scrollTo({ left: 0, top: y, behavior: 'instant' });
     if (recording && typeof window.__recordFrame === 'function') {
       try { await window.__recordFrame(elapsedMs / 1000); }
       catch (e) { throw new Error(`__recordFrame: ${e?.message ?? e}`); }
@@ -164,15 +166,16 @@ def pointer_at(mode, t, w, h):
     return w * x, h * y
 
 
-def shoot(page, tries=4):
-    """Screenshots can stall now and then (WebKit at 1080p, about 1 in 100). The clock is
-    paused between steps, so a retry returns the identical frame."""
-    for k in range(tries):
+def shoot(page):
+    """Retry transient screenshot failures without stepping the clock again."""
+    for attempt in range(4):
         try:
             return page.screenshot(type="png", timeout=30000)
-        except PlaywrightTimeout:
-            print(f"  screenshot stalled, retry {k + 1}", flush=True)
-    sys.exit("screenshot kept stalling")
+        except PlaywrightError as error:
+            transient = isinstance(error, PlaywrightTimeout) or "Unable to capture screenshot" in str(error)
+            if not transient or attempt == 3:
+                raise
+            print(f"  screenshot failed, retry {attempt + 1}", flush=True)
 
 
 def cached_chromium():
@@ -212,10 +215,13 @@ def check_encoder():
     for name in ("ffmpeg", "ffprobe"):
         if not shutil.which(name):
             raise RuntimeError(f"missing {name}; make an existing FFmpeg build available on PATH")
-    for option, capability in (("-encoders", "libx264"), ("-muxers", "mp4")):
-        probe = subprocess.run(["ffmpeg", "-hide_banner", option], capture_output=True, text=True, timeout=10)
+    for tool, option, capability in (
+        ("ffmpeg", "-decoders", "png"), ("ffmpeg", "-encoders", "libx264"),
+        ("ffmpeg", "-muxers", "mp4"), ("ffprobe", "-decoders", "h264"),
+    ):
+        probe = subprocess.run([tool, "-hide_banner", option], capture_output=True, text=True, timeout=10)
         if probe.returncode or not any(line.split()[1:2] == [capability] for line in probe.stdout.splitlines()):
-            raise RuntimeError(f"FFmpeg lacks {capability} or could not list {option[1:]}; "
+            raise RuntimeError(f"{tool} lacks {capability} or could not list {option[1:]}; "
                                f"use an existing compatible build. {probe.stderr.strip()}".rstrip())
 
 
@@ -227,12 +233,13 @@ def encode(args, path):
         "-color_trc", "bt709", "-r", str(args.fps), "-movflags", "+faststart", "-an", path,
     ], stdin=subprocess.PIPE)
 
+
 def require_complete(path, total):
     probe = subprocess.run([
         "ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
         "-show_entries", "stream=nb_read_frames,avg_frame_rate,width,height,duration",
         "-of", "json", str(path),
-    ], capture_output=True, text=True)
+    ], capture_output=True, text=True, timeout=120)
     if probe.returncode or probe.stderr:
         raise RuntimeError(f"incomplete encoding: ffprobe: {probe.stderr.strip() or probe.returncode}")
     streams = json.loads(probe.stdout).get("streams", [])
@@ -302,7 +309,7 @@ def capture(args, path, w, h, total):
                     if n % max(1, round(args.fps * 2)) == 0:
                         print(f"  {t:6.2f}s  frame {n}/{total}  ({time.monotonic() - started:.0f}s real)", flush=True)
                 ff.stdin.close()
-                status = ff.wait()
+                status = ff.wait(timeout=120)
                 if status != 0:
                     raise RuntimeError(f"ffmpeg failed (exit {status})")
                 # Dispatch browser events that arrived while waiting for FFmpeg.
@@ -310,6 +317,11 @@ def capture(args, path, w, h, total):
                 check_page()
             except BaseException:
                 ff.kill()
+                # Closing buffered input after killing FFmpeg must not mask the page error.
+                try:
+                    ff.stdin.close()
+                except BrokenPipeError:
+                    pass
                 raise
         browser.close()
 
