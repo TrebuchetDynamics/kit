@@ -33,6 +33,8 @@ const workflows = {
   'ponytail-help': ['ponytail-help', 'Explain bundled Ponytail commands'],
   impeccable: ['impeccable', 'Improve interface design'],
   'ui-taste': ['ui-taste', 'Improve UI taste with Uizze playbooks'],
+  'procedural-drawing': ['procedural-drawing', 'Draw CPU-rendered illustrations from scene code'],
+  genart: ['genart', 'Create and verify seeded generative art'],
   tastemaker: ['tastemaker', 'Study visual references, audit UI or brief comps'],
   dembrandt: ['dembrandt', 'Apply an existing design language or measure site tokens'],
   'brand-identity': ['brand-identity', 'Compare brand directions and build the selected kit'],
