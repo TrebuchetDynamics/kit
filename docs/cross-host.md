@@ -613,7 +613,8 @@ Local installs refer to this checkout; keep it in place. The extension registers
 ```
 
 All 13 `/autoresearch-<protocol>` commands are available. The other commands are
-`/autoresearch`, `/impeccable`, `/ui-taste`, `/tastemaker`, `/dembrandt`, `/brand-identity`, `/styleseed`, `/unslop`, `/beautify-github-readme`,
+`/autoresearch`, `/impeccable`, `/ui-taste`, `/tastemaker`, `/dembrandt`, `/brand-identity`, `/styleseed`,
+`/procedural-drawing`, `/genart`, `/unslop`, `/beautify-github-readme`,
 `/lgtm`, `/git-commit-push` (current branch and its upstream) and `/push` (deliver
 to `main`). `/git-commit-push pull` or `merge <branch>` only integrates upstream changes.
 The engineering pack is a reference, not a command; no

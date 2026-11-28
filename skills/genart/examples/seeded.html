@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Seeded tile study</title>
+<canvas aria-label="Seeded mosaic of tiles"></canvas>
+<script>
+const params = new URLSearchParams(location.search);
+const canvas = document.querySelector('canvas');
+canvas.width = Number(params.get('width')) || 256;
+canvas.height = Number(params.get('height')) || 256;
+const ctx = canvas.getContext('2d');
+const colors = ['#172038', '#274c77', '#6096ba', '#a3cef1', '#f6bd60', '#e07a5f'];
+window.render = hash => {
+    const offset = parseInt(hash.slice(2, 10), 16);
+    let state = offset;
+    for (let y = 0; y < canvas.height; y += 16) {
+        for (let x = 0; x < canvas.width; x += 16) {
+            state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+            ctx.fillStyle = colors[(state >>> 16) % colors.length];
+            ctx.fillRect(x, y, 16, 16);
+        }
+    }
+    window.rendered = true;
+};
+window.render(params.get('hash') || '0x1a2b3c4d');
+</script>
+</html>

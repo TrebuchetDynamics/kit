@@ -339,6 +339,20 @@ class PortablePackageTests(unittest.TestCase):
 
     def check_visual_reference_packs(self, installed):
         packs = (
+            ('skills/procedural-drawing/UPSTREAM.json', 'cloveric/claude-drawing-skill',
+             '6af36dc717b63d6ddafb54d2eaa120cacd99ab4d', '.', (
+                 'skills/procedural-drawing/upstream/LICENSE',
+                 'skills/procedural-drawing/upstream/PROTOCOL.md',
+                 'skills/procedural-drawing/upstream/requirements.txt',
+                 'skills/procedural-drawing/scripts/preflight.py',
+             )),
+            ('skills/genart/UPSTREAM.json', 'camilleroux/genart-skill',
+             '36bb7f1f673580c6d6cbb13a80a15062d6c00459', 'skills/genart', (
+                 'skills/genart/upstream/LICENSE', 'skills/genart/upstream/PROTOCOL.md',
+                 'skills/genart/upstream/references/determinism.md',
+                 'skills/genart/upstream/references/verification.md',
+                 'skills/genart/scripts/verify_canvas.py', 'skills/genart/examples/seeded.html',
+             )),
             ('skills/tastemaker/UPSTREAM.json', 'codeswithroh/tastemaker',
              '792a28a820ec4e9159ef8621c21a6c88528bbf2e', 'skills/tastemaker', (
                  'skills/tastemaker/upstream/LICENSE', 'skills/tastemaker/upstream/ideagram/LICENSE',
@@ -382,6 +396,23 @@ class PortablePackageTests(unittest.TestCase):
                     if path.name == 'LICENSE':
                         self.assertIn('MIT License', path.read_text())
 
+        drawing = installed / 'skills/procedural-drawing'
+        index = '\n'.join(line for line in (drawing / 'styles.md').read_text().splitlines()
+                          if line.startswith('| '))
+        for folder, pattern in (('lib', '[a-z0-9]+'), ('examples', '[a-z0-9_]+')):
+            selected = re.findall(rf'\]\((upstream/{folder}/{pattern}\.py)\)', index)
+            self.assertEqual(len(selected), 83)
+            self.assertCountEqual(selected, [p.relative_to(drawing).as_posix()
+                                            for p in drawing.glob(f'upstream/{folder}/*.py')
+                                            if p.name != 'core.py'])
+
+        for name in ('procedural-drawing', 'genart'):
+            adapter = installed / 'adapters/skills' / name / 'SKILL.md'
+            canonical = installed / 'skills' / name / 'SKILL.md'
+            self.assertIn(f'](../../../skills/{name}/SKILL.md)', adapter.read_text())
+            for relative in re.findall(r'\]\(([^)#\s]+)', canonical.read_text()):
+                self.assertTrue((canonical.parent / relative).is_file(), relative)
+
         skill = installed / 'skills/dembrandt'
         index = (skill / 'references/corpus.md').read_text()
         selected = re.findall(r'\]\(\.\./(upstream/skills/[^/)]+/PROTOCOL\.md)\)', index)
@@ -396,7 +427,7 @@ class PortablePackageTests(unittest.TestCase):
             'autoresearch', 'impeccable', 'lgtm', 'goal',
             'git-commit-push', 'push', 'ui-taste', 'sakurai', 'unslop', 'beautify-github-readme',
             'tastemaker', 'dembrandt',
-            'brand-identity', 'styleseed',
+            'brand-identity', 'styleseed', 'procedural-drawing', 'genart',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
             'ponytail-gain', 'ponytail-help', 'bug-harvest',
             'autonomous-codebase-improver', 'split-folder', 'unused-code',
