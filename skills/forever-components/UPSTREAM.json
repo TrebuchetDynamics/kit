@@ -1,0 +1,20 @@
+{
+  "repository": "https://github.com/isas1/forever-ai-components",
+  "revision": "ae685e51644be5a793cce5b4becfd31009593f00",
+  "license": "MIT",
+  "source_paths": {
+    "LICENSE": "LICENSE",
+    "NOTICE.md": "NOTICE.md",
+    "llms.txt": "llms.txt",
+    "facets.json": "infinite/facets.json",
+    "components.index.json": "infinite/components.index.json"
+  },
+  "transform": "Discovery files, agent instructions and notices are copied byte-for-byte into upstream/ using their basenames. No HTML tiles are bundled or transformed; fetch selected indexed tiles at the pin.",
+  "files": {
+    "LICENSE": "c7ce50eb7fdca25706fc0fb911011e7a3d84d548db68dbc04cbdc4c29804ffc9",
+    "NOTICE.md": "3249d06b7f82efdd56a2d39f792a9257b133853009456bb92df8f1764c296e82",
+    "llms.txt": "9b783ebf6e17833024d61ee426beef3c95930dfd8ada81e290752dd3de9a1871",
+    "facets.json": "9c7ea96279899e8dd5fe0ec553a77f8f2dfd874c0a0ec47dfc31c5f1196f978f",
+    "components.index.json": "091b849bc51e2d542b5960da4177bf331261fdba9c59fe9355bcdc752b827dbd"
+  }
+}

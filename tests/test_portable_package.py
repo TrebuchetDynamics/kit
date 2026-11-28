@@ -103,6 +103,7 @@ class PortablePackageTests(unittest.TestCase):
 
             self.check_visual_reference_packs(installed)
             self.check_open_3d(installed)
+            self.check_forever_discovery(installed, foreign)
 
             # Writing guidance is reached through the real installed adapter,
             # including its mode-specific completion, not a checkout-only copy.
@@ -338,6 +339,142 @@ class PortablePackageTests(unittest.TestCase):
             self.assertIn('Restore', result.stderr)
         self.assertEqual((project / '.styleseed/effective-rules.md').read_text(), bundle)
 
+    def check_forever_discovery(self, installed, foreign):
+        import subprocess
+        import sys
+
+        skill = installed / 'skills/forever-components'
+        pin = json.loads((skill / 'UPSTREAM.json').read_text())
+        self.assertEqual(pin['revision'], 'ae685e51644be5a793cce5b4becfd31009593f00')
+        self.assertEqual(pin['license'], 'MIT')
+        self.assertEqual(pin['source_paths'], {
+            'LICENSE': 'LICENSE', 'NOTICE.md': 'NOTICE.md', 'llms.txt': 'llms.txt',
+            'facets.json': 'infinite/facets.json', 'components.index.json': 'infinite/components.index.json',
+        })
+        upstream = skill / 'upstream'
+        self.assertEqual({p.relative_to(upstream).as_posix() for p in upstream.rglob('*') if p.is_file()},
+                         set(pin['source_paths']))
+        self.assertFalse(list(skill.rglob('*.html')), 'tile sources are retrieved, not shipped')
+        for name, digest in pin['files'].items():
+            self.assertEqual(sha256((upstream / name).read_bytes()).hexdigest(), digest, name)
+        self.assertEqual(pin['files'].keys(), pin['source_paths'].keys())
+
+        # Run the real helper from the packed skill in a foreign directory.
+        before = set(foreign.iterdir())
+        def search(*args):
+            result = subprocess.run([sys.executable, str(skill / 'scripts/catalog.py'), 'search', *args],
+                                    cwd=foreign, check=True, capture_output=True, text=True, timeout=10)
+            return json.loads(result.stdout)
+
+        css_loader = ('--facet', 'role=loader', '--facet', 'technique=css-only',
+                      '--facet', 'perfTier=cheap', '--facet', 'deps=none')
+        matches = search(*css_loader, '--text', 'Equalizer Bars')
+        self.assertEqual([(c['title'], c['file']) for c in matches],
+                         [('Equalizer Bars', 'loaders/08-equalizer-bars.html')])
+        self.assertEqual(len(search(*css_loader)), 3)
+        self.assertEqual(search(*css_loader, '--text', 'no-matching-widget'), [])
+        self.assertEqual(set(foreign.iterdir()), before)
+
+    def test_forever_does_not_follow_redirects_from_the_pinned_url(self):
+        from contextlib import redirect_stderr
+        from email.message import Message
+        import io
+        import runpy
+        import tempfile
+        from unittest.mock import patch
+        from urllib import request, response
+
+        main = runpy.run_path(str(ROOT / 'skills/forever-components/scripts/catalog.py'))['main']
+        calls = []
+
+        def redirected_source(handler, req):
+            calls.append(req.full_url)
+            headers = Message()
+            headers['Location'] = 'https://example.com/other.html'
+            redirected = response.addinfourl(io.BytesIO(), headers, req.full_url,
+                                            302 if len(calls) == 1 else 200)
+            redirected.msg = 'Found' if len(calls) == 1 else 'OK'
+            return redirected
+
+        with (tempfile.TemporaryDirectory() as temp,
+              patch.object(request.HTTPSHandler, 'https_open', redirected_source)):
+            dest = Path(temp) / 'tile'
+            error = io.StringIO()
+            with redirect_stderr(error):
+                self.assertEqual(main(['fetch', 'loaders/08-equalizer-bars.html', str(dest)]), 1)
+            self.assertEqual(len(calls), 1, calls)
+            self.assertIn(calls[0], error.getvalue())
+            self.assertIn('302', error.getvalue())
+            self.assertFalse(dest.exists())
+
+    def test_forever_fetches_one_indexed_tile_with_provenance_and_attribution(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from http.client import IncompleteRead
+        import io
+        import runpy
+        import tempfile
+        from unittest.mock import patch
+        from urllib.error import URLError
+
+        skill = ROOT / 'skills/forever-components'
+        main = runpy.run_path(str(skill / 'scripts/catalog.py'))['main']
+        url = ('https://raw.githubusercontent.com/isas1/forever-ai-components/'
+               'ae685e51644be5a793cce5b4becfd31009593f00/infinite/loaders/08-equalizer-bars.html')
+        raw = b'<!doctype html><title>Equalizer Bars</title>\n'
+        with tempfile.TemporaryDirectory() as temp, patch('urllib.request.OpenerDirector.open') as fetch:
+            dest = Path(temp) / 'tile'
+            error = io.StringIO()
+            with redirect_stderr(error), self.assertRaises(SystemExit) as rejected:
+                main(['fetch', '../NOTICE.md', str(dest)])
+            self.assertEqual(rejected.exception.code, 2)
+            self.assertIn('choose an exact file from search', error.getvalue())
+            fetch.assert_not_called()
+            self.assertFalse(dest.exists())
+
+            args = ['fetch', 'loaders/08-equalizer-bars.html', str(dest)]
+            fetch.side_effect = URLError('network unavailable')
+            error = io.StringIO()
+            with redirect_stderr(error):
+                self.assertEqual(main(args), 1)
+            self.assertIn(url, error.getvalue())
+            self.assertIn('network unavailable', error.getvalue())
+            self.assertIn('Restore access', error.getvalue())
+            self.assertFalse(dest.exists())
+
+            fetch.reset_mock(side_effect=True)
+            response = fetch.return_value.__enter__.return_value
+            response.headers = {'Content-Length': str(len(raw))}
+            for failure in ('short body', 'broken chunk', 'partial content'):
+                with self.subTest(failure=failure):
+                    response.status = 206 if failure == 'partial content' else 200
+                    response.read.return_value = raw if failure == 'partial content' else raw[:-1]
+                    response.read.side_effect = IncompleteRead(raw[:-1]) if failure == 'broken chunk' else None
+                    failed_dest = Path(temp) / failure
+                    error = io.StringIO()
+                    with redirect_stderr(error), redirect_stdout(io.StringIO()):
+                        self.assertEqual(main([*args[:-1], str(failed_dest)]), 1)
+                    self.assertIn(url, error.getvalue())
+                    self.assertIn('206' if failure == 'partial content' else 'incomplete', error.getvalue().lower())
+                    self.assertIn('retry', error.getvalue())
+                    self.assertFalse(failed_dest.exists())
+
+            fetch.reset_mock()
+            response.status = 200
+            response.read.side_effect = None
+            response.read.return_value = raw
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(main(args), 0)
+            fetch.assert_called_once()
+            self.assertEqual(fetch.call_args.args, (url,))
+            self.assertEqual((dest / '08-equalizer-bars.html').read_bytes(), raw)
+            receipt = json.loads((dest / 'provenance.json').read_text())
+            self.assertEqual(receipt['source_path'], 'infinite/loaders/08-equalizer-bars.html')
+            self.assertEqual(receipt['source_url'], url)
+            self.assertEqual(receipt['revision'], 'ae685e51644be5a793cce5b4becfd31009593f00')
+            self.assertEqual(receipt['sha256'], sha256(raw).hexdigest())
+            for name in ('LICENSE', 'NOTICE.md'):
+                self.assertEqual((dest / name).read_bytes(), (skill / 'upstream' / name).read_bytes())
+
     def check_visual_reference_packs(self, installed):
         packs = (
             ('skills/procedural-drawing/UPSTREAM.json', 'cloveric/claude-drawing-skill',
@@ -489,7 +626,8 @@ class PortablePackageTests(unittest.TestCase):
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
         self.assertEqual(names, {'plan-with-me', 'unblock', 'plan-for-me', 'docs-sync', 'orbi', 'update-kit',
             'autoresearch', 'impeccable', 'lgtm', 'goal',
-            'git-commit-push', 'push', 'ui-taste', 'open-3d', 'sakurai', 'unslop', 'beautify-github-readme',
+            'git-commit-push', 'push', 'ui-taste', 'open-3d', 'sakurai', 'forever-components',
+            'unslop', 'beautify-github-readme',
             'tastemaker', 'dembrandt', 'genjutsu', 'motion-graphics',
             'brand-identity', 'styleseed', 'procedural-drawing', 'genart',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
