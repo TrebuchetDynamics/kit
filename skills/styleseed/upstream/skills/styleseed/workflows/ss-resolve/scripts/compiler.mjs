@@ -7,12 +7,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { sha256, safeProjectPath } from "./runtime-contract.mjs";
 import { renderRulesSection } from "./rules-in-scope.mjs";
 import { CONTRACT_FILES, checkGeneratedContract } from "./reference-contract.mjs";
-import { requireVerifiedDistribution } from "./distribution-integrity.mjs";
+import { readKitCatalog, requireVerifiedDistribution } from "./distribution-integrity.mjs";
 import { SYSTEM_CSS_PATH, renderSystemCss } from "./system-css.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const skillDir = resolve(scriptDir, "..");
-const defaultCatalog = JSON.parse(readFileSync(resolve(skillDir, "references/catalog.json"), "utf8"));
+const defaultCatalog = readKitCatalog();
 requireVerifiedDistribution({ catalog: defaultCatalog, scriptPath: fileURLToPath(import.meta.url) });
 const paletteGeneratorPath = [
   resolve(scriptDir, "palette-generator.mjs"),

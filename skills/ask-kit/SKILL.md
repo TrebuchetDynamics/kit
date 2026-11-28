@@ -66,7 +66,9 @@ not ask for.
 | --- | --- |
 | Interface design, polish or frontend audit | `/impeccable` |
 | Turn generic UI patterns into specific GitHub issues for Orbi | `/unslop` |
-| Uizze's UI playbooks | `/ui-taste` |
+| Unnamed UI work or Uizze's UI playbooks | `/ui-taste` |
+| Study a visual reference, critique UI without edits or draft composition briefs | `/tastemaker` |
+| Work within an existing design language or measure a site's design tokens | `/dembrandt` |
 | Compare brand directions and export the selected identity | `/brand-identity` |
 | Create or maintain project design rules, components and tokens | `/styleseed` |
 | Sakurai's game-design guidance and Japanese references online (pointer-only) | `/sakurai` |

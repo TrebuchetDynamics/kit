@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Kit's local capability check: no remote version lookup, install or project writes.
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { requireVerifiedDistribution } from './workflows/ss-resolve/scripts/distribution-integrity.mjs';
+import { readKitCatalog, requireVerifiedDistribution } from './workflows/ss-resolve/scripts/distribution-integrity.mjs';
 
 try {
   const {values} = parseArgs({options: {
@@ -18,7 +18,7 @@ try {
     if (Number(process.versions.node.split('.')[0]) < 22) {
       throw new Error('Select Node.js 22 or later and retry.');
     }
-    const catalog = JSON.parse(readFileSync(new URL('./workflows/ss-resolve/references/catalog.json', import.meta.url), 'utf8'));
+    const catalog = readKitCatalog();
     const receipt = requireVerifiedDistribution({catalog, scriptPath: fileURLToPath(import.meta.url)});
     console.log(`StyleSeed distribution verified: ${receipt.computedRevision}`);
     if (values.render || values.record || values.browser !== undefined) {
@@ -33,12 +33,12 @@ try {
           recordingDir = mkdtempSync(join(tmpdir(), 'styleseed-record-'));
           const context = await browser.newContext({recordVideo: {dir: recordingDir}, viewport: {width: 320, height: 240}});
           const page = await context.newPage();
-          await page.setContent('<p>StyleSeed encoder check</p>');
-          await page.locator('p').evaluate(async (label) => {
-            for (let i = 0; i < 20; i += 1) {
-              label.textContent = `StyleSeed encoder check — frame ${i}`;
-              await new Promise(requestAnimationFrame);
-            }
+          await page.setContent('<p>StyleSeed encoder check</p>', {timeout: 5000});
+          await page.waitForFunction(() => {
+            // Update the blank page for several frames to exercise the recorder.
+            document.body.dataset.frames = Number(document.body.dataset.frames ?? 0) + 1;
+            document.querySelector('p').textContent = `StyleSeed encoder check — frame ${document.body.dataset.frames}`;
+            return Number(document.body.dataset.frames) >= 20;
           }, undefined, {timeout: 5000});
           await context.close();
           if (!statSync(await page.video().path()).size) throw new Error('Playwright produced an empty recording');

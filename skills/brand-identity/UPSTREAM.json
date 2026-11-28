@@ -103,7 +103,7 @@
   },
   "derived_files": {
     "scripts/brand.py": "f540099534723d6c558ffcff6430a4751c51db2959b1d3989e651e2002e4f2cb",
-    "scripts/preflight.py": "d3f49b560aac802321af547c748a376fd94f586e2f2d546ecf36c642db35bb07",
+    "scripts/preflight.py": "0a9eeeb4459ad0142030a54d2ae304db2b396998626bec3df739bb5943374fc9",
     "scripts/pydeps.py": "7553ad24da340cf11236b00f66817a0ad4ca9a01e45de074af92c4ed599a2900"
   }
 }

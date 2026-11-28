@@ -11,7 +11,7 @@ sys.dont_write_bytecode = True
 
 def add_options(parser):
     parser.add_argument('--render', action='store_true', help='start and close a local Chromium browser')
-    parser.add_argument('--type', action='store_true', help='check the font audit and WOFF2 libraries')
+    parser.add_argument('--type', action='store_true', help='check font audit, variable-font instancing and WOFF2 libraries')
     parser.add_argument('--outlines', action='store_true', help='also check shaping and SVG outline libraries')
     parser.add_argument('--font', action='append', default=[], type=Path,
                         help='check a licensed local font file (repeat per face; implies --type)')
@@ -24,13 +24,16 @@ def check(args):
     errors = []
     modules = []
     if args.type or args.outlines or args.font:
-        modules += ['fontTools.ttLib', 'brotli']
+        modules += ['fontTools.ttLib', 'fontTools.ttLib.woff2', 'pathops']
     if args.outlines:
-        modules += ['uharfbuzz', 'pathops']
+        modules.append('uharfbuzz')
     imported = {}
     for name in modules:
         try:
-            imported[name] = import_module(name)
+            module = import_module(name)
+            if name == 'fontTools.ttLib.woff2' and not module.haveBrotli:
+                raise ImportError('the required Brotli backend is missing')
+            imported[name] = module
         except (ImportError, OSError) as exc:
             errors.append(f'Python package {name} is unavailable: {exc}')
     if len(imported) != len(modules):
@@ -44,8 +47,9 @@ def check(args):
             ttlib = imported['fontTools.ttLib']
             try:
                 with ttlib.TTFont(path) as font:
-                    font.getBestCmap()
-            except (OSError, ttlib.TTLibError) as exc:
+                    if not font.getBestCmap():
+                        raise ttlib.TTLibError('no usable Unicode character map')
+            except (OSError, ttlib.TTLibError, AssertionError, IndexError, KeyError, ValueError) as exc:
                 errors.append(f'Cannot read font {path}: {exc}. Supply a readable local font file and retry.')
     if args.render:
         from render_png import launch_check

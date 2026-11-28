@@ -10,8 +10,8 @@
     "engine/"
   ],
   "runtime_path": "skills/styleseed",
-  "runtime_revision": "sha256:a10b7171bc25bae9035dd738bc9663dec4cbe599366ee2a6e365fb7f6b1ec231",
-  "transform": "Ship the skills-only payload under skills/styleseed/ and keep SKILL.md byte-exact as PROTOCOL.md. Bundled engine/ references come from the same pin at repo root. For each replaced file, original/<path> retains the exact bytes at source_path/<path>. The derived runtime adds Pi and Hermes contracts, verifies before compiling, checks local capabilities instead of updating, and refuses the optional Designlang installer. Regenerate the skills inventory with the upstream algorithm: sorted engine/.claude/skills/styleseed/<path> entries with byte count and SHA-256 for every runtime file except the catalog itself. Hash the concatenated path + NUL + sha256 + LF strings for the skills and engine revision. UPSTREAM.json separately hashes the catalog.",
+  "runtime_revision": "sha256:1b6afe0319f0ae6748dc804a1c5ddc03de616d15012fed6113af21cafd95ddf4",
+  "transform": "Ship the skills-only payload under skills/styleseed/ and keep SKILL.md byte-exact as PROTOCOL.md. Bundled engine/ references come from the same pin at repo root. For each replaced file, original/<path> retains the exact bytes at source_path/<path>. The derived runtime adds Pi and Hermes contracts, verifies before compiling, checks local capabilities instead of updating, and refuses the optional Designlang installer. Browser probes honor an explicit Playwright module without silently switching to the project default. Regenerate the skills inventory with the upstream algorithm: sorted engine/.claude/skills/styleseed/<path> entries with byte count and SHA-256 for every runtime file except the catalog itself. Hash the concatenated path + NUL + sha256 + LF strings for the skills and engine revision. Preflight, compilation and local diagnosis verify the catalog against its derived hash in UPSTREAM.json.",
   "files": {
     "LICENSE": "2de9d43f4c5a690a3a8e01a58fd906c259f2b70e7903805b702982ec52f23b43",
     "THIRD_PARTY.md": "cb25afee89e5e8894d818b6383fd5894fc1d8c211d91569627baf0b00f2beebc",
@@ -22,6 +22,7 @@
     "original/workflows/ss-resolve/scripts/distribution-integrity.mjs": "067f80bb2f6b881e840c5c3e7ffe00bc1d744fb477059c887ea23cabc981e1ba",
     "original/workflows/ss-resolve/scripts/resolve-context.mjs": "80d1b3b721d9b098feb460420264e1735f3ea0cf3d7f63040dcbcc0fce4cdd8d",
     "original/workflows/ss-resolve/scripts/runtime-contract.mjs": "2a2a7ef169fb885b998900e106d9b0e4bbeb6c22ab7809d752ca3e3f402bc081",
+    "original/workflows/ss-resolve/scripts/styleseed-doctor.mjs": "8324345d792a67af6957fbc2079d9ec2a663d1a58b751c71639db3ee6d5f45e9",
     "skills/styleseed/PROTOCOL.md": "84b77a89d2652ef39f9a2e464d33197c199740ea9ef8a899a0bb89d71e2dfe09",
     "skills/styleseed/engine/ADAPTERS.md": "5c21aeb3b8fd1fb98e5cda97d75ee72785e0e9fc9ce1d135fd3abf9c72a8bed7",
     "skills/styleseed/engine/BRAND-RECIPES.md": "3b96fcf5d51d43c617fa877905bb6e065daf0b699f0a1c2176c583454606c821",
@@ -99,7 +100,6 @@
     "skills/styleseed/workflows/ss-resolve/scripts/rules-in-scope.mjs": "5079301b0d614222e2c377d59331b1153e72233ee453e2da91112a96e29eb82e",
     "skills/styleseed/workflows/ss-resolve/scripts/spacing-contract.mjs": "275cc123618266e730082569d3d612220a98621eea2745c861d04252dbeeeb24",
     "skills/styleseed/workflows/ss-resolve/scripts/spacing-measurement.mjs": "b486ff21c778f4b4b1402df92ff0e09f961ca74670e0e32b188ce3d7361aadcf",
-    "skills/styleseed/workflows/ss-resolve/scripts/styleseed-doctor.mjs": "8324345d792a67af6957fbc2079d9ec2a663d1a58b751c71639db3ee6d5f45e9",
     "skills/styleseed/workflows/ss-resolve/scripts/system-css.mjs": "47fd8721cd1454134ac9bd1ce3e5bf7cf00aa075971bb85e0a5b08428303869d",
     "skills/styleseed/workflows/ss-resolve/scripts/system-proposal.mjs": "3635991320728e14183e9ee8eb5e681133375043d37a05cfeaf15af5a4e4e24e",
     "skills/styleseed/workflows/ss-resolve/scripts/token-canon.mjs": "09189f8bc60ee64d87627650856be0a71caee7be16f54496c7b8eb8379513bb9",
@@ -147,13 +147,14 @@
     "skills/styleseed/workflows/ss-verify/scripts/transition-jumps.mjs": "6cb2c6d5525f3bbc86b1a704f28011bee09aafabb880be248a6b5f1bf8460498"
   },
   "derived_files": {
-    "skills/styleseed/preflight.mjs": "227b9855521c528b9370cb0fd56f609be669dc33a6c79779ce550109cf5312d5",
-    "skills/styleseed/workflows/ss-reference/scripts/measure-reference.mjs": "4120e66889e76adcbe0c96463fee9ae38fe68c7e2ba404175710a7b2084bf33f",
-    "skills/styleseed/workflows/ss-resolve/references/catalog.json": "6ea3bf74438cf341265dc3d5e7d68c168a5b6c878a09903889ee831f2069f4b7",
+    "skills/styleseed/preflight.mjs": "b0d55da77826aa4d5194f3243df64a5ff5e4d40de38e71b10117b2d6f7c50012",
+    "skills/styleseed/workflows/ss-reference/scripts/measure-reference.mjs": "18e086cce3054ef81ef532354603503b5bf913d02770823513ac7df218e264cc",
+    "skills/styleseed/workflows/ss-resolve/references/catalog.json": "0648d4a6722ba30fde9b8047255bd85dfec1f3cad3b1b9b008e2707e8364d91c",
     "skills/styleseed/workflows/ss-resolve/references/project.schema.json": "135db917260f8c85738eba0ba100972479c43532b1dee4b550dc07f5533bb5f8",
-    "skills/styleseed/workflows/ss-resolve/scripts/compiler.mjs": "a4614a60a0d425e7fd915e6fc23de80ce4ddacbaf18d00d4d69ca53ba3fc6ef1",
-    "skills/styleseed/workflows/ss-resolve/scripts/distribution-integrity.mjs": "81eaa940d65cc8af8c99e9c22bbfa4c292305513ceda8d7a2511d1f540aac8f1",
+    "skills/styleseed/workflows/ss-resolve/scripts/compiler.mjs": "ba7059f22cb3f939cd22b457367067fef7ec0a5b6c82aa71fb5b4778f749d55a",
+    "skills/styleseed/workflows/ss-resolve/scripts/distribution-integrity.mjs": "15ae4d1118c093517a46856046e544e77f9faa8bed92663180ef5212c0b68649",
     "skills/styleseed/workflows/ss-resolve/scripts/resolve-context.mjs": "bd4a9acf788d9ee61e2ef2dd941d34eb5e5d7baba3e3ecb0b94c021c03d298e3",
-    "skills/styleseed/workflows/ss-resolve/scripts/runtime-contract.mjs": "2339c4dd390ea36560004e54a8ff8f9cd600da1d85673c1dd07e0733b78012a6"
+    "skills/styleseed/workflows/ss-resolve/scripts/runtime-contract.mjs": "2339c4dd390ea36560004e54a8ff8f9cd600da1d85673c1dd07e0733b78012a6",
+    "skills/styleseed/workflows/ss-resolve/scripts/styleseed-doctor.mjs": "7b2c79b7f6f2e47f3b6c76d8a73c910c4fbb0f2dc0bafd3a0c46a8124d72e23f"
   }
 }

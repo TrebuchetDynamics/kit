@@ -78,8 +78,8 @@ export async function diagnoseProject({ projectRoot = process.cwd(), artifact, a
   const report = { schemaVersion: 1, projectRoot: root, status: "attention", installation: { status: "not-checked" }, configuration: { status: "not-checked" }, artifacts: [], limitations };
   let catalog;
   try {
-    catalog = JSON.parse(readFileSync(resolve(scriptDir, "../references/catalog.json"), "utf8"));
-    const { verifyDistribution } = await import("./distribution-integrity.mjs");
+    const { readKitCatalog, verifyDistribution } = await import("./distribution-integrity.mjs");
+    catalog = readKitCatalog();
     report.installation = verifyDistribution({ catalog, scriptPath });
   } catch (error) {
     report.installation = { status: "invalid", detail: error.message };

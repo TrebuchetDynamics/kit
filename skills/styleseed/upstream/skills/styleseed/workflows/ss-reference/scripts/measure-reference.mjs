@@ -134,16 +134,18 @@ export function sourceRecord({ url, observedAt, robots, viewports, scrolled }) {
 }
 
 export async function loadBrowser(explicit) {
-  const candidates = [];
-  if (explicit) candidates.push(explicit);
-  try { candidates.push(createRequire(join(process.cwd(), 'package.json')).resolve('playwright')); } catch {}
-  for (const c of candidates) {
-    try {
-      const mod = await import(/^file:/.test(c) ? c : pathToFileURL(resolve(c)).href);
-      if (mod.chromium) return { chromium: mod.chromium, from: c };
-    } catch (e) { if (explicit && c === explicit) throw new Error(`could not load browser module ${c}: ${e.message}`); }
+  let from = explicit;
+  if (!from) {
+    try { from = createRequire(join(process.cwd(), 'package.json')).resolve('playwright'); }
+    catch { throw new Error('no browser module: pass --browser <path to playwright/index.mjs> or set STYLESEED_BROWSER_MODULE'); }
   }
-  throw new Error('no browser module: pass --browser <path to playwright/index.mjs> or set STYLESEED_BROWSER_MODULE');
+  try {
+    const mod = await import(/^file:/.test(from) ? from : pathToFileURL(resolve(from)).href);
+    if (typeof mod.chromium?.launch !== 'function') throw new Error('Playwright Chromium launch is not exported');
+    return { chromium: mod.chromium, from };
+  } catch (error) {
+    throw new Error(`could not load browser module ${from}: ${error.message}`);
+  }
 }
 
 // What stays a person's call on each axis the probes can only describe. compile-contract.mjs writes

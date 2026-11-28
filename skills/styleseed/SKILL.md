@@ -13,13 +13,15 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) and the
    and only the internal workflow it selects. Resolve scripts and `engine/` references from
    the bundled runtime. Treat `ss-*` as internal workflow names, not host commands.
 2. **Preflight.** From the project root, run the [local check](upstream/skills/styleseed/preflight.mjs)
-   with Node.js 22+. This checks the Kit payload instead of the upstream remote update preflight.
+   with Node.js 22+. Use bounded shell timeouts for checks and helpers. This checks
+   the Kit payload instead of the upstream remote update preflight.
    Add `--render` for the shipped Playwright probes or `--record` to also test Playwright's
    FFmpeg encoder. Use the project's existing `playwright`, `STYLESEED_BROWSER_MODULE`,
    or `--browser PATH`. For a different project renderer or encoder, check that exact
    tool instead; confirm the actual fonts in the render, not just their CSS names.
    Report missing capabilities and leave those checks unmet. Use `/update-kit` for
    an authorized Kit refresh; do not run upstream installers or consolidation.
+   For reference measurement, omit the upstream optional `--designlang` install path.
 3. **Resolve.** Use `--agent pi` on Pi and `--agent hermes` on Hermes when compiling
    or checking bundles; on other hosts use their existing mapping. Preserve approved
    tokens (import the project's token canon where supported), branding, stack and motion

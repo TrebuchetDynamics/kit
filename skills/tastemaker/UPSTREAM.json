@@ -1,0 +1,26 @@
+{
+  "repository": "https://github.com/codeswithroh/tastemaker",
+  "revision": "792a28a820ec4e9159ef8621c21a6c88528bbf2e",
+  "source_path": "skills/tastemaker",
+  "license": "MIT",
+  "transform": "Byte-for-byte subset for study, audit and comps; upstream build, fetching, illustration/export and memory workflows are not bundled. LICENSE comes from the repository root; all other source paths are relative to skills/tastemaker.",
+  "files": {
+    "LICENSE": "725f8240ae29d4db220b446c1e983a24fb901fb19c08660bb71b14ff14c4b874",
+    "ideagram/LICENSE": "725f8240ae29d4db220b446c1e983a24fb901fb19c08660bb71b14ff14c4b874",
+    "ideagram/references/style-contract.md": "28cb8860dded993e3b20e46a12223931258b98b545f8f50df0674068b0356301",
+    "references/anti-slop-checklist.md": "5bb915f710fcd2d4c4b6566645d09245e5a393d1d1a204ec3ce8c38bfbc06e8f",
+    "references/component-catalog.md": "8666deaa51651d3e852ccc91510f2d335edf479f09518a61015fbcb32c63a6fa",
+    "references/logo-sourcing.md": "32997f0a3a71f4fc4b6ce5ad38054a26750b8a0cef85cb07385d3b8bae8e80d9",
+    "references/macrostructures.md": "9e0efd26a9c94bd94d62e1eb1806048d299f4d4d5174b237142a75551d1af99d",
+    "references/narrative-arc.md": "f115c1657a54528e69fadb8965dfd85fa1f187a8d3c1efdf3736c8901c612d8c",
+    "references/style-tokens.md": "f3df715afb47161f0c401459d52f6effa5ba996e4c7888b0c05d204813b8bbe2",
+    "references/verbs/audit.md": "4c2b607bea79a025ffcdccffee42528ac59b4a70767bbaedfc5ace3d25e78a9d",
+    "references/verbs/comps.md": "350872d7692716a175de101a5ee26ea67f8318d60a0c39f58475162f95c75eed",
+    "references/verbs/study.md": "65e9c59afb1ac37ba3e6f6841d16aa01a7fa5de0fb5b82f6bd1feb2cbf3c1e51",
+    "scripts/anti_slop_scan.py": "b07a5c27c2aa0694d93eafc1a1b3c65eb62093eac6e270277e1bb278eb4ab6ad",
+    "scripts/audit_motion.py": "5e8d07275aae465da8bfe5c1d2045fdfb53b5351dc8ed4cb72a530e8b7791e2c",
+    "scripts/check_contrast.py": "28038bf1f1d4a216788e9dc8588020d713677a1cb8737d6593d0bbb91b7f65f7",
+    "scripts/extract_palette.py": "16db226f7de857b5663f2f75635b240c617f923d8247b96b0382c3dff7a2c934",
+    "scripts/generate_palette.py": "4404aa4e1b9790c218d6252f345a5037c280659518b07a084e137063d81bfac9"
+  }
+}

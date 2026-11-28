@@ -177,6 +177,22 @@ export function verifyDistribution({ catalog, scriptPath }) {
   return { status: "verified", distribution: distributionName, computedRevision, mismatches: [] };
 }
 
+// The distribution inventory cannot include its own catalog. Check that file
+// against the digest in Kit's enclosing source manifest before trusting it.
+export function readKitCatalog() {
+  const relative = "skills/styleseed/workflows/ss-resolve/references/catalog.json";
+  try {
+    const manifest = JSON.parse(readFileSync(new URL("../../../../../../UPSTREAM.json", import.meta.url), "utf8"));
+    const bytes = readFileSync(new URL("../references/catalog.json", import.meta.url));
+    if (sha256(bytes) !== manifest.derived_files?.[relative]) {
+      throw new Error("SHA-256 mismatch");
+    }
+    return JSON.parse(bytes);
+  } catch (error) {
+    throw new Error(`Cannot verify StyleSeed catalog.json: ${error.message}. Restore the pinned Kit package and retry.`);
+  }
+}
+
 // Kit: compilation and capability preflight require the same verified payload.
 export function requireVerifiedDistribution(options) {
   const report = verifyDistribution(options);

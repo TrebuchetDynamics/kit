@@ -15,13 +15,15 @@ Apply the [shared Ponytail method](../shared/PONYTAIL.md) and the
 2. **Preflight.** Run the [Kit capability check](upstream/scripts/preflight.py) with the same
    Python 3.10+ interpreter as [`brand.py`](upstream/scripts/brand.py). Intake and catalog
    search need no flags. Add `--render` for browser-backed boards, site work and PDFs;
-   `--type` for font audits and `--outlines` for logo outlines (includes type).
-   Bind selected faces to licensed local files and check each with `--font PATH`.
-   Use a prepared interpreter with the [Python requirements](upstream/requirements.txt)
-   for type and outline work. Chromium
-   produces PNG and PDF directly; no separate encoder is needed. This check replaces
-   upstream setup. On failure, report the diagnostic and stop the affected operation;
-   do not install anything or substitute different artwork or type.
+   `--type` for font audits and variable-font instancing, and `--outlines` for
+   logo variants and wordmark outlines (includes type). Bind the selected faces to
+   licensed local files and check each with `--font PATH`. For a PDF kit with type
+   and logo assets, combine `--render --outlines` and the font paths.
+   Use a prepared interpreter with the [Python requirements](upstream/requirements.txt).
+   Chromium produces PNG and PDF directly; no separate encoder is needed. Run plain
+   Python with a bounded shell timeout; ignore the protocol's `uv` bootstrap advice.
+   On failure, report the diagnostic and stop the affected operation without
+   installing anything or substituting artwork or type.
 3. **Compare.** When there is a choice to make, present labeled sets with the same
    specimens and comparison axes. Inspect the board and show the tradeoffs and checks.
    Stop before final export until the user selects a set or combination.
