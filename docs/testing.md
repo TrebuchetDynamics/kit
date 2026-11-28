@@ -318,6 +318,17 @@ and disposable-home installation checks. Package discovery does not prove model
 execution or completion of a delivery task. Required model-driven qualification
 remains separate from package discovery and needs explicit scope and real evidence.
 
+For the motion capture contract, use an existing Playwright Python environment
+and matching Chromium:
+
+```sh
+KIT_MOTION_BROWSER=1 timeout 90 python3 -B tests/test_motion_graphics.py -v
+```
+
+This opens local fixture HTML and runs the same seek-based capture command as the
+skill. It includes static, non-repeatable and mismatched loop negatives; it does
+not test model output or device performance.
+
 ## Qualification boundaries
 
 Removing completed-task records does not qualify the following current surfaces.

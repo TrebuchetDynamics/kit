@@ -35,6 +35,8 @@ const workflows = {
   'ui-taste': ['ui-taste', 'Improve UI taste with Uizze playbooks'],
   tastemaker: ['tastemaker', 'Study visual references, audit UI or brief comps'],
   dembrandt: ['dembrandt', 'Apply an existing design language or measure site tokens'],
+  genjutsu: ['genjutsu', 'Design interaction motion for an interface'],
+  'motion-graphics': ['motion-graphics', 'Build and render seekable motion graphics'],
   'brand-identity': ['brand-identity', 'Compare brand directions and build the selected kit'],
   styleseed: ['styleseed', 'Create and maintain a project design system'],
   sakurai: ['sakurai', "Find Sakurai's game-design guidance upstream"],
