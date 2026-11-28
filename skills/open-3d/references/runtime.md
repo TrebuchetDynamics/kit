@@ -34,7 +34,8 @@ package download, browser download or provider configuration is implicit.
   from playwright.sync_api import sync_playwright
 
   with sync_playwright() as p:
-      runpy.run_path(sys.argv[1])["launch"](p, sys.argv[2]).close()
+      launch = runpy.run_path(sys.argv[1])["launch"]
+      launch(p, sys.argv[2]).close()
   PY
   ```
 
