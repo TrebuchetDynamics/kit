@@ -1,4 +1,5 @@
 """Portable hosts expose adapters rather than Hermes-only worker instructions."""
+from hashlib import sha256
 import json
 from pathlib import Path
 import re
@@ -99,6 +100,8 @@ class PortablePackageTests(unittest.TestCase):
             spec.loader.exec_module(standard)
             shipped = standard.gui_entrypoint_routes(installed)
             self.assertEqual(set(shipped), set(standard.gui_entrypoint_routes(ROOT)))
+
+            self.check_visual_reference_packs(installed)
 
             # Writing guidance is reached through the real installed adapter,
             # including its mode-specific completion, not a checkout-only copy.
@@ -213,12 +216,65 @@ class PortablePackageTests(unittest.TestCase):
             self.assertIn('update --no-pull --only pi', result.stdout)
             self.assertEqual(sorted(path.relative_to(foreign) for path in foreign.rglob('*')), before)
 
+    def check_visual_reference_packs(self, installed):
+        packs = (
+            ('skills/tastemaker/UPSTREAM.json', 'codeswithroh/tastemaker',
+             '792a28a820ec4e9159ef8621c21a6c88528bbf2e', 'skills/tastemaker', (
+                 'skills/tastemaker/upstream/LICENSE', 'skills/tastemaker/upstream/ideagram/LICENSE',
+                 'skills/tastemaker/upstream/references/verbs/study.md',
+                 'skills/tastemaker/upstream/references/verbs/audit.md',
+                 'skills/tastemaker/upstream/references/verbs/comps.md',
+                 'skills/tastemaker/upstream/scripts/extract_palette.py',
+                 'skills/tastemaker/upstream/scripts/check_contrast.py',
+                 'skills/tastemaker/upstream/scripts/generate_palette.py',
+                 'skills/tastemaker/upstream/scripts/anti_slop_scan.py',
+                 'skills/tastemaker/upstream/scripts/audit_motion.py',
+             )),
+            ('skills/dembrandt/UPSTREAM.json', 'dembrandt/dembrandt-skills',
+             'cd3ff4b085557fe20f2f247dd853e4be7df583f3', 'directory/skills', (
+                 'skills/dembrandt/upstream/LICENSE', 'skills/dembrandt/upstream/directory/LICENSE',
+                 'skills/dembrandt/upstream/skills/extract-design/PROTOCOL.md',
+                 'skills/dembrandt/upstream/skills/generate-ui-from-brand/PROTOCOL.md',
+             )),
+        )
+        for manifest, repo, revision, source_path, required in packs:
+            with self.subTest(repo=repo):
+                skill = (installed / manifest).parent
+                pin = json.loads((installed / manifest).read_text())
+                self.assertEqual(pin['repository'], f'https://github.com/{repo}')
+                self.assertEqual(pin['revision'], revision)
+                self.assertEqual(pin['license'], 'MIT')
+                self.assertEqual(pin['source_path'], source_path)
+                self.assertTrue(pin['transform'])
+                upstream = skill / 'upstream'
+                files = {p.relative_to(upstream).as_posix(): sha256(p.read_bytes()).hexdigest()
+                         for p in upstream.rglob('*') if p.is_file()}
+                # A relocated entry maps the original upstream path to {path, sha256}.
+                recorded = {(entry['path'].removeprefix('upstream/') if isinstance(entry, dict) else stored):
+                            (entry['sha256'] if isinstance(entry, dict) else entry)
+                            for stored, entry in pin['files'].items()}
+                self.assertEqual(files, recorded)
+                self.assertFalse(list(upstream.rglob('SKILL.md')), 'upstream is not discoverable')
+                for relative in required:
+                    path = installed / relative
+                    self.assertTrue(path.is_file(), relative)
+                    if path.name == 'LICENSE':
+                        self.assertIn('MIT License', path.read_text())
+
+        skill = installed / 'skills/dembrandt'
+        index = (skill / 'references/corpus.md').read_text()
+        selected = re.findall(r'\]\(\.\./(upstream/skills/[^/)]+/PROTOCOL\.md)\)', index)
+        self.assertEqual(len(selected), 45)
+        self.assertCountEqual(selected, [p.relative_to(skill).as_posix()
+                                         for p in skill.glob('upstream/skills/*/PROTOCOL.md')])
+
     def test_portable_skills_and_references_are_self_contained(self):
         folder = ROOT / 'adapters/skills'
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
         self.assertEqual(names, {'plan-with-me', 'unblock', 'plan-for-me', 'docs-sync', 'orbi', 'update-kit',
             'autoresearch', 'impeccable', 'lgtm', 'goal',
             'git-commit-push', 'push', 'ui-taste', 'sakurai', 'unslop', 'beautify-github-readme',
+            'tastemaker', 'dembrandt',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
             'ponytail-gain', 'ponytail-help', 'bug-harvest',
             'autonomous-codebase-improver', 'split-folder', 'unused-code',
