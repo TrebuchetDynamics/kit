@@ -431,6 +431,8 @@ states its own boundaries and what "done" means.
 - `/impeccable`, `/ui-taste` — [publish actionable UI findings](docs/workflows.md#ui-findings); explicit design/edit requests keep their playbooks. `/ui-taste` is the default for unnamed UI work.
 - [`/tastemaker`](skills/tastemaker/SKILL.md) — study visual references, audit without edits or write composition briefs.
 - [`/dembrandt`](skills/dembrandt/SKILL.md) — work within an existing design language or explicitly measure site tokens. See [reference workflows and prerequisites](docs/workflows.md#visual-reference-workflows).
+- `/brand-identity` — compare brand directions and export the selected brand kit.
+- `/styleseed` — create and maintain a project design system. See [design workflows and runtime checks](docs/workflows.md#brand-identity-and-design-systems).
 - `/beautify-github-readme` — audit reader paths and publish verified issues; explicit redesign/hero and audit-only requests keep their scope.
 - [`/sakurai`](skills/sakurai/SKILL.md) — pointer to Sakurai's game-design guidance and 14 Japanese category references online; upstream text is not bundled without a redistribution grant.
 - `/responsive-screenshots` — capture pages at breakpoints, report overflow.

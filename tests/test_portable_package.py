@@ -216,6 +216,127 @@ class PortablePackageTests(unittest.TestCase):
             self.assertIn('update --no-pull --only pi', result.stdout)
             self.assertEqual(sorted(path.relative_to(foreign) for path in foreign.rglob('*')), before)
 
+            self.assert_visual_workflows(installed, base)
+
+    def assert_visual_workflows(self, installed, base):
+        import os
+        import subprocess
+        import sys
+
+        pins = {
+            'brand-identity': ('fatihaydost/brand-identity-skill', 'af7ba40fe067b8b4aaeb2af90ed6c8996d014791'),
+            'styleseed': ('bitjaru/styleseed', '78d1e08e6e931e04c737d34ed3cde1dda540faa6'),
+        }
+        for name, (repo, revision) in pins.items():
+            skill = installed / 'skills' / name
+            pin = json.loads((skill / 'UPSTREAM.json').read_text())
+            self.assertEqual((pin['repository'], pin['revision'], pin['license']),
+                             (f'https://github.com/{repo}', revision, 'MIT'))
+            upstream = skill / 'upstream'
+            files = {p.relative_to(upstream).as_posix(): sha256(p.read_bytes()).hexdigest()
+                     for p in upstream.rglob('*') if p.is_file()}
+            self.assertEqual(files, pin['files'] | pin.get('derived_files', {}))
+            self.assertIn('MIT License', (upstream / 'LICENSE').read_text())
+            self.assertEqual(list(upstream.rglob('SKILL.md')), [])
+            adapter = installed / 'adapters/skills' / name / 'SKILL.md'
+            self.assertIn(f'../../../skills/{name}/SKILL.md', adapter.read_text())
+
+        project = base / 'visual project'
+        project.mkdir()
+        uv = project / 'uv'
+        uv.write_text('#!/bin/sh\ntouch attempted-install\nexit 1\n')
+        uv.chmod(0o755)
+        env = dict(os.environ, HOME=str(project), PATH=f'{project}{os.pathsep}{os.environ["PATH"]}')
+        env.pop('BRAND_IDENTITY_ENV', None)
+
+        def run(*args):
+            return subprocess.run(args, cwd=project, env=env, text=True,
+                                  capture_output=True, timeout=30)
+
+        brand = installed / 'skills/brand-identity'
+        preflight = [sys.executable, '-BS', str(brand / 'upstream/scripts/preflight.py')]
+        self.assertEqual(run(*preflight).returncode, 0, 'plain intake needs no render dependencies')
+        missing = run(*preflight, '--type', '--font', 'missing.ttf')
+        self.assertEqual(missing.returncode, 1, missing.stdout + missing.stderr)
+        self.assertIn('fontTools', missing.stderr)
+        self.assertIn('pathops', missing.stderr, 'type audits can instance variable fonts')
+        self.assertIn('missing.ttf', missing.stderr)
+        self.assertIn('requirements.txt', missing.stderr)
+        helper = run(sys.executable, '-BS', str(brand / 'upstream/scripts/brand.py'), 'check', '--type')
+        self.assertEqual(helper.returncode, 1, helper.stdout + helper.stderr)
+        self.assertIn('fontTools', helper.stderr)
+        self.assertIn('requirements.txt', helper.stderr)
+        self.assertEqual(list(project.iterdir()), [uv], 'capability checks must not install or write')
+
+        style = installed / 'skills/styleseed/upstream/skills/styleseed'
+        workflows = style / 'workflows'
+        self.assertEqual(len(list(workflows.glob('ss-*/WORKFLOW.md'))), 22)
+        missing = run('node', str(style / 'preflight.mjs'), '--browser', str(project / 'missing.mjs'))
+        self.assertEqual(missing.returncode, 1, missing.stdout + missing.stderr)
+        self.assertIn('Playwright', missing.stderr)
+        # If the supplied module exports no Chromium, do not probe a different
+        # browser from the project and report that the requested renderer is ready.
+        import shutil
+        project_browser = project / 'node_modules/playwright'
+        project_browser.mkdir(parents=True)
+        (project_browser / 'index.js').write_text('exports.chromium = { launch: async () => ({ close() {} }) };')
+        wrong_browser = project / 'other.mjs'
+        wrong_browser.write_text('export default {};')
+        wrong = run('node', str(style / 'preflight.mjs'), '--browser', str(wrong_browser))
+        self.assertEqual(wrong.returncode, 1, wrong.stdout + wrong.stderr)
+        self.assertIn('other.mjs: Playwright Chromium launch is not exported', wrong.stderr)
+        wrong_browser.unlink()
+        shutil.rmtree(project_browser.parent)
+        external = run('node', str(workflows / 'ss-reference/scripts/measure-reference.mjs'), '--designlang')
+        self.assertEqual(external.returncode, 1, external.stdout + external.stderr)
+        self.assertIn('Kit does not install Designlang', external.stderr)
+        self.assertEqual(list(project.iterdir()), [uv])
+        resolve = workflows / 'ss-resolve/scripts/resolve-context.mjs'
+        for host, title in [('pi', 'Pi'), ('hermes', 'Hermes')]:
+            with self.subTest(host=host):
+                cmd = ['node', str(resolve), '--agent', host, '--grammar', 'operations-console',
+                       '--adapter', 'product-ui', '--key-color', '#2468AB']
+                compiled = run(*cmd)
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                bundle = (project / '.styleseed/effective-rules.md').read_text()
+                self.assertIn(f'## {title} execution contract', bundle)
+                self.assertIn(f'- Agent: {host}', bundle)
+                manifest = json.loads((project / '.styleseed/manifest.json').read_text())
+                self.assertEqual(manifest['selection']['agent'], host)
+                self.assertEqual(manifest['selection']['paletteGeneration']['keyColor'].lower(), '#2468ab')
+                self.assertIn('--ss-primary:', (project / '.styleseed/palette.css').read_text())
+                checked = run(*cmd, '--check')
+                self.assertEqual(checked.returncode, 0, checked.stderr)
+
+        # The catalog cannot hash itself in the upstream inventory. Its Hermes mapping
+        # must still be checked against the digest tied to the Kit distribution.
+        catalog = workflows / 'ss-resolve/references/catalog.json'
+        original = catalog.read_bytes()
+        data = json.loads(original)
+        data['agents']['hermes'] = 'Replaced execution contract'
+        catalog.write_text(json.dumps(data))
+        for result in (run('node', str(style / 'preflight.mjs')), run(*cmd)):
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('catalog.json', result.stderr)
+            self.assertIn('Restore', result.stderr)
+        doctor = run('node', str(resolve.with_name('styleseed-doctor.mjs')), '--json')
+        self.assertEqual(doctor.returncode, 1, doctor.stdout + doctor.stderr)
+        installation = json.loads(doctor.stdout)['installation']
+        self.assertEqual(installation['status'], 'invalid')
+        self.assertIn('catalog.json', installation['detail'])
+        self.assertEqual((project / '.styleseed/effective-rules.md').read_text(), bundle)
+        catalog.write_bytes(original)
+
+        # Mutate an otherwise valid shipped workflow. Both preflight and compile
+        # must fail rather than issuing a verified receipt or rewriting the bundle.
+        workflow = workflows / 'ss-setup/WORKFLOW.md'
+        workflow.write_text(workflow.read_text() + '\nChanged after packaging.\n')
+        for result in (run('node', str(style / 'preflight.mjs')), run(*cmd)):
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('tampered', result.stderr)
+            self.assertIn('Restore', result.stderr)
+        self.assertEqual((project / '.styleseed/effective-rules.md').read_text(), bundle)
+
     def check_visual_reference_packs(self, installed):
         packs = (
             ('skills/tastemaker/UPSTREAM.json', 'codeswithroh/tastemaker',
@@ -275,6 +396,7 @@ class PortablePackageTests(unittest.TestCase):
             'autoresearch', 'impeccable', 'lgtm', 'goal',
             'git-commit-push', 'push', 'ui-taste', 'sakurai', 'unslop', 'beautify-github-readme',
             'tastemaker', 'dembrandt',
+            'brand-identity', 'styleseed',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
             'ponytail-gain', 'ponytail-help', 'bug-harvest',
             'autonomous-codebase-improver', 'split-folder', 'unused-code',

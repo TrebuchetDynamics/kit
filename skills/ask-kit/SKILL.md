@@ -69,6 +69,8 @@ not ask for.
 | Unnamed UI work or Uizze's UI playbooks | `/ui-taste` |
 | Study a visual reference, critique UI without edits or draft composition briefs | `/tastemaker` |
 | Work within an existing design language or measure a site's design tokens | `/dembrandt` |
+| Compare brand directions and export the selected identity | `/brand-identity` |
+| Create or maintain project design rules, components and tokens | `/styleseed` |
 | Sakurai's game-design guidance and Japanese references online (pointer-only) | `/sakurai` |
 | README visuals and SVG assets | `/beautify-github-readme` |
 | Responsive captures at chosen breakpoints | `/responsive-screenshots` |
