@@ -543,6 +543,28 @@ gates. Read-only/dry-run/no-write returns inline findings without saving; unatte
 runs remain audit-only unless the accepted scope authorizes writes. No-dispatch
 keeps published issues undispatched.
 
+## Visual reference workflows
+
+| Command | Example | Result |
+| --- | --- | --- |
+| [`/tastemaker`](../skills/tastemaker/SKILL.md) | `/tastemaker study screenshot.png` | Composition and measured palette from a supplied reference |
+| `/tastemaker` | `/tastemaker audit src/page.html` | Ranked findings without edits, issue publication or taste-memory changes |
+| `/tastemaker` | `/tastemaker compositions two hero directions` | Inline briefs, not generated images |
+| [`/dembrandt`](../skills/dembrandt/SKILL.md) | `/dembrandt review this form against DESIGN.md` | Advice from the relevant entries in the [45-topic index](../skills/dembrandt/references/corpus.md) |
+| `/dembrandt` | `/dembrandt extract https://example.com` | Measured tokens from an authorized page, without installing tools or applying exports |
+
+Use `/kit:tastemaker` and `/kit:dembrandt` in Claude Code, `$kit:tastemaker`
+and `$kit:dembrandt` in Codex, and bare slash commands in Pi and Hermes. The
+workflows load only after selection; `/ui-taste` remains the unnamed UI default.
+Project branding, tokens, frameworks and motion constraints take precedence.
+
+Reading the references needs no runtime. Tastemaker's local helpers need Python 3;
+image palette extraction also needs Pillow. Dembrandt site extraction needs an
+already connected Dembrandt MCP server, matching Chromium and the site's loaded
+fonts for typography evidence. Each workflow checks its own prerequisites and
+reports missing ones without installing anything. The linked wrappers identify the
+commands, repair paths, source pins and MIT notices.
+
 ## Responsive screenshots
 
 `/responsive-screenshots` captures one or more pages at chosen viewport widths and
