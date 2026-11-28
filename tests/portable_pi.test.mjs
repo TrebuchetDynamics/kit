@@ -7,7 +7,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 56);
+  assert.equal(commands.size, 58);
   assert.equal(messages.length, 0, 'registration does not activate any workflow');
   assert.equal(commands.has('orbi'), true);
   assert.equal(commands.has('push'), true);
@@ -54,7 +54,8 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   await commands.get('ui-taste').handler(raw, {isIdle: () => true});
   await assertWorkflow('ui-taste');
   assert.equal(messages.at(-1)[0].endsWith(raw), true);
-  for (const name of ['brand-identity', 'styleseed', 'procedural-drawing', 'genart']) {
+  for (const name of ['brand-identity', 'styleseed', 'procedural-drawing', 'genart',
+    'genjutsu', 'motion-graphics']) {
     await commands.get(name).handler(raw, {isIdle: () => false});
     await assertWorkflow(name);
     assert.match(messages.at(-1)[0], new RegExp(`skills/${name}/SKILL\\.md`));
@@ -463,7 +464,7 @@ test('installed archive resolves portable references and commands without checko
         if (!match[1].includes('://')) await stat(fileURLToPath(new URL(match[1], pathToFileURL(path))));
       }
     }
-    assert.equal(skillCount, 43);
+    assert.equal(skillCount, 45);
     const sakurai = join(installed, 'skills/sakurai');
     assert.deepEqual((await readdir(sakurai)).sort(), ['SKILL.md', 'UPSTREAM.json']);
     assert.equal(await readFile(join(sakurai, 'SKILL.md'), 'utf8'),
@@ -547,7 +548,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 56);
+    assert.equal(commands.size, 58);
     assert.equal(commands.has('orbi'), true);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {
@@ -559,6 +560,8 @@ test('installed archive resolves portable references and commands without checko
     for (const [name, args] of [
       ['tastemaker', 'audit ./page.html; read-only\n$(literal)'],
       ['dembrandt', 'extract http://127.0.0.1:8000; read-only'],
+      ['genjutsu', 'specify menu enter and exit motion; read-only'],
+      ['motion-graphics', 'capture ./motion.html at 0.37s and 1.28s'],
     ]) {
       const adapter = await readFile(join(installed, 'adapters/skills', name, 'SKILL.md'), 'utf8');
       assert.ok(adapter.includes(`../../../skills/${name}/SKILL.md`));

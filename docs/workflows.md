@@ -126,6 +126,8 @@ is limited, so some commands must be typed directly.
 | `/impeccable` | `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
 | `/unslop` | `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
 | `/ui-taste` | `/ui_taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |
+| `/genjutsu` | `/genjutsu` | Design motion for an interface's interactions |
+| `/motion-graphics` | `/motion_graphics` | Build and verify a seekable timeline |
 | `/brand-identity` | `/brand_identity` | Compare brand directions and export the selected kit |
 | `/styleseed` | `/styleseed` | Create or maintain a project design system |
 | `/procedural-drawing` | `/procedural_drawing` | Draw a CPU-rendered illustration from a selected style |
@@ -587,6 +589,24 @@ already connected Dembrandt MCP server, matching Chromium and the site's loaded
 fonts for typography evidence. Each workflow checks its own prerequisites and
 reports missing ones without installing anything. The linked wrappers identify the
 commands, repair paths, source pins and MIT notices.
+
+## Motion workflows
+
+| Command | Example | Result |
+| --- | --- | --- |
+| [`/genjutsu`](../skills/genjutsu/SKILL.md) | `/genjutsu specify enter and exit motion for this drawer; no edits` | A brief grounded in the existing stack, including the reduced-motion behavior |
+| [`/motion-graphics`](../skills/motion-graphics/SKILL.md) | `/motion-graphics check ./motion.html, a 640×360 two-second loop; sample 0.37s and 1.28s` | PNGs from direct seeks, with repeatability, matching loop endpoints and visible change checked |
+
+Use bare slash commands in Pi and Hermes, `/kit:genjutsu` and `/kit:motion-graphics`
+in Claude Code, or `$kit:genjutsu` and `$kit:motion-graphics` in Codex.
+The commands load only on selection; `/ui-taste` is still the unnamed UI default.
+Genjutsu uses the current host's capabilities; team workflows need both user scope
+and a delegation tool. A motion brief needs no browser or encoder.
+
+For timeline rendering and optional export, see [capture prerequisites and
+commands](../skills/motion-graphics/references/capture.md). Kit does not install
+missing dependencies, change project design constraints or qualify model behavior
+or device performance.
 
 ## Responsive screenshots
 

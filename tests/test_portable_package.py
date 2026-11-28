@@ -371,6 +371,22 @@ class PortablePackageTests(unittest.TestCase):
                  'skills/dembrandt/upstream/skills/extract-design/PROTOCOL.md',
                  'skills/dembrandt/upstream/skills/generate-ui-from-brand/PROTOCOL.md',
              )),
+            ('skills/genjutsu/UPSTREAM.json', 'AThevon/genjutsu',
+             'a22540b623590505879d6489dd03d7f3072bce05', 'skills', (
+                 'skills/genjutsu/upstream/LICENSE',
+                 'skills/genjutsu/upstream/skills/_jutsu/ui-ux-pro-max/LICENSE-upstream.txt',
+                 'skills/genjutsu/upstream/skills/cast/PROTOCOL.md',
+                 'skills/genjutsu/upstream/skills/paint/PROTOCOL.md',
+                 'skills/genjutsu/upstream/skills/bunshin/PROTOCOL.md',
+                 'skills/genjutsu/upstream/skills/_jutsu/motion-principles/PROTOCOL.md',
+             )),
+            ('skills/motion-graphics/UPSTREAM.json', 'charlie947/motion-graphics-skills',
+             '229022ebca76972e119e36ada23a1648d51665ab', 'skills', (
+                 'skills/motion-graphics/upstream/LICENSE',
+                 'skills/motion-graphics/upstream/skills/motion-effects/PROTOCOL.md',
+                 'skills/motion-graphics/upstream/skills/motion-effects/references/effects.md',
+                 'skills/motion-graphics/scripts/capture.py',
+             )),
         )
         for manifest, repo, revision, source_path, required in packs:
             with self.subTest(repo=repo):
@@ -395,6 +411,21 @@ class PortablePackageTests(unittest.TestCase):
                     self.assertTrue(path.is_file(), relative)
                     if path.name == 'LICENSE':
                         self.assertIn('MIT License', path.read_text())
+
+        genjutsu = installed / 'skills/genjutsu'
+        pin = json.loads((genjutsu / 'UPSTREAM.json').read_text())
+        third_party = 'skills/_jutsu/ui-ux-pro-max/LICENSE-upstream.txt'
+        self.assertEqual(pin['third_party']['license'], 'MIT')
+        self.assertEqual(pin['third_party']['source_path'], third_party)
+        self.assertIn('Next Level Builder', (genjutsu / 'upstream' / third_party).read_text())
+        for name in ('genjutsu', 'motion-graphics'):
+            adapter = installed / 'adapters/skills' / name
+            metadata = yaml.safe_load((adapter / 'SKILL.md').read_text().split('---', 2)[1])
+            policy = yaml.safe_load((adapter / 'agents/openai.yaml').read_text())['policy']
+            self.assertIs(metadata['disable-model-invocation'], True)
+            self.assertIs(policy['allow_implicit_invocation'], False)
+            for link in re.findall(r'\]\(([^)#]+)\)', (installed / 'skills' / name / 'SKILL.md').read_text()):
+                self.assertTrue((installed / 'skills' / name / link).is_file(), (name, link))
 
         drawing = installed / 'skills/procedural-drawing'
         index = '\n'.join(line for line in (drawing / 'styles.md').read_text().splitlines()
@@ -426,7 +457,7 @@ class PortablePackageTests(unittest.TestCase):
         self.assertEqual(names, {'plan-with-me', 'unblock', 'plan-for-me', 'docs-sync', 'orbi', 'update-kit',
             'autoresearch', 'impeccable', 'lgtm', 'goal',
             'git-commit-push', 'push', 'ui-taste', 'sakurai', 'unslop', 'beautify-github-readme',
-            'tastemaker', 'dembrandt',
+            'tastemaker', 'dembrandt', 'genjutsu', 'motion-graphics',
             'brand-identity', 'styleseed', 'procedural-drawing', 'genart',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
             'ponytail-gain', 'ponytail-help', 'bug-harvest',

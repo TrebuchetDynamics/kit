@@ -69,6 +69,8 @@ not ask for.
 | Unnamed UI work or Uizze's UI playbooks | `/ui-taste` |
 | Study a visual reference, critique UI without edits or draft composition briefs | `/tastemaker` |
 | Work within an existing design language or measure a site's design tokens | `/dembrandt` |
+| Design motion for interactions in an interface | `/genjutsu` |
+| Build timeline graphics and verify frames by seeking | `/motion-graphics` |
 | Compare brand directions and export the selected identity | `/brand-identity` |
 | Create or maintain project design rules, components and tokens | `/styleseed` |
 | Draw an illustration in a CPU-rendered style | `/procedural-drawing` |
