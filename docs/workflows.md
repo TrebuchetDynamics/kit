@@ -126,6 +126,7 @@ is limited, so some commands must be typed directly.
 | `/impeccable` | `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
 | `/unslop` | `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
 | `/ui-taste` | `/ui_taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |
+| `/forever-components` | `/forever_components` | Search the Forever index and retrieve only selected pinned components |
 | `/genjutsu` | `/genjutsu` | Design motion for an interface's interactions |
 | `/motion-graphics` | `/motion_graphics` | Build and verify a seekable timeline |
 | `/brand-identity` | `/brand_identity` | Compare brand directions and export the selected kit |
@@ -572,11 +573,17 @@ keeps published issues undispatched.
 
 | Command | Example | Result |
 | --- | --- | --- |
+| [`/forever-components`](../skills/forever-components/SKILL.md) | `/forever-components Find a lightweight CSS loader and adapt it to our tokens` | Shortlist up to three matches; retrieve selected sources with their provenance and notices |
 | [`/tastemaker`](../skills/tastemaker/SKILL.md) | `/tastemaker study screenshot.png` | Composition and measured palette from a supplied reference |
 | `/tastemaker` | `/tastemaker audit src/page.html` | Ranked findings without edits, issue publication or taste-memory changes |
 | `/tastemaker` | `/tastemaker compositions two hero directions` | Inline briefs, not generated images |
 | [`/dembrandt`](../skills/dembrandt/SKILL.md) | `/dembrandt review this form against DESIGN.md` | Advice from the relevant entries in the [45-topic index](../skills/dembrandt/references/corpus.md) |
 | `/dembrandt` | `/dembrandt extract https://example.com` | Measured tokens from an authorized page, without installing tools or applying exports |
+
+For Forever, use `/kit:forever-components` in Claude Code and
+`$kit:forever-components` in Codex. Search uses the local index and Python 3.9+
+without a network connection. Retrieval needs access to the pinned GitHub source;
+adaptation uses the project's browser checks, not the catalog's accessibility labels.
 
 Use `/kit:tastemaker` and `/kit:dembrandt` in Claude Code, `$kit:tastemaker`
 and `$kit:dembrandt` in Codex, and bare slash commands in Pi and Hermes. The

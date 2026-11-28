@@ -7,7 +7,7 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   const messages = [];
   register({registerCommand: (name, handler) => commands.set(name, handler),
     sendUserMessage: (...args) => messages.push(args)});
-  assert.equal(commands.size, 58);
+  assert.equal(commands.size, 59);
   assert.equal(messages.length, 0, 'registration does not activate any workflow');
   assert.equal(commands.has('orbi'), true);
   assert.equal(commands.has('push'), true);
@@ -55,11 +55,11 @@ test('Pi registers workflows and all 13 research commands; routes literal argume
   await assertWorkflow('ui-taste');
   assert.equal(messages.at(-1)[0].endsWith(raw), true);
   for (const name of ['brand-identity', 'styleseed', 'procedural-drawing', 'genart',
-    'genjutsu', 'motion-graphics']) {
+    'genjutsu', 'motion-graphics', 'forever-components']) {
     await commands.get(name).handler(raw, {isIdle: () => false});
     await assertWorkflow(name);
     assert.match(messages.at(-1)[0], new RegExp(`skills/${name}/SKILL\\.md`));
-    assert.doesNotMatch(messages.at(-1)[0], /upstream\/|WORKFLOW\.md/);
+    assert.doesNotMatch(messages.at(-1)[0], /upstream\/|WORKFLOW\.md|components\.index\.json/);
     assert.equal(messages.at(-1)[0].endsWith(`User request (preserve scope and restrictions):\n${raw}`), true);
     assert.deepEqual(messages.at(-1)[1], {deliverAs: 'followUp'});
   }
@@ -464,7 +464,7 @@ test('installed archive resolves portable references and commands without checko
         if (!match[1].includes('://')) await stat(fileURLToPath(new URL(match[1], pathToFileURL(path))));
       }
     }
-    assert.equal(skillCount, 45);
+    assert.equal(skillCount, 46);
     const sakurai = join(installed, 'skills/sakurai');
     assert.deepEqual((await readdir(sakurai)).sort(), ['SKILL.md', 'UPSTREAM.json']);
     assert.equal(await readFile(join(sakurai, 'SKILL.md'), 'utf8'),
@@ -548,7 +548,7 @@ test('installed archive resolves portable references and commands without checko
     const {default: installedRegister} = await import(pathToFileURL(join(installed, 'adapters/pi.mjs')));
     installedRegister({registerCommand: (name, handler) => commands.set(name, handler),
       sendUserMessage: (...args) => messages.push(args)});
-    assert.equal(commands.size, 58);
+    assert.equal(commands.size, 59);
     assert.equal(commands.has('orbi'), true);
     assert.equal(commands.has('apk-get'), true);
     for (const [name, handler] of commands) {

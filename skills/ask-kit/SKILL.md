@@ -67,6 +67,7 @@ not ask for.
 | Interface design, polish or frontend audit | `/impeccable` |
 | Turn generic UI patterns into specific GitHub issues for Orbi | `/unslop` |
 | Unnamed UI work or Uizze's UI playbooks | `/ui-taste` |
+| Explicit request to find or adapt a component from the Forever catalog | `/forever-components` |
 | Study a visual reference, critique UI without edits or draft composition briefs | `/tastemaker` |
 | Work within an existing design language or measure a site's design tokens | `/dembrandt` |
 | Design motion for interactions in an interface | `/genjutsu` |
