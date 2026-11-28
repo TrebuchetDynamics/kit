@@ -390,20 +390,27 @@ partly updated. It is not a rollback. On macOS, the installer never mutates laun
 or claims a deployment update; existing deployments or unverifiable coverage are
 reported as held. Offline verification does not qualify this behavior on a live host.
 
-On a verified host with no installed deployment, the component is CLI-only.
-A missing CLI uses the [XelHaku/orbi fork](https://github.com/XelHaku/orbi) at commit
-`1a8b2f9603f6258cb105293f238a8d3f775f3393`, which adds the host-only
-`pi_executable` setting for Pi-compatible CLIs such as Pi-Bolt:
+After a completed refresh, or on a verified host with no installed deployment
+(CLI-only), the installer brings the `orbi` CLI to the newest official stable
+release of [orbi-build/orbi](https://github.com/orbi-build/orbi). It resolves the
+release on every run with the same tag rule as the fleet refresh, so no Orbi
+version is pinned in Kit. A missing CLI, or one reporting another version, is
+installed from that release's exact commit:
 
 ```sh
-uv tool install --python 3.14 git+https://github.com/XelHaku/orbi.git@1a8b2f9603f6258cb105293f238a8d3f775f3393
+uv tool install --force --python 3.14 git+https://github.com/orbi-build/orbi.git@<release commit>
 ```
 
-This uses the immutable Git revision, not the upstream shell installer or PyPI.
+This uses the immutable Git revision, not the upstream shell installer or PyPI,
+and the installed CLI must report the release's version. A CLI already on that
+release is kept. An editable uv install, which is how deployments install the CLI,
+is kept because it follows its checkout, which the refresh moves to the newest release.
+When an older CLI earlier on PATH is not the one replaced, the result says so.
+A held or failed refresh leaves the CLI untouched.
 Install Git and [uv](https://docs.astral.sh/uv/getting-started/installation/) first;
-uv provisions the compatible Python. A missing prerequisite or failed install
-fails this component with a diagnostic; other components continue. Kit does not
-bootstrap uv or Git, or force-reinstall a conflicting tool.
+uv provisions the compatible Python. A missing prerequisite, an unresolvable release
+or a failed install fails this component with a diagnostic; other components
+continue. Kit does not bootstrap uv or Git.
 
 The executable defaults to `~/.local/bin/orbi` (or `KIT_BIN_DIR`);
 `UV_TOOL_BIN_DIR` takes precedence and `UV_TOOL_DIR` retains uv's normal meaning.

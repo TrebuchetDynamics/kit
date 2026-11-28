@@ -352,8 +352,8 @@ Hermes still runs its complete fleet setup and its own dependency and
 security prompts; use `--yes-deps` only when you intend to consent to them.
 
 Orbi is included by default; use `./install.sh --only orbi` or `--skip orbi`.
-When no deployment is installed, a missing CLI is bootstrapped from the pinned
-[XelHaku/orbi fork](https://github.com/XelHaku/orbi/tree/1a8b2f9603f6258cb105293f238a8d3f775f3393)
+The `orbi` CLI is brought to the newest official stable release of
+[orbi-build/orbi](https://github.com/orbi-build/orbi), resolved on every run,
 with `uv` and Python 3.14 (`uv` and Git must be installed first).
 With existing deployments on Linux, selecting Orbi stops verified local systemd
 work without waiting for a natural drain, pins and checks the newest stable

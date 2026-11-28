@@ -57,12 +57,12 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = 'TrebuchetDynamics/kit'
 PI_SOURCE = 'git:github.com/TrebuchetDynamics/kit'
-ORBI_SOURCE = ('git+https://github.com/XelHaku/orbi.git@'
-               '1a8b2f9603f6258cb105293f238a8d3f775f3393')
+ORBI_GIT = 'git+https://github.com/orbi-build/orbi.git'
 HOME = Path(os.environ.get('HOME', str(Path.home())))
 BIN = Path(os.environ.get('KIT_BIN_DIR') or HOME / '.local' / 'bin')
 ITEM_KEYS = ('pi-bolt', 'pi', 'tx', 'hermes', 'claude', 'codex', 'orbi')
@@ -1104,30 +1104,60 @@ def orbi_version(binary):
     return version
 
 
-def install_orbi(output=None):
-    """Install the pinned fork CLI, never setup/tick or replace a deployment bootstrap."""
+def orbi_editable_source(binary):
+    """The checkout an editable uv tool CLI runs from, or None for any other install."""
+    target = Path(binary).resolve()
+    if target.parent.name != 'bin':
+        return None
+    try:
+        receipt = tomllib.loads((target.parent.parent / 'uv-receipt.toml').read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    for requirement in receipt.get('tool', {}).get('requirements', []):
+        if isinstance(requirement, dict) and requirement.get('editable'):
+            return requirement['editable']
+    return None
+
+
+def install_orbi(output=None, release=None):
+    """Bring the CLI to the newest official stable release; never setup/tick a deployment."""
     output = output or Output()
+    tag, head = release or orbi_latest_release()
+    wanted = f'orbi {tag.removeprefix("v")}'
     destination = Path(os.environ.get('UV_TOOL_BIN_DIR') or BIN).absolute()
     candidates = [shutil.which('orbi'), destination / 'orbi', HOME / '.local/bin/orbi']
-    for candidate in candidates:
-        if candidate and os.path.lexists(candidate):
-            # Even update must not replace an editable CLI serving a pinned deployment.
-            return f'{candidate}: {orbi_version(candidate)} (already installed; kept)'
+    existing = next((c for c in candidates if c and os.path.lexists(c)), None)
+    previous = ''
+    if existing:
+        version = orbi_version(existing)
+        previous = f' (was {version.removeprefix("orbi ")})'
+        if version == wanted:
+            return f'{existing}: {version} (newest release {tag}; kept)'
+        if source := orbi_editable_source(existing):
+            # A deployment's editable CLI follows its checkout, which the fleet refresh pins.
+            return f'{existing}: {version} (editable from {source}; follows that checkout, not replaced)'
     uv = shutil.which('uv')
     if not uv:
         raise OSError('Orbi requires uv; install uv and retry ./install.sh --only orbi')
     if not shutil.which('git'):
-        raise OSError('Orbi requires git to install the pinned fork; install git and retry ./install.sh --only orbi')
-    argv = [uv, 'tool', 'install', '--python', '3.14', ORBI_SOURCE]
+        raise OSError('Orbi requires git to install the Orbi CLI; install git and retry ./install.sh --only orbi')
+    argv = [uv, 'tool', 'install', '--force', '--python', '3.14', f'{ORBI_GIT}@{head}']
     output.line('  $ ' + shlex.join(argv), 'command')
     code, text = run_command(argv, output, extra_env={'UV_TOOL_BIN_DIR': str(destination)})
     if code:
         raise OSError(f'Orbi CLI installation failed (exit {code}): {failure_summary(text)}')
     binary = destination / 'orbi'
-    return f'{binary}: {orbi_version(binary)}; CLI only, no deployment configured or started'
+    version = orbi_version(binary)
+    if version != wanted:
+        raise OSError(f'{binary}: installed {version}, expected {wanted} from release {tag}')
+    message = f'{binary}: {version}{previous}; newest release {tag}'
+    on_path = shutil.which('orbi')
+    if on_path and Path(on_path).resolve() != binary.resolve():
+        message += f'; {on_path} comes first on PATH and was not replaced'
+    return message
 
 
-def refresh_orbi_fleet(*, report_progress=None):
+def orbi_control_module():
     path = ROOT / 'skills/orbi/scripts/orbi_control.py'
     spec = importlib.util.spec_from_file_location('kit_installer_orbi_control', path)
     module = importlib.util.module_from_spec(spec)
@@ -1140,6 +1170,20 @@ def refresh_orbi_fleet(*, report_progress=None):
     finally:
         sys.dont_write_bytecode = previous
         del sys.modules[spec.name]
+    return module
+
+
+def orbi_latest_release():
+    """(tag, commit) of the newest official stable release, by the fleet refresh's own rule."""
+    module = orbi_control_module()
+    try:
+        return module.official_latest_release(module.Context(noninteractive=True))
+    except module.ControlError as error:
+        raise OSError(f'Orbi release resolution failed: {error}') from error
+
+
+def refresh_orbi_fleet(*, report_progress=None):
+    module = orbi_control_module()
     return module.installer_fleet(module.Context(noninteractive=True), report_progress=report_progress)
 
 
@@ -1205,8 +1249,9 @@ def orbi_item(output=None):
                 steps=[Step('verify local managers and ownership; stop deployments without natural drain, '
                             'pin and validate the newest official stable release, then restart scheduling '
                             'and authorized services (even if paused or already current); '
-                            'macOS has no lifecycle mutations; with no deployment, keep the CLI or run '
-                            f'uv tool install --python 3.14 {ORBI_SOURCE}', run=refresh_orbi_fleet)],
+                            'macOS has no lifecycle mutations; then bring a non-editable CLI to that release with '
+                            f'uv tool install --force --python 3.14 {ORBI_GIT}@<release commit>',
+                            run=refresh_orbi_fleet)],
                 inputs=lambda: installed_evidence([Path(shutil.which('orbi') or
                     Path(os.environ.get('UV_TOOL_BIN_DIR') or BIN).absolute() / 'orbi')]))
 
@@ -2128,15 +2173,18 @@ def _install(all_items, chosen, dry_run=False, output=None, mode='install', lock
                             if fleet['status'] == 'no_deployments':
                                 if fleet.get('not_checked'):
                                     detail.append(orbi_fleet_summary(fleet))
-                                message = install_orbi(output)
+                                message = install_orbi(output) + '; CLI only, no deployment configured or started'
                             else:
                                 detail.append(orbi_fleet_summary(fleet))
                                 if fleet['status'] != 'completed':
                                     outcome, exit_code = 'failed', 1
                                     output.line('  FAILED: ' + orbi_fleet_details(fleet, verbose=output.verbose), 'failed')
-                                elif output.verbosity:
+                                    break
+                                if output.verbosity:
                                     output.line('  ' + orbi_fleet_details(fleet, verbose=output.verbose))
-                                break
+                                release = fleet.get('release') or {}
+                                message = install_orbi(output, (release['tag'], release['head'])
+                                                       if release.get('tag') and release.get('head') else None)
                         detail.append(message)
                         if output.verbosity and outcome != 'failed':
                             output.line('  ' + message)
