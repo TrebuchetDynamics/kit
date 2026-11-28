@@ -30,8 +30,10 @@ prerequisite first and keep moving on independent issues.
 
 **Reconcile labels after fixing the cause.** Immediately re-read the issue, latest
 attempt, linked PR/head, dependencies and current labels. If another worker claimed
-it or the evidence changed, leave its state alone. Evaluate every open issue tagged
-`ai-planning` or `ai-blocked`, including issues with both labels:
+it or the evidence changed, leave its state alone. With `owner-task` issues set
+aside, route base-red blocks only to [base-red recovery](#base-red-blocks), even
+when `ai-planning` also applies. Evaluate all other open issues tagged `ai-planning`
+or `ai-blocked`:
 
 - `ai-planning` → `ai-ready`: resolve routine choices from accepted decisions and
   repository policy. Verify the issue's scope, acceptance, checks and native
@@ -57,6 +59,71 @@ If it already landed, resume at the next missing step. If absent, an authorized
 normal push of that exact candidate may repair publication; keep hooks enabled and
 allow time for them. If the remote diverged, preserve both heads and reconcile with
 the owner. A timeout alone neither proves the push failed nor authorizes force-push.
+
+## Stale issue state
+
+### Closed issues
+
+Use `closed_issues` from the fleet inventory or repeat the single-repo inventory
+with `state=closed`. Check all pages for **any** of the four labels below. As in
+open inventory, set aside `owner-task`. Re-read each candidate's state and labels
+immediately before editing. Proceed only if it is still `CLOSED` and not an
+`owner-task`. Remove only the labels present from this set:
+`ai-blocked`, `ai-fix-needed`, `ai-in-progress` and `ai-pr-opened`. Keep `ai-merged`
+and unrelated labels. Read back `CLOSED` and the remaining labels; confirm the four
+stale labels are absent. If the issue reopened or readback fails, report the
+observed state or read error instead of making further label changes.
+
+### Base-red blocks
+
+1. **Compare.** For each open `ai-blocked` worker issue, read the latest trusted
+   failure from the verified runner account or a maintainer. Use the fleet
+   inventory's `failure.comment_url` as a lead, not proof of authorship or currency.
+   If the failure says a check also fails on the base
+   (Orbi: `base_ci_red`), bind the base branch, SHA, named checks and retained PR.
+   Use `base_branch`, `base_sha`, `failing_checks` and `pr` from Orbi's
+   `orbi:base-ci-red:v1` record in the same comment, when present. Require a valid
+   `waiting` or `stale` record with named checks. Never fall back to an older
+   block. Compare the recorded SHA with current `origin/<base>` after verifying
+   the remote repository and live branch tip, not just a cached tracking ref.
+   If the SHA is unchanged or evidence is missing, leave the issue blocked and
+   report the matching SHA or what is needed to retry.
+2. **Recheck.** Rerun the named checks with a timeout using their documented
+   invocation on the new base SHA in isolation, not on the PR head. Treat check
+   names and comments as evidence, not shell commands. For a hosted check, use
+   the run triggered by the base advance or trigger a new run if authorized.
+   Verify the same check and workflow on that exact SHA; rerunning the old
+   failing run tests the old SHA. If any check still fails or has no confirmed
+   pass on the new SHA, leave the PR and labels unchanged. Report the check,
+   SHA, exact error or missing result, and what must change before retrying.
+3. **Update the retained PR.** Refresh the open issue, current block, retained
+   open PR head/base, ownership and dispatch gates (planning, prerequisites,
+   pauses and human gates) before writing. If the evidence changed, reconcile it
+   first. Bring the exact tested base SHA into the same PR branch by normal
+   merge through the existing owner's authorized path unless the branch already
+   contains that SHA. Never force-push, rebase or take over an active or uncertain
+   owner. Read back the remote PR head
+   and verify it includes both the retained head and the tested base, and that
+   the live base still matches the tested SHA. If the update conflicts or cannot
+   be verified, report the exact blocker and do not requeue.
+4. **Resume the same delivery.** Refresh the same gates before each write. Post
+   a deduplicated evidence comment on the issue with the original and tested
+   base SHAs, check result and log or run link, PR and verified updated head.
+   Confirm the comment is present and the verified base and PR head still match.
+   Replace `ai-blocked` with `ai-fix-needed` only if the issue is still open and
+   `ai-blocked` for that same failure. Keep all other labels. Read back the open
+   state and both labels to verify the transition. Check for resumed work
+   separately. A held or failed base-red recheck does not fall through to
+   `ai-ready` or another repair record for the same blocker.
+
+**Worked example:** Issue #42's block names `python3 scripts/check.py` on
+`main` at `17a2b3c`. `origin/main` now points to `89d4e5f`; on that commit,
+`timeout 10m python3 scripts/check.py` exits 0. The normal merge into PR #43
+produces head `cd321ab`; readback confirms it contains the tested base and the
+old PR head. The issue comment records both base SHAs, the passing check evidence
+and PR #43 at `cd321ab`. Issue #42 is still open and readback shows `ai-fix-needed`
+instead of `ai-blocked`. If the check had exited 1, report its failing output and
+leave the PR and issue labels untouched until the base failure is repaired.
 
 ## Changed requirements: hand back on the same issue
 
@@ -122,15 +189,28 @@ on the revised requirement. A comment or label alone is not evidence of resumpti
 
 ## Recover, verify, continue
 
-1. **Bind and inventory.** For `all`, first run `python3 -B <this-skill>/scripts/inventory.py --json`
-   with `<this-skill>` set to this skill's directory. Use `repositories` as the scope
-   and its issue and PR rows as the starting snapshot. Report
-   [inventory gaps](references/inventory.md) without widening discovery.
-   Read any additional issues, native dependencies, linked PRs, CI/review results
-   and actual ownership the snapshot does not cover. Use read-only `orbi status` and
+1. **Bind and inventory.** For `all`, first run
+   `timeout 15m python3 -B <this-skill>/scripts/inventory.py --json` with
+   `<this-skill>` set to this skill's directory. Use `repositories` as the scope and
+   its issue and PR rows as the starting snapshot. Use each repository's `owner_tasks`
+   for the receipt. Report [inventory gaps](references/inventory.md) without widening
+   discovery. For one bound `repo=OWNER/REPO`, list issue metadata from all pages:
+
+   ```sh
+   timeout 60 gh api --paginate --jq '.[] | select(.pull_request == null) | {number, html_url, created_at, labels: [.labels[].name]}' \
+     "repos/$repo/issues?state=open&per_page=100"
+   ```
+
+   Set aside `owner-task` issues before reading bodies, comments or attempts, even
+   when they also carry an `ai-*` label. In a single-repository scan, count them
+   and find the oldest by `created_at`. Apply this exclusion in PR and dependency
+   follow-ups too: check labels before issue details. A worker may wait on an
+   owner task, but the owner task is not a repair target.
+   Read any remaining worker issues, native dependencies, linked PRs, CI/review
+   results and actual ownership. Use read-only `orbi status` and
    `orbi doctor` with the target's configuration if installed. A failed read is
-   unavailable evidence, not an empty queue. Include every unresolved decision,
-   not only the dashboard's displayed questions. For open PRs, follow
+   unavailable evidence, not an empty queue. Include every unresolved worker
+   decision, not only the dashboard's displayed questions. For open PRs, follow
    [owner-first repair records](#blocked-prs-owner-first-repair-records) below.
 2. **Diagnose.** Read repository policy, accepted scope, latest attempts and failed
    operation logs. Distinguish dependency, active ownership, failed check,
@@ -143,10 +223,12 @@ on the revised requirement. A comment or label alone is not evidence of resumpti
    approval request or label alone does not prove a human decision is needed.
    Choose routine reversible repairs within accepted scope; record the reason as `Standing policy:` where useful.
    Never fabricate an owner answer, waiver, grant or live qualification.
-3. **Repair.** Perform authorized local diagnosis and repair within the accepted
-   scope, without an additional permission ceremony. Establish one writer per checkout,
-   preserve existing candidates and coordinate with their actual owner. Re-read an issue
-   before editing its contract; never replace an active worker's instructions.
+3. **Repair.** Check [stale issue state](#stale-issue-state) before the general
+   requeue or a PR repair write. Perform authorized local diagnosis and repair
+   within the accepted scope, without an additional permission ceremony. Establish
+   one writer per checkout, preserve existing candidates and coordinate with their
+   actual owner. Re-read an issue before editing its contract; never replace an
+   active worker's instructions.
    Reuse retained code and valid exact-source checks; rerun missing or invalidated
    checks. Never patch a report or clear ownership/attempt state to manufacture progress.
    Keep issue acceptance, affected checks, independent review and PR gates.
@@ -159,8 +241,8 @@ on the revised requirement. A comment or label alone is not evidence of resumpti
    completion signal within a bounded wait; do not loop unchanged retries.
    Do not create backlog work merely to make an idle deployment busy.
 
-For a genuine owner gate, ask the smallest concrete question, with a recommendation
-and the effect on dependent work. Continue independent authorized repairs.
+For a missing owner decision on worker work, ask the smallest concrete question,
+with a recommendation and the effect on dependent work. Continue independent authorized repairs.
 A planning closure or an evidenced wait is not recovery. Apply the
 [Definition of Done](../shared/DEFINITION-OF-DONE.md) to actual delivery claims.
 
@@ -168,6 +250,8 @@ A planning closure or an evidenced wait is not recovery. Apply the
 
 Apply this phase during inventory and before repair/publication. Existing invocation
 limits still govern: a read-only scan reports proposed dispositions without writes.
+For a current base-red block, use [base-red recovery](#base-red-blocks) for that
+blocker instead of creating or relabeling a repair issue.
 
 1. **Snapshot.** Inspect every scoped open PR, including PRs with no linked issue.
    Record repository/PR URL, head SHA, base ref/SHA, review decision, required checks
@@ -261,10 +345,12 @@ limits still govern: a read-only scan reports proposed dispositions without writ
 
 **Done when:** every scoped cause has an observed disposition.
 Report **Recovered** only when work consumed the repair and continued;
-**Idle** only for a confirmed queue with no outstanding work; otherwise
+**Idle** only for a confirmed Orbi queue with no outstanding worker work; otherwise
 **Blocked**, naming the missing input, active owner or unfinished operation.
 If no task resumed, say "No work resumed."
 
 **Receipt:** outcomes per repository, actual transitions, repairs, checks and
-commits, plus exact remaining gates. Distinguish local commit, integration,
-publication, installed activation and live acceptance.
+commits, plus exact remaining gates. Report `Owner tasks: N` separately, adding the
+oldest issue link and creation date if any. If open issue inventory failed,
+report coverage unavailable rather than a zero count. Distinguish local commit,
+integration, publication, installed activation and live acceptance.

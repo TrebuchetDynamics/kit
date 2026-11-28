@@ -40,8 +40,8 @@ policy to make a workflow run. A skill cannot promise unattended execution after
 the current host session ends.
 
 For task operations, load the [GitHub issue contract](../../skills/shared/PLAN-HANDOFF.md).
-All issues default to `ai-ready`, regardless of author; planning publishes it last.
-Preserve explicit pauses, incomplete planning, native dependencies and live ownership.
+Ordinary issues default to `ai-ready`, regardless of author; planning publishes it last.
+Preserve undispatched owner tasks, explicit pauses, incomplete planning, native dependencies and live ownership.
 Legacy task-store writes, leases and scheduler instructions in older references are
 superseded. GitHub Issues and Orbi are the only executable backlog and delivery executor.
 

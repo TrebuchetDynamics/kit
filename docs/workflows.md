@@ -6,10 +6,13 @@ explicit skills. See [support, setup and migration](github-native.md).
 ## Unblock repairs blocked GitHub work
 
 `/unblock` checks open issues and PRs, fixes actionable causes, and reconciles
-recovery labels without asking again for routine decisions. It considers every
-`ai-planning` or `ai-blocked` issue for `ai-ready`. It publishes readiness after
-confirming the plan is complete or the blocker is repaired (both when both labels
-apply). It verifies whether work resumed. Read-only requests, explicit pauses,
+recovery labels without asking again for routine decisions. It reports the count
+and oldest open `owner-task` separately. It
+[cleans stale labels on closed worker issues and rechecks base-red blocks after a base advance](../skills/unblock/SKILL.md#stale-issue-state).
+Base-red recovery requeues the existing delivery with `ai-fix-needed`. Other
+eligible `ai-planning` or `ai-blocked` issues use `ai-ready` only after the plan
+is complete or the blocker is repaired (both when both labels apply). It verifies
+whether work resumed. Read-only requests, explicit pauses,
 existing PR ownership and human gates remain binding; the skill does not grant
 GitHub access or activate Orbi. `/unblock all` starts with the
 [read-only inventory of repositories in local Orbi deployment configs](../skills/unblock/references/inventory.md).
@@ -123,6 +126,12 @@ is limited, so some commands must be typed directly.
 | `/impeccable` | `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
 | `/unslop` | `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
 | `/ui-taste` | `/ui_taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |
+| `/genjutsu` | `/genjutsu` | Design motion for an interface's interactions |
+| `/motion-graphics` | `/motion_graphics` | Build and verify a seekable timeline |
+| `/brand-identity` | `/brand_identity` | Compare brand directions and export the selected kit |
+| `/styleseed` | `/styleseed` | Create or maintain a project design system |
+| `/procedural-drawing` | `/procedural_drawing` | Draw a CPU-rendered illustration from a selected style |
+| `/genart` | `/genart` | Create seeded art and check Canvas 2D output locally |
 | `/beautify-github-readme` | `/beautify_github_readme` | [Audit README reader paths and publish verified issues](../skills/beautify-github-readme/SKILL.md); explicit redesign/hero and audit-only requests keep their scope. Use `no-dispatch` to withhold readiness, or `read-only` for an inline report without writes. |
 
 For the Orbi first-deployment journey, `/orbi help` gives context-free examples and
@@ -529,6 +538,25 @@ Editing a document is not new authority. Keep every tested contract, move text
 instead of rewriting meaning, and report lines removed with the tests you ran.
 Offline link and packaging checks do not qualify model behavior.
 
+## Brand identity and design systems
+
+These commands run only when selected. `/ui-taste` remains the default for UI
+work that names no design skill. Claude Code exposes `/kit:brand-identity` and
+`/kit:styleseed`; use `$kit:brand-identity` or `$kit:styleseed` on Codex.
+
+- [`/brand-identity`](../skills/brand-identity/SKILL.md): start with a brief or
+  an approved identity. Compare directions before choosing; the final PDF,
+  logo files and tokens come from the chosen set only. The operation-specific
+  preflight checks Python, Chromium and local font inputs without installing them.
+- [`/styleseed`](../skills/styleseed/SKILL.md): start with the project design
+  contract, compile effective rules and tokens, and inspect the selected artifact.
+  The 22 workflows are internal to one skill. The bundled compiler uses `--agent pi`
+  or `--agent hermes` on those hosts. The preflight verifies the pinned runtime and
+  checks Playwright Chromium and its encoder only if the operation needs them.
+
+Prepare any missing prerequisite explicitly and rerun the reported check. A
+successful preflight or compile does not prove a render or a model outcome.
+
 ## UI findings
 
 Bare `/impeccable` and `/ui-taste` invocations analyze the current flow and publish
@@ -539,6 +567,46 @@ attached by default. Explicit design/edit requests retain their playbooks and de
 gates. Read-only/dry-run/no-write returns inline findings without saving; unattended
 runs remain audit-only unless the accepted scope authorizes writes. No-dispatch
 keeps published issues undispatched.
+
+## Visual reference workflows
+
+| Command | Example | Result |
+| --- | --- | --- |
+| [`/tastemaker`](../skills/tastemaker/SKILL.md) | `/tastemaker study screenshot.png` | Composition and measured palette from a supplied reference |
+| `/tastemaker` | `/tastemaker audit src/page.html` | Ranked findings without edits, issue publication or taste-memory changes |
+| `/tastemaker` | `/tastemaker compositions two hero directions` | Inline briefs, not generated images |
+| [`/dembrandt`](../skills/dembrandt/SKILL.md) | `/dembrandt review this form against DESIGN.md` | Advice from the relevant entries in the [45-topic index](../skills/dembrandt/references/corpus.md) |
+| `/dembrandt` | `/dembrandt extract https://example.com` | Measured tokens from an authorized page, without installing tools or applying exports |
+
+Use `/kit:tastemaker` and `/kit:dembrandt` in Claude Code, `$kit:tastemaker`
+and `$kit:dembrandt` in Codex, and bare slash commands in Pi and Hermes. The
+workflows load only after selection; `/ui-taste` remains the unnamed UI default.
+Project branding, tokens, frameworks and motion constraints take precedence.
+
+Reading the references needs no runtime. Tastemaker's local helpers need Python 3;
+image palette extraction also needs Pillow. Dembrandt site extraction needs an
+already connected Dembrandt MCP server, matching Chromium and the site's loaded
+fonts for typography evidence. Each workflow checks its own prerequisites and
+reports missing ones without installing anything. The linked wrappers identify the
+commands, repair paths, source pins and MIT notices.
+
+## Motion workflows
+
+| Command | Example | Result |
+| --- | --- | --- |
+| [`/genjutsu`](../skills/genjutsu/SKILL.md) | `/genjutsu specify enter and exit motion for this drawer; no edits` | A brief grounded in the existing stack, including the reduced-motion behavior |
+| [`/motion-graphics`](../skills/motion-graphics/SKILL.md) | `/motion-graphics check ./motion.html, a 640×360 two-second loop; sample 0.37s and 1.28s` | PNGs from direct seeks, with repeatability, matching loop endpoints and visible change checked |
+
+Use bare slash commands in Pi and Hermes, `/kit:genjutsu` and `/kit:motion-graphics`
+in Claude Code, or `$kit:genjutsu` and `$kit:motion-graphics` in Codex.
+The commands load only on selection; `/ui-taste` is still the unnamed UI default.
+Genjutsu uses the current host's capabilities; team workflows need both user scope
+and a delegation tool. A motion brief needs no browser or encoder.
+
+For timeline rendering and optional export, see [capture prerequisites and
+commands](../skills/motion-graphics/references/capture.md). Kit does not install
+missing dependencies, change project design constraints or qualify model behavior
+or device performance.
 
 ## Responsive screenshots
 

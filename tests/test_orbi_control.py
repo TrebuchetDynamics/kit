@@ -77,8 +77,10 @@ def snapshot(path):
     return items
 
 
-FAKE_SOURCE = '''#!{python}
-import json, os, subprocess, sys, time
+# Each stubbed command is a fresh interpreter, and one CLI run makes hundreds of them:
+# skip site-packages (-S) and import subprocess and time only when a rule needs them.
+FAKE_SOURCE = '''#!{python} -S
+import json, os, sys
 os.environ.setdefault("FAKE_CALLS", {calls!r})
 os.environ.setdefault("FAKE_RULES", {rules!r})
 name = os.path.basename(sys.argv[0])
@@ -115,8 +117,10 @@ for rule in rules:
     for target, mode in (rule.get("chmod") or {{}}).items():
         os.chmod(target, mode)
     if rule.get("exec"):
+        import subprocess
         subprocess.run(rule["exec"], env=os.environ, check=False)
     if rule.get("sleep"):
+        import time
         time.sleep(rule["sleep"])
     sys.stdout.write(rule.get("stdout", ""))
     sys.stderr.write(rule.get("stderr", ""))
@@ -1379,6 +1383,22 @@ class FirstDeploymentTests(unittest.TestCase):
                      and set(c['argv']) & {'enable', 'start', 'disable', 'stop', 'kill', 'restart'}]
         self.assertEqual(mutations, [['--user', 'enable', '--now', timer],
                                      ['--user', 'start', service]])
+
+    def test_public_setup_creates_unit_templates_under_umask_002(self):
+        prefix = helper.unit_prefix(helper.derive_unit_name(REPO))
+        service = self.h.unit_dir / f'{prefix}@.service'
+        timer = self.h.unit_dir / f'{prefix}@.timer'
+        self.h.rules(
+            {'tool': 'orbi', 'argv_contains': ['setup'], 'write': {
+                str(service): f'[Service]\nEnvironment="ORBI_CONFIG={self.h.deploy / "orbi.toml"}"\n'}},
+            {'tool': 'orbi', 'argv_contains': ['install-units'], 'write': {str(timer): '[Timer]\n'}})
+        # Public setup delegates to start; invoke the same argv as the skill.
+        result = subprocess.run(
+            [sys.executable, '-B', str(HELPER), 'start', '--repo-dir', str(self.h.repo),
+             '--json', *self.options], env=self.h.env, capture_output=True, text=True, timeout=30, umask=0o002)
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertEqual(json.loads(result.stdout)['status'], 'started')
+        self.assertEqual([path.stat().st_mode & 0o777 for path in (service, timer)], [0o644, 0o644])
 
     def test_first_start_prepares_validates_and_activates_once(self):
         for kind in (None, 'pi', 'donor'):
@@ -3963,6 +3983,29 @@ class InstallerFleetTests(unittest.TestCase):
         with mock.patch.object(Path, 'iterdir', iterdir), mock.patch.object(
                 ctx, 'run', return_value=subprocess.CompletedProcess([], 0, passwd, '')):
             yield ctx, home
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'fleet permission repair is Linux-only')
+    def test_fleet_fragment_repair_refuses_a_replaced_parent(self):
+        unit_dir = self.h.root / 'units'
+        unit_dir.mkdir()
+        fragment = unit_dir / 'orbi-kit@.service'
+        fragment.write_text('[Service]\n')
+        fragment.chmod(0o664)
+        outside = self.h.root / 'moved-units'
+        checked_path = helper.checked_path
+
+        def move_after_check(path, label):
+            result = checked_path(path, label)
+            unit_dir.rename(outside)
+            unit_dir.symlink_to(outside, target_is_directory=True)
+            return result
+
+        repaired = []
+        with mock.patch.object(helper, 'checked_path', side_effect=move_after_check), \
+                self.assertRaisesRegex(helper.ControlError, 'mode 664 is group-writable'):
+            helper.fleet_owned_fragment(fragment, os.getuid(), repaired=repaired)
+        self.assertEqual(repaired, [])
+        self.assertEqual((outside / fragment.name).stat().st_mode & 0o777, 0o664)
 
     def test_fleet_excludes_and_discloses_unreadable_offline_account(self):
         with self.other_account() as (ctx, home):
@@ -6952,6 +6995,27 @@ class SchedulingUpdateTests(unittest.TestCase):
                     recovered = json.loads(restored.stdout)
                     self.assertEqual(recovered['deployment']['pin'], 'sha:' + NEW_PIN)
                     self.assertEqual(recovered['activation'], 'started')
+
+    def test_update_creates_unit_templates_under_umask_002(self):
+        templates = [self.h.unit_dir / f'{self.prefix}@.{kind}' for kind in ('service', 'timer')]
+        synced = self.h.root / 'synced'
+        self.active_rules(extra=[
+            {'tool': 'orbi', 'argv_contains': ['sync-engine-source'], 'write': {str(synced): '1'}},
+            {'tool': 'orbi', 'argv_contains': ['install-units'],
+             # Model a fresh write of each template, not a truncate that preserves its fixture mode.
+             'exec': [sys.executable, '-c',
+                      'from pathlib import Path; import sys\n'
+                      'for path in map(Path, sys.argv[1:]):\n'
+                      '    content = path.read_bytes(); path.unlink(); path.write_bytes(content)',
+                      *map(str, templates)]},
+        ])
+        result = subprocess.run([sys.executable, '-B', str(HELPER), 'update', '--json'],
+                                cwd=self.h.repo, env=self.h.env,
+                                capture_output=True, text=True, timeout=45, umask=0o002)
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertEqual(json.loads(result.stdout)['unit_refresh'], 'refreshed')
+        for path in [*templates, synced]:
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644, str(path))
 
     def test_plain_enabled_active_idle_updates_validates_and_restores_in_one_invocation(self):
         self.active_rules()

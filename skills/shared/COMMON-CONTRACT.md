@@ -32,8 +32,8 @@ Installation, publication, third-party contact and destructive actions require t
 own authorization; specific no-write/no-commit restrictions always take precedence.
 
 For task operations, load the [GitHub issue contract](PLAN-HANDOFF.md).
-All issues default to `ai-ready`, regardless of author. Preserve explicit pauses,
-incomplete planning, native dependencies and actual ownership. GitHub Issues and
+Ordinary issues default to `ai-ready`, regardless of author. Preserve owner tasks,
+explicit pauses, incomplete planning, native dependencies and actual ownership. GitHub Issues and
 Orbi are the only executable backlog and delivery executor. Never create a second
 queue or executor when GitHub or Orbi is unavailable.
 

@@ -46,6 +46,60 @@ class UnblockSkillTests(unittest.TestCase):
                          'Confirm readiness before\n  removing resolved state labels'):
             self.assertIn(contract, text)
 
+    def stale_state_phase(self):
+        text = (ROOT / 'skills/unblock/SKILL.md').read_text()
+        repair = text.split('3. **Repair.**', 1)[1].split('4. **Verify.**', 1)[0]
+        self.assertIn('(#stale-issue-state)', repair)
+        return text.split('## Stale issue state', 1)[1].split('## Changed requirements:', 1)[0]
+
+    def test_closed_cleanup_reads_back_state_and_limits_label_removal(self):
+        phase = self.stale_state_phase().split('### Base-red blocks', 1)[0]
+        phase = ' '.join(phase.split())
+        self.assertIn('`closed_issues` from the fleet inventory or repeat the single-repo inventory with `state=closed`',
+                      phase)
+        self.assertRegex(phase, r'Re-read .* `CLOSED`.* Remove only .*'
+                         r'`ai-blocked`, `ai-fix-needed`, `ai-in-progress` and `ai-pr-opened`')
+        self.assertIn('Keep `ai-merged` and unrelated labels', phase)
+        self.assertIn('Read back `CLOSED` and the remaining labels; confirm the four stale labels are absent', phase)
+
+    def test_base_red_requeue_requires_verified_base_pass_and_pr_update(self):
+        phase = self.stale_state_phase().split('### Base-red blocks', 1)[1]
+        rules, example = ' '.join(phase.split()).split('**Worked example:**', 1)
+        for contract in ('latest trusted failure', '`orbi:base-ci-red:v1`', '`origin/<base>`',
+                         'Rerun the named checks with a timeout', 'on the new base SHA',
+                         'leave the PR and labels unchanged', 'exact tested base SHA',
+                         'normal merge', 'Never force-push', 'Read back the remote PR head',
+                         'evidence comment', 'verified base and PR head still match',
+                         'Replace `ai-blocked` with `ai-fix-needed` only if the issue is still open',
+                         'Read back the open state and both labels'):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, rules)
+        self.assertLess(rules.index('Rerun'), rules.index('normal merge'))
+        self.assertLess(rules.index('Read back the remote PR head'),
+                        rules.index('Replace `ai-blocked` with `ai-fix-needed`'))
+        self.assertIn('readback shows `ai-fix-needed` instead of `ai-blocked`', example)
+        self.assertIn('If the check had exited 1, report its failing output and leave the PR and issue labels untouched',
+                      example)
+
+    def test_base_red_blocks_do_not_fall_through_to_other_requeues(self):
+        text = ' '.join((ROOT / 'skills/unblock/SKILL.md').read_text().split())
+        self.assertIn('With `owner-task` issues set aside, route base-red blocks only to '
+                      '[base-red recovery](#base-red-blocks), even when `ai-planning` also applies', text)
+        self.assertIn('A held or failed base-red recheck does not fall through to '
+                      '`ai-ready` or another repair record for the same blocker', text)
+
+    def test_owner_tasks_are_inventory_only_including_during_followups(self):
+        text = (ROOT / 'skills/unblock/SKILL.md').read_text()
+        inventory = ' '.join(text.split('**Bind and inventory.**', 1)[1].split('**Diagnose.**', 1)[0].split())
+        self.assertRegex(inventory, r'timeout [1-9]\d* gh api --paginate')
+        self.assertIn("repository's `owner_tasks` for the receipt", inventory)
+        self.assertIn('Set aside `owner-task` issues before reading bodies', inventory)
+        self.assertIn('Apply this exclusion in PR and dependency follow-ups', inventory)
+        receipt = text.split('**Receipt:**', 1)[1]
+        self.assertIn('`Owner tasks: N` separately', receipt)
+        self.assertIn('oldest issue link and creation date', receipt)
+        self.assertIn('coverage unavailable rather than a zero count', receipt)
+
     def test_service_boundary_preserves_pauses_jobs_and_evidence(self):
         text = (ROOT / 'skills/unblock/references/services.md').read_text()
         for contract in ('deliberate-stop', 'pending service jobs',

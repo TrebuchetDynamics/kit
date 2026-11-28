@@ -156,8 +156,9 @@ the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-
 
 1. **Plan:** `/plan-with-me` resolves missing intent; `/plan-for-me` investigates and
    decides within accepted scope. Both publish complete GitHub Issues.
-2. **Publish:** create the entire batch under `ai-planning`, link native `blockedBy`
-   dependencies and optional `ai-epic` sub-issues, verify, then add `ai-ready` last.
+2. **Publish:** create worker issues under `ai-planning` and human-only work under
+   `owner-task`. Link native `blockedBy` dependencies and optional `ai-epic`
+   sub-issues, verify, then add `ai-ready` last to eligible worker issues.
 3. **Deliver:** one Orbi deployment per repository owns Pi → tests → PR → independent
    review → merge gates.
 4. **Observe:** GitHub Issues/PRs and read-only
@@ -165,9 +166,9 @@ the [full-workflow exercise](docs/onboarding.md#optional-see-decisions-become-a-
 5. **Reconcile:** `/docs-sync` updates current requirements and issue evidence without
    duplicating the backlog or restarting a scheduler.
 
-All issues default to `ai-ready`, regardless of author. Publish readiness last,
-after complete content and native `blockedBy` prerequisites exist. Epics do not
-execute; explicit pauses and incomplete planning stay undispatched. An existing
+Ordinary issues default to `ai-ready`, regardless of author. Publish readiness last,
+after complete content and native `blockedBy` prerequisites exist. Owner tasks,
+epics, explicit pauses and incomplete planning stay undispatched. An existing
 Orbi deployment may pick up newly ready issues immediately, but a label is not
 pickup, passing tests, independent review or protected merge.
 
@@ -427,7 +428,15 @@ states its own boundaries and what "done" means.
 
 **Design, capture and write**
 
-- `/impeccable`, `/ui-taste` — [publish actionable UI findings](docs/workflows.md#ui-findings); explicit design/edit requests keep their playbooks.
+- `/impeccable`, `/ui-taste` — [publish actionable UI findings](docs/workflows.md#ui-findings); explicit design/edit requests keep their playbooks. `/ui-taste` is the default for unnamed UI work.
+- [`/tastemaker`](skills/tastemaker/SKILL.md) — study visual references, audit without edits or write composition briefs.
+- [`/dembrandt`](skills/dembrandt/SKILL.md) — work within an existing design language or explicitly measure site tokens. See [reference workflows and prerequisites](docs/workflows.md#visual-reference-workflows).
+- [`/genjutsu`](skills/genjutsu/SKILL.md) — design interaction motion with the project's existing stack.
+- [`/motion-graphics`](skills/motion-graphics/SKILL.md) — build timelines and [verify rendered frames by seeking](docs/workflows.md#motion-workflows).
+- `/brand-identity` — compare brand directions and export the selected brand kit.
+- `/styleseed` — create and maintain a project design system. See [design workflows and runtime checks](docs/workflows.md#brand-identity-and-design-systems).
+- [`/procedural-drawing`](skills/procedural-drawing/SKILL.md) — draw CPU-rendered illustrations from a selected style.
+- [`/genart`](skills/genart/SKILL.md) — create seeded generative art and [check Canvas repeatability locally](skills/genart/canvas.md). SVG verification is manual.
 - `/beautify-github-readme` — audit reader paths and publish verified issues; explicit redesign/hero and audit-only requests keep their scope.
 - [`/sakurai`](skills/sakurai/SKILL.md) — pointer to Sakurai's game-design guidance and 14 Japanese category references online; upstream text is not bundled without a redistribution grant.
 - `/responsive-screenshots` — capture pages at breakpoints, report overflow.

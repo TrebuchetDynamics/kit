@@ -117,7 +117,9 @@ in directory order. The removed executor's Paseo/renderer checks are not run.
 `--exclude PATH` (repeatable) leaves
 a module or directory out of the selection, and `--shard I/N` keeps every N-th test id
 from the I-th, so several machines can share one selection; a module whose tests cannot
-be listed without importing runs whole on the first shard. `--list` prints the
+be listed without importing runs whole on the first shard. On a shard, a module with
+20 or more selected test ids is dealt across the shard's processes, and the largest
+units start first. A new push to a pull request cancels its older CI run. `--list` prints the
 inventory without importing tests. Symlinked test modules and maintained-directory
 components below the resolved checkout root are skipped, so a linked `skills` or
 workflow parent cannot redirect discovery into external tests. Checkout-root aliases
@@ -208,9 +210,9 @@ its own suites: the hook now prints the load average and cpu count when it refus
 so the failure can be attributed instead of bypassed. Run one failing module alone
 before you treat the tree as broken; a second failure there is the tree's.
 
-`main` requires the GitHub Actions `test` check and an up-to-date branch. Four
+`main` requires the GitHub Actions `test` check and an up-to-date branch. Eight
 `shard` jobs run the full offline Python suite with Python 3.12, each with
-`check.py --shard I/4`. The first shard also checks plugin syntax and runs the Pi
+`check.py --shard I/8`. The first shard also checks plugin syntax and runs the Pi
 adapter tests with Node 22. The `test` job passes only when every shard passed. Inspect
 [the workflow](../.github/workflows/test.yml) for its current inventory. Live
 Telegram delivery and model execution require separate qualification.
@@ -315,6 +317,17 @@ and packaged support files. CI uses Node 22 for those tests. See
 and disposable-home installation checks. Package discovery does not prove model
 execution or completion of a delivery task. Required model-driven qualification
 remains separate from package discovery and needs explicit scope and real evidence.
+
+For the motion capture contract, use an existing Playwright Python environment
+and matching Chromium:
+
+```sh
+KIT_MOTION_BROWSER=1 timeout 90 python3 -B tests/test_motion_graphics.py -v
+```
+
+This opens local fixture HTML and runs the same seek-based capture command as the
+skill. It includes static, non-repeatable and mismatched loop negatives; it does
+not test model output or device performance.
 
 ## Qualification boundaries
 

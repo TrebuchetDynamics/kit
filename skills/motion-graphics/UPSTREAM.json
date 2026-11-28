@@ -1,0 +1,57 @@
+{
+  "repository": "https://github.com/charlie947/motion-graphics-skills",
+  "revision": "229022ebca76972e119e36ada23a1648d51665ab",
+  "source_path": "skills",
+  "license": "MIT",
+  "transform": "Byte-exact HTML timeline recipe protocols and their Markdown references, with the license notice. Preserve repository-relative paths in upstream/ except rename SKILL.md to PROTOCOL.md to suppress discovery. The Kit-owned capture.py drives the upstream seek contract; no upstream runtime is installed.",
+  "files": {
+    "LICENSE": {
+      "path": "upstream/LICENSE",
+      "sha256": "ed17713237d18555a34c208bf0cb1ce347faa937731d509e265ce91be660e218"
+    },
+    "skills/animated-chart/SKILL.md": {
+      "path": "upstream/skills/animated-chart/PROTOCOL.md",
+      "sha256": "032b99ae8de1651ca6437d9fdb89ee20c696e328f23d16870749144989db0460"
+    },
+    "skills/apple-launch-film/SKILL.md": {
+      "path": "upstream/skills/apple-launch-film/PROTOCOL.md",
+      "sha256": "3923ff37bc6f830d85d882de81c029f4d1be1435bcbd292c58bd3ad5f1d83295"
+    },
+    "skills/launch-video/SKILL.md": {
+      "path": "upstream/skills/launch-video/PROTOCOL.md",
+      "sha256": "88e1c4648bd4e20509c33ca7ac1fd220efa3d2281debd0d10126b4cdd2abc4c8"
+    },
+    "skills/loop-cover/SKILL.md": {
+      "path": "upstream/skills/loop-cover/PROTOCOL.md",
+      "sha256": "a14fc83df6f23abc17ed2a1715d1288d14da956892087dd92cb2b646c5f1a00f"
+    },
+    "skills/milestone-reveal/SKILL.md": {
+      "path": "upstream/skills/milestone-reveal/PROTOCOL.md",
+      "sha256": "5b56d927559f98f810c3c8c7cb8f712fd997ee29c76191472cea8eec66b24d14"
+    },
+    "skills/model-showdown/SKILL.md": {
+      "path": "upstream/skills/model-showdown/PROTOCOL.md",
+      "sha256": "76c3cffbea8a261b6f4604f1be50ea449ee438f049adf4a94fe0f0f273b62119"
+    },
+    "skills/motion-effects/SKILL.md": {
+      "path": "upstream/skills/motion-effects/PROTOCOL.md",
+      "sha256": "576540bd2e6a4b7e134ec621eaf4d74e6edaaa02b9a4f04daef364bea20566d9"
+    },
+    "skills/motion-effects/references/effects.md": {
+      "path": "upstream/skills/motion-effects/references/effects.md",
+      "sha256": "131c4b7f4aef9e03f62eebb752afa0435cd42112e6dbf04be902cd9763965651"
+    },
+    "skills/newsletter-promo/SKILL.md": {
+      "path": "upstream/skills/newsletter-promo/PROTOCOL.md",
+      "sha256": "57ebc05185a1354b128309f54ea06eb4c57e30311ccf08b3071b4fcfe79fc16a"
+    },
+    "skills/title-sequence-3d/SKILL.md": {
+      "path": "upstream/skills/title-sequence-3d/PROTOCOL.md",
+      "sha256": "80434f53a33b4c8b83c30d6e2288a137530fcaf51b82b0c9cc0872ca976e3205"
+    },
+    "skills/vox-explainer/SKILL.md": {
+      "path": "upstream/skills/vox-explainer/PROTOCOL.md",
+      "sha256": "8e4066d59fc71f94f7ec82ebc21965cc44372809c4ce77b5b466dc9d7f9c9606"
+    }
+  }
+}

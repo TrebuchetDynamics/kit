@@ -1,4 +1,5 @@
 """Portable hosts expose adapters rather than Hermes-only worker instructions."""
+from hashlib import sha256
 import json
 from pathlib import Path
 import re
@@ -99,6 +100,8 @@ class PortablePackageTests(unittest.TestCase):
             spec.loader.exec_module(standard)
             shipped = standard.gui_entrypoint_routes(installed)
             self.assertEqual(set(shipped), set(standard.gui_entrypoint_routes(ROOT)))
+
+            self.check_visual_reference_packs(installed)
 
             # Writing guidance is reached through the real installed adapter,
             # including its mode-specific completion, not a checkout-only copy.
@@ -213,12 +216,249 @@ class PortablePackageTests(unittest.TestCase):
             self.assertIn('update --no-pull --only pi', result.stdout)
             self.assertEqual(sorted(path.relative_to(foreign) for path in foreign.rglob('*')), before)
 
+            self.assert_visual_workflows(installed, base)
+
+    def assert_visual_workflows(self, installed, base):
+        import os
+        import subprocess
+        import sys
+
+        pins = {
+            'brand-identity': ('fatihaydost/brand-identity-skill', 'af7ba40fe067b8b4aaeb2af90ed6c8996d014791'),
+            'styleseed': ('bitjaru/styleseed', '78d1e08e6e931e04c737d34ed3cde1dda540faa6'),
+        }
+        for name, (repo, revision) in pins.items():
+            skill = installed / 'skills' / name
+            pin = json.loads((skill / 'UPSTREAM.json').read_text())
+            self.assertEqual((pin['repository'], pin['revision'], pin['license']),
+                             (f'https://github.com/{repo}', revision, 'MIT'))
+            upstream = skill / 'upstream'
+            files = {p.relative_to(upstream).as_posix(): sha256(p.read_bytes()).hexdigest()
+                     for p in upstream.rglob('*') if p.is_file()}
+            self.assertEqual(files, pin['files'] | pin.get('derived_files', {}))
+            self.assertIn('MIT License', (upstream / 'LICENSE').read_text())
+            self.assertEqual(list(upstream.rglob('SKILL.md')), [])
+            adapter = installed / 'adapters/skills' / name / 'SKILL.md'
+            self.assertIn(f'../../../skills/{name}/SKILL.md', adapter.read_text())
+
+        project = base / 'visual project'
+        project.mkdir()
+        uv = project / 'uv'
+        uv.write_text('#!/bin/sh\ntouch attempted-install\nexit 1\n')
+        uv.chmod(0o755)
+        env = dict(os.environ, HOME=str(project), PATH=f'{project}{os.pathsep}{os.environ["PATH"]}')
+        env.pop('BRAND_IDENTITY_ENV', None)
+
+        def run(*args):
+            return subprocess.run(args, cwd=project, env=env, text=True,
+                                  capture_output=True, timeout=30)
+
+        brand = installed / 'skills/brand-identity'
+        preflight = [sys.executable, '-BS', str(brand / 'upstream/scripts/preflight.py')]
+        self.assertEqual(run(*preflight).returncode, 0, 'plain intake needs no render dependencies')
+        missing = run(*preflight, '--type', '--font', 'missing.ttf')
+        self.assertEqual(missing.returncode, 1, missing.stdout + missing.stderr)
+        self.assertIn('fontTools', missing.stderr)
+        self.assertIn('pathops', missing.stderr, 'type audits can instance variable fonts')
+        self.assertIn('missing.ttf', missing.stderr)
+        self.assertIn('requirements.txt', missing.stderr)
+        helper = run(sys.executable, '-BS', str(brand / 'upstream/scripts/brand.py'), 'check', '--type')
+        self.assertEqual(helper.returncode, 1, helper.stdout + helper.stderr)
+        self.assertIn('fontTools', helper.stderr)
+        self.assertIn('requirements.txt', helper.stderr)
+        self.assertEqual(list(project.iterdir()), [uv], 'capability checks must not install or write')
+
+        style = installed / 'skills/styleseed/upstream/skills/styleseed'
+        workflows = style / 'workflows'
+        self.assertEqual(len(list(workflows.glob('ss-*/WORKFLOW.md'))), 22)
+        missing = run('node', str(style / 'preflight.mjs'), '--browser', str(project / 'missing.mjs'))
+        self.assertEqual(missing.returncode, 1, missing.stdout + missing.stderr)
+        self.assertIn('Playwright', missing.stderr)
+        # If the supplied module exports no Chromium, do not probe a different
+        # browser from the project and report that the requested renderer is ready.
+        import shutil
+        project_browser = project / 'node_modules/playwright'
+        project_browser.mkdir(parents=True)
+        (project_browser / 'index.js').write_text('exports.chromium = { launch: async () => ({ close() {} }) };')
+        wrong_browser = project / 'other.mjs'
+        wrong_browser.write_text('export default {};')
+        wrong = run('node', str(style / 'preflight.mjs'), '--browser', str(wrong_browser))
+        self.assertEqual(wrong.returncode, 1, wrong.stdout + wrong.stderr)
+        self.assertIn('other.mjs: Playwright Chromium launch is not exported', wrong.stderr)
+        wrong_browser.unlink()
+        shutil.rmtree(project_browser.parent)
+        external = run('node', str(workflows / 'ss-reference/scripts/measure-reference.mjs'), '--designlang')
+        self.assertEqual(external.returncode, 1, external.stdout + external.stderr)
+        self.assertIn('Kit does not install Designlang', external.stderr)
+        self.assertEqual(list(project.iterdir()), [uv])
+        resolve = workflows / 'ss-resolve/scripts/resolve-context.mjs'
+        for host, title in [('pi', 'Pi'), ('hermes', 'Hermes')]:
+            with self.subTest(host=host):
+                cmd = ['node', str(resolve), '--agent', host, '--grammar', 'operations-console',
+                       '--adapter', 'product-ui', '--key-color', '#2468AB']
+                compiled = run(*cmd)
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                bundle = (project / '.styleseed/effective-rules.md').read_text()
+                self.assertIn(f'## {title} execution contract', bundle)
+                self.assertIn(f'- Agent: {host}', bundle)
+                manifest = json.loads((project / '.styleseed/manifest.json').read_text())
+                self.assertEqual(manifest['selection']['agent'], host)
+                self.assertEqual(manifest['selection']['paletteGeneration']['keyColor'].lower(), '#2468ab')
+                self.assertIn('--ss-primary:', (project / '.styleseed/palette.css').read_text())
+                checked = run(*cmd, '--check')
+                self.assertEqual(checked.returncode, 0, checked.stderr)
+
+        # The catalog cannot hash itself in the upstream inventory. Its Hermes mapping
+        # must still be checked against the digest tied to the Kit distribution.
+        catalog = workflows / 'ss-resolve/references/catalog.json'
+        original = catalog.read_bytes()
+        data = json.loads(original)
+        data['agents']['hermes'] = 'Replaced execution contract'
+        catalog.write_text(json.dumps(data))
+        for result in (run('node', str(style / 'preflight.mjs')), run(*cmd)):
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('catalog.json', result.stderr)
+            self.assertIn('Restore', result.stderr)
+        doctor = run('node', str(resolve.with_name('styleseed-doctor.mjs')), '--json')
+        self.assertEqual(doctor.returncode, 1, doctor.stdout + doctor.stderr)
+        installation = json.loads(doctor.stdout)['installation']
+        self.assertEqual(installation['status'], 'invalid')
+        self.assertIn('catalog.json', installation['detail'])
+        self.assertEqual((project / '.styleseed/effective-rules.md').read_text(), bundle)
+        catalog.write_bytes(original)
+
+        # Mutate an otherwise valid shipped workflow. Both preflight and compile
+        # must fail rather than issuing a verified receipt or rewriting the bundle.
+        workflow = workflows / 'ss-setup/WORKFLOW.md'
+        workflow.write_text(workflow.read_text() + '\nChanged after packaging.\n')
+        for result in (run('node', str(style / 'preflight.mjs')), run(*cmd)):
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('tampered', result.stderr)
+            self.assertIn('Restore', result.stderr)
+        self.assertEqual((project / '.styleseed/effective-rules.md').read_text(), bundle)
+
+    def check_visual_reference_packs(self, installed):
+        packs = (
+            ('skills/procedural-drawing/UPSTREAM.json', 'cloveric/claude-drawing-skill',
+             '6af36dc717b63d6ddafb54d2eaa120cacd99ab4d', '.', (
+                 'skills/procedural-drawing/upstream/LICENSE',
+                 'skills/procedural-drawing/upstream/PROTOCOL.md',
+                 'skills/procedural-drawing/upstream/requirements.txt',
+                 'skills/procedural-drawing/scripts/preflight.py',
+             )),
+            ('skills/genart/UPSTREAM.json', 'camilleroux/genart-skill',
+             '36bb7f1f673580c6d6cbb13a80a15062d6c00459', 'skills/genart', (
+                 'skills/genart/upstream/LICENSE', 'skills/genart/upstream/PROTOCOL.md',
+                 'skills/genart/upstream/references/determinism.md',
+                 'skills/genart/upstream/references/verification.md',
+                 'skills/genart/scripts/verify_canvas.py', 'skills/genart/examples/seeded.html',
+             )),
+            ('skills/tastemaker/UPSTREAM.json', 'codeswithroh/tastemaker',
+             '792a28a820ec4e9159ef8621c21a6c88528bbf2e', 'skills/tastemaker', (
+                 'skills/tastemaker/upstream/LICENSE', 'skills/tastemaker/upstream/ideagram/LICENSE',
+                 'skills/tastemaker/upstream/references/verbs/study.md',
+                 'skills/tastemaker/upstream/references/verbs/audit.md',
+                 'skills/tastemaker/upstream/references/verbs/comps.md',
+                 'skills/tastemaker/upstream/scripts/extract_palette.py',
+                 'skills/tastemaker/upstream/scripts/check_contrast.py',
+                 'skills/tastemaker/upstream/scripts/generate_palette.py',
+                 'skills/tastemaker/upstream/scripts/anti_slop_scan.py',
+                 'skills/tastemaker/upstream/scripts/audit_motion.py',
+             )),
+            ('skills/dembrandt/UPSTREAM.json', 'dembrandt/dembrandt-skills',
+             'cd3ff4b085557fe20f2f247dd853e4be7df583f3', 'directory/skills', (
+                 'skills/dembrandt/upstream/LICENSE', 'skills/dembrandt/upstream/directory/LICENSE',
+                 'skills/dembrandt/upstream/skills/extract-design/PROTOCOL.md',
+                 'skills/dembrandt/upstream/skills/generate-ui-from-brand/PROTOCOL.md',
+             )),
+            ('skills/genjutsu/UPSTREAM.json', 'AThevon/genjutsu',
+             'a22540b623590505879d6489dd03d7f3072bce05', 'skills', (
+                 'skills/genjutsu/upstream/LICENSE',
+                 'skills/genjutsu/upstream/skills/_jutsu/ui-ux-pro-max/LICENSE-upstream.txt',
+                 'skills/genjutsu/upstream/skills/cast/PROTOCOL.md',
+                 'skills/genjutsu/upstream/skills/paint/PROTOCOL.md',
+                 'skills/genjutsu/upstream/skills/bunshin/PROTOCOL.md',
+                 'skills/genjutsu/upstream/skills/_jutsu/motion-principles/PROTOCOL.md',
+             )),
+            ('skills/motion-graphics/UPSTREAM.json', 'charlie947/motion-graphics-skills',
+             '229022ebca76972e119e36ada23a1648d51665ab', 'skills', (
+                 'skills/motion-graphics/upstream/LICENSE',
+                 'skills/motion-graphics/upstream/skills/motion-effects/PROTOCOL.md',
+                 'skills/motion-graphics/upstream/skills/motion-effects/references/effects.md',
+                 'skills/motion-graphics/scripts/capture.py',
+             )),
+        )
+        for manifest, repo, revision, source_path, required in packs:
+            with self.subTest(repo=repo):
+                skill = (installed / manifest).parent
+                pin = json.loads((installed / manifest).read_text())
+                self.assertEqual(pin['repository'], f'https://github.com/{repo}')
+                self.assertEqual(pin['revision'], revision)
+                self.assertEqual(pin['license'], 'MIT')
+                self.assertEqual(pin['source_path'], source_path)
+                self.assertTrue(pin['transform'])
+                upstream = skill / 'upstream'
+                files = {p.relative_to(upstream).as_posix(): sha256(p.read_bytes()).hexdigest()
+                         for p in upstream.rglob('*') if p.is_file()}
+                # A relocated entry maps the original upstream path to {path, sha256}.
+                recorded = {(entry['path'].removeprefix('upstream/') if isinstance(entry, dict) else stored):
+                            (entry['sha256'] if isinstance(entry, dict) else entry)
+                            for stored, entry in pin['files'].items()}
+                self.assertEqual(files, recorded)
+                self.assertFalse(list(upstream.rglob('SKILL.md')), 'upstream is not discoverable')
+                for relative in required:
+                    path = installed / relative
+                    self.assertTrue(path.is_file(), relative)
+                    if path.name == 'LICENSE':
+                        self.assertIn('MIT License', path.read_text())
+
+        genjutsu = installed / 'skills/genjutsu'
+        pin = json.loads((genjutsu / 'UPSTREAM.json').read_text())
+        third_party = 'skills/_jutsu/ui-ux-pro-max/LICENSE-upstream.txt'
+        self.assertEqual(pin['third_party']['license'], 'MIT')
+        self.assertEqual(pin['third_party']['source_path'], third_party)
+        self.assertIn('Next Level Builder', (genjutsu / 'upstream' / third_party).read_text())
+        for name in ('genjutsu', 'motion-graphics'):
+            adapter = installed / 'adapters/skills' / name
+            metadata = yaml.safe_load((adapter / 'SKILL.md').read_text().split('---', 2)[1])
+            policy = yaml.safe_load((adapter / 'agents/openai.yaml').read_text())['policy']
+            self.assertIs(metadata['disable-model-invocation'], True)
+            self.assertIs(policy['allow_implicit_invocation'], False)
+            for link in re.findall(r'\]\(([^)#]+)\)', (installed / 'skills' / name / 'SKILL.md').read_text()):
+                self.assertTrue((installed / 'skills' / name / link).is_file(), (name, link))
+
+        drawing = installed / 'skills/procedural-drawing'
+        index = '\n'.join(line for line in (drawing / 'styles.md').read_text().splitlines()
+                          if line.startswith('| '))
+        for folder, pattern in (('lib', '[a-z0-9]+'), ('examples', '[a-z0-9_]+')):
+            selected = re.findall(rf'\]\((upstream/{folder}/{pattern}\.py)\)', index)
+            self.assertEqual(len(selected), 83)
+            self.assertCountEqual(selected, [p.relative_to(drawing).as_posix()
+                                            for p in drawing.glob(f'upstream/{folder}/*.py')
+                                            if p.name != 'core.py'])
+
+        for name in ('procedural-drawing', 'genart'):
+            adapter = installed / 'adapters/skills' / name / 'SKILL.md'
+            canonical = installed / 'skills' / name / 'SKILL.md'
+            self.assertIn(f'](../../../skills/{name}/SKILL.md)', adapter.read_text())
+            for relative in re.findall(r'\]\(([^)#\s]+)', canonical.read_text()):
+                self.assertTrue((canonical.parent / relative).is_file(), relative)
+
+        skill = installed / 'skills/dembrandt'
+        index = (skill / 'references/corpus.md').read_text()
+        selected = re.findall(r'\]\(\.\./(upstream/skills/[^/)]+/PROTOCOL\.md)\)', index)
+        self.assertEqual(len(selected), 45)
+        self.assertCountEqual(selected, [p.relative_to(skill).as_posix()
+                                         for p in skill.glob('upstream/skills/*/PROTOCOL.md')])
+
     def test_portable_skills_and_references_are_self_contained(self):
         folder = ROOT / 'adapters/skills'
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
         self.assertEqual(names, {'plan-with-me', 'unblock', 'plan-for-me', 'docs-sync', 'orbi', 'update-kit',
             'autoresearch', 'impeccable', 'lgtm', 'goal',
             'git-commit-push', 'push', 'ui-taste', 'sakurai', 'unslop', 'beautify-github-readme',
+            'tastemaker', 'dembrandt', 'genjutsu', 'motion-graphics',
+            'brand-identity', 'styleseed', 'procedural-drawing', 'genart',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',
             'ponytail-gain', 'ponytail-help', 'bug-harvest',
             'autonomous-codebase-improver', 'split-folder', 'unused-code',
