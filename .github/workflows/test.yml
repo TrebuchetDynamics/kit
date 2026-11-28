@@ -4,14 +4,19 @@ name: test
   push:
     branches: [main]
     tags: ['**']
+# A new push to a pull request cancels that pull request's older run. Pushes to main and
+# tags get a group of their own, so every one of them completes.
+concurrency:
+  group: test-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
 jobs:
   shard:
-    name: shard ${{ matrix.shard }}/4
+    name: shard ${{ matrix.shard }}/8
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,7 +38,7 @@ jobs:
         if: matrix.shard == 1
         run: node --test tests/portable_pi.test.mjs
       - name: Offline Python suite shard
-        run: python scripts/check.py --shard ${{ matrix.shard }}/4
+        run: python scripts/check.py --shard ${{ matrix.shard }}/8
   # Branch protection requires the `test` check: it passes only when every shard passed.
   test:
     needs: shard

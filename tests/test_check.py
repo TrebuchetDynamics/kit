@@ -483,6 +483,30 @@ class Aliases(unittest.TestCase):
             seen.extend(re.findall(r'^RAN (\S+)$', result.stdout, re.MULTILINE))
         self.assertCountEqual(seen, expected)
 
+    def test_shard_splits_a_large_module_across_processes_and_runs_each_test_once(self):
+        methods = ''.join(f'''    def test_{n:02}(self):
+        print('RAN', self.id(), os.getpid())
+''' for n in range(48))
+        self.write('tests/test_large.py', 'import os, unittest\nclass Large(unittest.TestCase):\n' + methods)
+        self.write('tests/test_small.py', '''import os, unittest
+class Small(unittest.TestCase):
+    def test_a(self):
+        print('RAN', self.id(), os.getpid())
+    def test_b(self):
+        print('RAN', self.id(), os.getpid())
+''')
+        seen = []
+        for i in (1, 2):
+            result = self.run_check('--shard', f'{i}/2', '--jobs', '2')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            ran = re.findall(r'^RAN (\S+) (\d+)$', result.stdout, re.MULTILINE)
+            seen.extend(name for name, _ in ran)
+            # 24 large ids on this shard reach the split threshold; the small share stays whole.
+            self.assertEqual(len({pid for name, pid in ran if '.Large.' in name}), 2)
+            self.assertLessEqual(len({pid for name, pid in ran if '.Small.' in name}), 1)
+        self.assertCountEqual(seen, [f'test_large.Large.test_{n:02}' for n in range(48)]
+                              + ['test_small.Small.test_a', 'test_small.Small.test_b'])
+
     def test_shards_run_module_with_unresolved_base_whole_on_first_shard(self):
         self.write('tests/support.py', '''import unittest
 class External(unittest.TestCase):
