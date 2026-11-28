@@ -33,6 +33,8 @@ const workflows = {
   'ponytail-help': ['ponytail-help', 'Explain bundled Ponytail commands'],
   impeccable: ['impeccable', 'Improve interface design'],
   'ui-taste': ['ui-taste', 'Improve UI taste with Uizze playbooks'],
+  'brand-identity': ['brand-identity', 'Compare brand directions and build the selected kit'],
+  styleseed: ['styleseed', 'Create and maintain a project design system'],
   sakurai: ['sakurai', "Find Sakurai's game-design guidance upstream"],
   'beautify-github-readme': ['beautify-github-readme', 'Redesign or audit a GitHub README'],
   'grill-me': ['plan-with-me', 'Plan With Me challenge mode (compatibility)', 'challenge'],

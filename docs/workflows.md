@@ -126,6 +126,8 @@ is limited, so some commands must be typed directly.
 | `/impeccable` | `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
 | `/unslop` | `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
 | `/ui-taste` | `/ui_taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |
+| `/brand-identity` | `/brand_identity` | Compare brand directions and export the selected kit |
+| `/styleseed` | `/styleseed` | Create or maintain a project design system |
 | `/beautify-github-readme` | `/beautify_github_readme` | [Audit README reader paths and publish verified issues](../skills/beautify-github-readme/SKILL.md); explicit redesign/hero and audit-only requests keep their scope. Use `no-dispatch` to withhold readiness, or `read-only` for an inline report without writes. |
 
 For the Orbi first-deployment journey, `/orbi help` gives context-free examples and
@@ -531,6 +533,25 @@ GitHub issue authority, review and delivery limits.
 Editing a document is not new authority. Keep every tested contract, move text
 instead of rewriting meaning, and report lines removed with the tests you ran.
 Offline link and packaging checks do not qualify model behavior.
+
+## Brand identity and design systems
+
+These commands run only when selected. `/ui-taste` remains the default for UI
+work that names no design skill. Claude Code exposes `/kit:brand-identity` and
+`/kit:styleseed`; use `$kit:brand-identity` or `$kit:styleseed` on Codex.
+
+- [`/brand-identity`](../skills/brand-identity/SKILL.md): start with a brief or
+  an approved identity. Compare directions before choosing; the final PDF,
+  logo files and tokens come from the chosen set only. The operation-specific
+  preflight checks Python, Chromium and local font inputs without installing them.
+- [`/styleseed`](../skills/styleseed/SKILL.md): start with the project design
+  contract, compile effective rules and tokens, and inspect the selected artifact.
+  The 22 workflows are internal to one skill. The bundled compiler uses `--agent pi`
+  or `--agent hermes` on those hosts. The preflight verifies the pinned runtime and
+  checks Playwright Chromium and its encoder only if the operation needs them.
+
+Prepare any missing prerequisite explicitly and rerun the reported check. A
+successful preflight or compile does not prove a render or a model outcome.
 
 ## UI findings
 

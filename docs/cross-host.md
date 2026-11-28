@@ -7,7 +7,7 @@ Kit supports Claude Code, Codex, Pi and optional Hermes integration.
 Claude Code, Codex and Pi use the portable adapters, not the Hermes plugin
 loader. None requires Hermes installed.
 These adapters expose the portable workflows: Plan With Me, Plan For Me, Docs Sync, Orbi, Update Kit,
-Autoresearch, Impeccable, UI Taste, Beautify GitHub README,
+Autoresearch, Impeccable, UI Taste, Brand Identity, StyleSeed, Beautify GitHub README,
 LGTM, Git Commit Push, the six bundled Ponytail skills,
 and Bug Harvest, Autonomous Codebase Improver, Skill Folder Refactor, Unused Code
 and Test Optimizer, plus APK Get.
@@ -613,7 +613,7 @@ Local installs refer to this checkout; keep it in place. The extension registers
 ```
 
 All 13 `/autoresearch-<protocol>` commands are available. The other commands are
-`/autoresearch`, `/impeccable`, `/ui-taste`, `/unslop`, `/beautify-github-readme`,
+`/autoresearch`, `/impeccable`, `/ui-taste`, `/brand-identity`, `/styleseed`, `/unslop`, `/beautify-github-readme`,
 `/lgtm`, `/git-commit-push` (current branch and its upstream) and `/push` (deliver
 to `main`). `/git-commit-push pull` or `merge <branch>` only integrates upstream changes.
 The engineering pack is a reference, not a command; no
