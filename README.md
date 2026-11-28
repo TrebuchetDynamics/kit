@@ -433,6 +433,7 @@ states its own boundaries and what "done" means.
 - [`/dembrandt`](skills/dembrandt/SKILL.md) — work within an existing design language or explicitly measure site tokens. See [reference workflows and prerequisites](docs/workflows.md#visual-reference-workflows).
 - [`/genjutsu`](skills/genjutsu/SKILL.md) — design interaction motion with the project's existing stack.
 - [`/motion-graphics`](skills/motion-graphics/SKILL.md) — build timelines and [verify rendered frames by seeking](docs/workflows.md#motion-workflows).
+- [`/open-3d`](skills/open-3d/SKILL.md) — build procedural browser 3D scenes, check viewports and capture verified video.
 - `/brand-identity` — compare brand directions and export the selected brand kit.
 - `/styleseed` — create and maintain a project design system. See [design workflows and runtime checks](docs/workflows.md#brand-identity-and-design-systems).
 - [`/procedural-drawing`](skills/procedural-drawing/SKILL.md) — draw CPU-rendered illustrations from a selected style.
