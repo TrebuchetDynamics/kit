@@ -77,8 +77,10 @@ def snapshot(path):
     return items
 
 
-FAKE_SOURCE = '''#!{python}
-import json, os, subprocess, sys, time
+# Each stubbed command is a fresh interpreter, and one CLI run makes hundreds of them:
+# skip site-packages (-S) and import subprocess and time only when a rule needs them.
+FAKE_SOURCE = '''#!{python} -S
+import json, os, sys
 os.environ.setdefault("FAKE_CALLS", {calls!r})
 os.environ.setdefault("FAKE_RULES", {rules!r})
 name = os.path.basename(sys.argv[0])
@@ -115,8 +117,10 @@ for rule in rules:
     for target, mode in (rule.get("chmod") or {{}}).items():
         os.chmod(target, mode)
     if rule.get("exec"):
+        import subprocess
         subprocess.run(rule["exec"], env=os.environ, check=False)
     if rule.get("sleep"):
+        import time
         time.sleep(rule["sleep"])
     sys.stdout.write(rule.get("stdout", ""))
     sys.stderr.write(rule.get("stderr", ""))

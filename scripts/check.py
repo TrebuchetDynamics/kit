@@ -88,10 +88,16 @@ def test_ids(path):
             if is_test_case for method in methods]
 
 
-def units(root, tests, pattern=None, shard=None):
+# A shard's share of a module with at least this many test IDs is split across the
+# shard's processes; smaller shares stay whole so each import is paid once.
+SPLIT_MIN = 20
+
+
+def units(root, tests, pattern=None, shard=None, chunks=1):
     """Run each module in its own process, or partition static method IDs for CI.
 
     Dynamic modules run whole on the first shard so they are neither lost nor duplicated.
+    On a shard, a large module's IDs are dealt across ``chunks`` processes.
     """
     for path in tests:
         if shard:
@@ -104,8 +110,10 @@ def units(root, tests, pattern=None, shard=None):
             if pattern:
                 match = pattern if '*' in pattern else f'*{pattern}*'
                 ids = [name for name in ids if fnmatchcase(name, match)]
-            if ids:
-                yield path.parent, ids
+            parts = chunks if len(ids) >= SPLIT_MIN else 1
+            for part in range(parts):
+                if ids[part::parts]:
+                    yield path.parent, ids[part::parts]
         else:
             yield path.parent, [path.stem]
 
@@ -341,11 +349,14 @@ def main(argv=None):
     existing_pythonpath = env.get('PYTHONPATH')
     env['PYTHONPATH'] = os.pathsep.join(support_paths + ([existing_pythonpath] if existing_pythonpath else []))
     passed = failed = 0
-    work = list(units(root, tests, args.pattern, args.shard))
     # Modules are independent processes; print output grouped in inventory order.
     jobs = min(args.jobs or default_jobs(), 2)
+    work = list(units(root, tests, args.pattern, args.shard, chunks=jobs))
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        futures = [pool.submit(run_unit, *unit, env, args.timeout, args.pattern) for unit in work]
+        # Start the largest units first so a big module is not the last one left running.
+        order = sorted(range(len(work)), key=lambda i: -len(work[i][1]))
+        submitted = {i: pool.submit(run_unit, *work[i], env, args.timeout, args.pattern) for i in order}
+        futures = [submitted[i] for i in range(len(work))]
         runs = [(unit[0], future) for unit, future in zip(work, futures)]
         for directory, modules in groups.items():
             print(f'CHECK {directory.relative_to(root)} ({len(modules)} modules)', flush=True)
