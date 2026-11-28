@@ -123,6 +123,7 @@ is limited, so some commands must be typed directly.
 | `/plan_for_me` | `/plan_for_me` | Investigate accepted scope and publish complete GitHub Issues without an interview |
 | `/grill-me` | `/grill_me` | Stress-test a plan through questions |
 | `/autoresearch` | `/autoresearch` | Route a research goal or run a bounded metric loop |
+| `/100x <brief>` | `/100x` | [Build a prototype in this session](../skills/100x/SKILL.md); requires 100x CLI 0.1.1 on PATH. Kit does not install it. |
 | `/impeccable` | `/impeccable` | Publish actionable UI findings; explicit requests design or refine |
 | `/unslop` | `/unslop` | [Audit the UI and publish fixes as GitHub issues](../skills/unslop/SKILL.md) for Orbi; an existing deployment can pick up ready issues. Use `no-dispatch` to save without readiness, or `read-only` to preview. |
 | `/ui-taste` | `/ui_taste` | Publish actionable UI findings; explicit requests use Uizze's build/polish playbooks |

@@ -101,6 +101,18 @@ class PortablePackageTests(unittest.TestCase):
             shipped = standard.gui_entrypoint_routes(installed)
             self.assertEqual(set(shipped), set(standard.gui_entrypoint_routes(ROOT)))
 
+            skill = installed / 'skills/100x'
+            upstream = skill / 'upstream'
+            files = json.loads((skill / 'UPSTREAM.json').read_text())['files']
+            self.assertEqual(files, {
+                path.relative_to(upstream).as_posix(): sha256(path.read_bytes()).hexdigest()
+                for path in upstream.rglob('*') if path.is_file()
+            })
+            adapter = installed / 'adapters/skills/100x/SKILL.md'
+            self.assertIn('](../../../skills/100x/SKILL.md)', adapter.read_text())
+            self.assertIn('](skills/100x/SKILL.md)', (installed / 'README.md').read_text())
+            self.assertRegex((installed / 'skills/ask-kit/SKILL.md').read_text(), r'\| `/100x` \|')
+
             self.check_visual_reference_packs(installed)
             self.check_open_3d(installed)
             self.check_forever_discovery(installed, foreign)
@@ -625,7 +637,7 @@ class PortablePackageTests(unittest.TestCase):
         folder = ROOT / 'adapters/skills'
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
         self.assertEqual(names, {'plan-with-me', 'unblock', 'plan-for-me', 'docs-sync', 'orbi', 'update-kit',
-            'autoresearch', 'impeccable', 'lgtm', 'goal',
+            'autoresearch', '100x', 'impeccable', 'lgtm', 'goal',
             'git-commit-push', 'push', 'ui-taste', 'open-3d', 'sakurai', 'forever-components',
             'unslop', 'beautify-github-readme',
             'tastemaker', 'dembrandt', 'genjutsu', 'motion-graphics',
