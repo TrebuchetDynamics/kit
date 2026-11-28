@@ -102,6 +102,7 @@ class PortablePackageTests(unittest.TestCase):
             self.assertEqual(set(shipped), set(standard.gui_entrypoint_routes(ROOT)))
 
             self.check_visual_reference_packs(installed)
+            self.check_open_3d(installed)
             self.check_forever_discovery(installed, foreign)
 
             # Writing guidance is reached through the real installed adapter,
@@ -555,12 +556,45 @@ class PortablePackageTests(unittest.TestCase):
         self.assertCountEqual(selected, [p.relative_to(skill).as_posix()
                                          for p in skill.glob('upstream/skills/*/PROTOCOL.md')])
 
+    def check_open_3d(self, installed):
+        skill = installed / 'skills/open-3d'
+        upstream = skill / 'upstream'
+        pin = json.loads((skill / 'UPSTREAM.json').read_text())
+        self.assertEqual(pin['repository'], 'https://github.com/Moh4696/open-3d-skills')
+        self.assertEqual(pin['revision'], '53beb899e77f65d50160a3765f36f5ddb8b3c19b')
+        self.assertEqual(pin['license'], 'MIT')
+        self.assertIn('Copyright (c) 2026 exploraX', (upstream / 'LICENSE').read_text())
+        files = {p.relative_to(upstream).as_posix(): sha256(p.read_bytes()).hexdigest()
+                 for p in upstream.rglob('*') if p.is_file()}
+        self.assertEqual(files, pin['files'])
+        self.assertFalse(list(upstream.rglob('SKILL.md')))
+        self.assertEqual({p.parent.name for p in upstream.glob('skills/*/PROTOCOL.md')},
+                         {'alpha-cutout', 'cursor-rig', 'exploded-view', 'frame-capture',
+                          'motion-assets', 'scroll-film', 'site-check', 'threejs-scene'})
+        original = 'skills/frame-capture/scripts/record.py'
+        self.assertEqual(pin['derived_runtime']['source'], original)
+        self.assertIn(original, files)
+        self.assertEqual(pin['derived_runtime']['path'], 'runtime/record.py')
+        self.assertNotEqual((skill / 'runtime/record.py').read_bytes(), (upstream / original).read_bytes())
+        for relative in ('SKILL.md', 'references/runtime.md'):
+            guide = skill / relative
+            for link in re.findall(r'\[[^\]\n]+\]\(([^)#\s]+)(?:#[^)]+)?\)', guide.read_text()):
+                self.assertTrue((guide.parent / link).is_file(), (relative, link))
+        adapter = installed / 'adapters/skills/open-3d'
+        entry = (adapter / 'SKILL.md').read_text()
+        self.assertIn('](../../../skills/open-3d/SKILL.md)', entry)
+        self.assertNotIn('upstream/', entry)
+        self.assertIs(yaml.safe_load(entry.split('---', 2)[1])['disable-model-invocation'], True)
+        self.assertIs(yaml.safe_load((adapter / 'agents/openai.yaml').read_text())
+                      ['policy']['allow_implicit_invocation'], False)
+
     def test_portable_skills_and_references_are_self_contained(self):
         folder = ROOT / 'adapters/skills'
         names = {p.parent.name for p in folder.glob('*/SKILL.md')}
         self.assertEqual(names, {'plan-with-me', 'unblock', 'plan-for-me', 'docs-sync', 'orbi', 'update-kit',
             'autoresearch', 'impeccable', 'lgtm', 'goal',
-            'git-commit-push', 'push', 'ui-taste', 'sakurai', 'forever-components', 'unslop', 'beautify-github-readme',
+            'git-commit-push', 'push', 'ui-taste', 'open-3d', 'sakurai', 'forever-components',
+            'unslop', 'beautify-github-readme',
             'tastemaker', 'dembrandt', 'genjutsu', 'motion-graphics',
             'brand-identity', 'styleseed', 'procedural-drawing', 'genart',
             'ponytail', 'ponytail-review', 'ponytail-audit', 'ponytail-debt',

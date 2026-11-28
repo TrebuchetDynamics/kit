@@ -615,6 +615,16 @@ commands](../skills/motion-graphics/references/capture.md). Kit does not install
 missing dependencies, change project design constraints or qualify model behavior
 or device performance.
 
+## Procedural browser 3D
+
+Use [`/open-3d`](../skills/open-3d/SKILL.md) explicitly for a procedural scene,
+exploded view, scroll film or scene capture. Use `/kit:open-3d` in Claude Code,
+`$kit:open-3d` in Codex and `/open_3d` in Telegram. The eight upstream protocols
+are references, not separate commands. Keep the project's own stack and design
+constraints. [Preflight and capture](../skills/open-3d/references/runtime.md)
+explain the read-only requirements, viewport checks and time-zero MP4 workflow.
+Encoded fps describes the file, not device performance.
+
 ## Responsive screenshots
 
 `/responsive-screenshots` captures one or more pages at chosen viewport widths and
